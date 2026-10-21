@@ -5,6 +5,32 @@ plugins {
     id("com.google.devtools.ksp")
 }
 
+// Automatic versioning (same scheme as Tk Koi Gelo): versionName is
+// the latest git tag ("v1.1.0" -> "1.1.0"), versionCode is the git
+// commit count — both read from git at build time, never hand-edited.
+// Release flow: commit -> git tag vX.Y.Z -> build (the APK stamps
+// itself with that tag) -> push -> GitHub release with the same tag.
+// Before a release build, `git describe --tags --abbrev=0` must
+// print the intended tag. If git or a tag is missing, the build
+// falls back to 1.0.0 so local builds never break.
+fun gitText(vararg args: String): String {
+    return try {
+        val process = ProcessBuilder("git", *args)
+            .directory(rootDir)
+            .redirectError(ProcessBuilder.Redirect.DISCARD)
+            .start()
+        val text = process.inputStream.bufferedReader().readText().trim()
+        if (process.waitFor() == 0) text else ""
+    } catch (e: Exception) {
+        ""
+    }
+}
+
+val appVersionName: String = gitText("describe", "--tags", "--abbrev=0")
+    .removePrefix("v")
+    .ifEmpty { "1.0.0" }
+val appVersionCode: Int = gitText("rev-list", "--count", "HEAD").toIntOrNull() ?: 1
+
 android {
     namespace = "com.calnyx.app"
     compileSdk = 35
@@ -13,8 +39,8 @@ android {
         applicationId = "com.calnyx.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = appVersionCode
+        versionName = appVersionName
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {

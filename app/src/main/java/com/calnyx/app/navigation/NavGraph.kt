@@ -22,13 +22,13 @@ import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.NoteAlt
 import androidx.compose.material.icons.filled.ReceiptLong
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -59,6 +59,7 @@ import com.calnyx.app.ui.screens.HistoryScreen
 import com.calnyx.app.ui.screens.NormalCalculatorScreen
 import com.calnyx.app.ui.screens.NotepadCalculatorScreen
 import com.calnyx.app.ui.screens.ScientificCalculatorScreen
+import com.calnyx.app.update.UpdateDialog
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
@@ -93,8 +94,9 @@ fun CalNyxNavGraph(
     val currentRoute = navBackStackEntry?.destination?.route
     var normalHistoryOpen by remember { mutableStateOf(false) }
 
-    // Menu bottom sheet
+    // Menu bottom sheet + the app-update modal it can open
     var showMenu by remember { mutableStateOf(false) }
+    var showUpdate by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
 
@@ -121,9 +123,10 @@ fun CalNyxNavGraph(
         }
     }
 
-    fun closeMenuAndGo(route: String?) {
+    fun closeMenuAndGo(route: String?, after: () -> Unit = {}) {
         scope.launch { sheetState.hide() }.invokeOnCompletion {
             showMenu = false
+            after()
             if (route != null && route != currentRoute) {
                 navController.navigate(route) {
                     popUpTo(navController.graph.findStartDestination().id) {
@@ -242,10 +245,10 @@ fun CalNyxNavGraph(
                 }
             }
 
-            // Menu — a modern bottom sheet instead of the old dropdown:
-            // a brand header, one big rounded row per calculator with
-            // its description, and a real Switch for the theme (the
-            // sheet stays open, so the flip is visible live).
+            // Menu — a modern bottom sheet: a brand header with the
+            // theme toggle as a small icon at the top right, one big
+            // rounded row per calculator with its description, and
+            // the App update entry at the bottom.
             if (showMenu) {
                 ModalBottomSheet(
                     onDismissRequest = { showMenu = false },
@@ -272,18 +275,37 @@ fun CalNyxNavGraph(
                             .padding(horizontal = 16.dp)
                             .padding(bottom = 20.dp)
                     ) {
-                        Text(
-                            text = "CalNyx",
-                            fontSize = 22.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(start = 8.dp)
-                        )
-                        Text(
-                            text = "Choose a calculator",
-                            fontSize = 13.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(start = 8.dp, top = 2.dp, bottom = 14.dp)
-                        )
+                        // Header: title on the left, theme icon at
+                        // the top right (tap to flip light / dark —
+                        // the sheet stays open)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(start = 8.dp),
+                            verticalAlignment = Alignment.Top
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "CalNyx",
+                                    fontSize = 22.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "Choose a calculator",
+                                    fontSize = 13.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(top = 2.dp, bottom = 14.dp)
+                                )
+                            }
+                            TopBarCircleButton(onClick = onToggleTheme) {
+                                Icon(
+                                    if (darkTheme) Icons.Default.DarkMode else Icons.Default.LightMode,
+                                    contentDescription = "Toggle theme",
+                                    tint = MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.size(21.dp)
+                                )
+                            }
+                        }
 
                         menuScreens.forEach { screen ->
                             SheetMenuItem(
@@ -300,56 +322,30 @@ fun CalNyxNavGraph(
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 10.dp)
                         )
 
-                        // Theme row with a real switch
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(16.dp))
-                                .clickable { onToggleTheme() }
-                                .padding(horizontal = 12.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(42.dp)
-                                    .clip(CircleShape)
-                                    .background(MaterialTheme.colorScheme.surfaceVariant),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    if (darkTheme) Icons.Default.DarkMode else Icons.Default.LightMode,
-                                    contentDescription = "Theme",
-                                    modifier = Modifier.size(21.dp),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+                        // App update — closes the menu, opens the modal
+                        SheetMenuItem(
+                            title = "App update",
+                            subtitle = "Check for new versions",
+                            icon = Icons.Default.SystemUpdate,
+                            active = false,
+                            onClick = {
+                                closeMenuAndGo(null) { showUpdate = true }
                             }
-                            Spacer(modifier = Modifier.width(14.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = if (darkTheme) "Dark theme" else "Light theme",
-                                    fontSize = 16.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Text(
-                                    text = "App appearance",
-                                    fontSize = 12.5.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            Switch(
-                                checked = darkTheme,
-                                onCheckedChange = { onToggleTheme() }
-                            )
-                        }
+                        )
                     }
                 }
+            }
+
+            // App update modal
+            if (showUpdate) {
+                UpdateDialog(onDismiss = { showUpdate = false })
             }
         }
     }
 }
 
-// Small circular backdrop button for the floating top bar.
+// Small circular backdrop button, used by the floating top bar and
+// the menu sheet's header (theme toggle).
 @Composable
 private fun TopBarCircleButton(
     onClick: () -> Unit,
