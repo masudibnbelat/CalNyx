@@ -1,0 +1,32 @@
+# FILE: .gitignore
+
+# Gradle / Kotlin build caches
+.gradle/
+.kotlin/
+build/
+app/build/
+out/
+.externalNativeBuild/
+.cxx/
+
+# Local machine config — never commit
+local.properties
+
+# Android Studio / IntelliJ
+.idea/
+*.iml
+
+# Signing — keystores & passwords stay off git
+*.jks
+*.keystore
+keystore.properties
+
+# Build outputs
+*.apk
+*.aab
+captures/
+
+# Logs & OS junk
+*.log
+.DS_Store
+Thumbs.db
