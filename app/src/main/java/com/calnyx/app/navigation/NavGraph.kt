@@ -15,13 +15,16 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Functions
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.NoteAlt
+import androidx.compose.material.icons.filled.Numbers
 import androidx.compose.material.icons.filled.ReceiptLong
+import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -55,9 +58,12 @@ import androidx.navigation.compose.rememberNavController
 import com.calnyx.app.data.NavStateDatabase
 import com.calnyx.app.data.NavStateEntity
 import com.calnyx.app.ui.screens.CalTapeCalculatorScreen
+import com.calnyx.app.ui.screens.ConverterCalculatorScreen
 import com.calnyx.app.ui.screens.HistoryScreen
+import com.calnyx.app.ui.screens.IctCalculatorScreen
 import com.calnyx.app.ui.screens.NormalCalculatorScreen
 import com.calnyx.app.ui.screens.NotepadCalculatorScreen
+import com.calnyx.app.ui.screens.NumberSystemCalculatorScreen
 import com.calnyx.app.ui.screens.ScientificCalculatorScreen
 import com.calnyx.app.update.UpdateDialog
 import kotlinx.coroutines.flow.first
@@ -68,6 +74,9 @@ sealed class Screen(val route: String, val title: String, val subtitle: String, 
     object Scientific : Screen("scientific", "Scientific", "Advanced functions", Icons.Default.Functions)
     object Notepad : Screen("notepad", "Notepad", "Notes with calculations", Icons.Default.NoteAlt)
     object CalTape : Screen("caltape", "CalTape", "Tape with sheets & totals", Icons.Default.ReceiptLong)
+    object Converter : Screen("converter", "Converter", "Length, weight, volume & more", Icons.Default.SwapHoriz)
+    object NumberSystem : Screen("numbersystem", "Number System", "Binary, decimal, octal & hex", Icons.Default.Numbers)
+    object Ict : Screen("ict", "ICT Calculator", "Binary, octal, decimal & hex arithmetic", Icons.Default.Computer)
     object History : Screen("history", "History", "Past calculations", Icons.Default.History)
 }
 
@@ -78,6 +87,9 @@ val menuScreens = listOf(
     Screen.Normal,
     Screen.CalTape,
     Screen.Scientific,
+    Screen.Converter,
+    Screen.NumberSystem,
+    Screen.Ict,
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -189,6 +201,24 @@ fun CalNyxNavGraph(
                 }
                 composable(Screen.CalTape.route) {
                     CalTapeCalculatorScreen(
+                        darkTheme = darkTheme,
+                        onToggleTheme = onToggleTheme
+                    )
+                }
+                composable(Screen.Converter.route) {
+                    ConverterCalculatorScreen(
+                        darkTheme = darkTheme,
+                        onToggleTheme = onToggleTheme
+                    )
+                }
+                composable(Screen.NumberSystem.route) {
+                    NumberSystemCalculatorScreen(
+                        darkTheme = darkTheme,
+                        onToggleTheme = onToggleTheme
+                    )
+                }
+                composable(Screen.Ict.route) {
+                    IctCalculatorScreen(
                         darkTheme = darkTheme,
                         onToggleTheme = onToggleTheme
                     )

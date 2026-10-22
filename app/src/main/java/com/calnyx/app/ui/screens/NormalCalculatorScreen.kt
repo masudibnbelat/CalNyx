@@ -128,6 +128,40 @@ fun NormalCalculatorScreen(
         else -> 1f
     }
 
+    // SMOOTHNESS FIX: the display height and the key font size are
+    // ANIMATED values now, not instant mode switches. Previously the
+    // display jumped between weight(1f) and a fixed 88/116dp, the keys
+    // jumped between aspectRatio circles and fillMaxHeight pills, and
+    // three different springs (panel visibility, display
+    // animateContentSize, top spacer) fought over the same height —
+    // that fight is what made the keys grow, then shrink, while the
+    // history panel was being pulled open.
+    // REBALANCE: the display weight is SMALL (0.30) — the display
+    // takes only the space it needs, there is no big empty void at
+    // the top, and everything else goes to the keypad so the keys
+    // stay as large as the screen width allows.
+    val displayWeightAnim by animateFloatAsState(
+        targetValue = when {
+            historyOpen -> 0.20f
+            scientificExpanded -> 0.32f
+            else -> 0.30f
+        },
+        animationSpec = spring(
+            dampingRatio = 0.9f,
+            stiffness = Spring.StiffnessMediumLow
+        ),
+        label = "displayWeight"
+    )
+    val fontScaleAnim by animateFloatAsState(
+        targetValue = when {
+            historyOpen -> 0.72f
+            scientificExpanded -> 0.85f
+            else -> 1f
+        },
+        animationSpec = tween(300),
+        label = "keyFontScale"
+    )
+
     val groupedHistory = remember(history) {
         history.groupBy { dayLabel(it.createdAt) }
     }
@@ -135,7 +169,13 @@ fun NormalCalculatorScreen(
 
     val keypadAnim = remember { Animatable(0f) }
     LaunchedEffect(Unit) {
-        keypadAnim.animateTo(1f, animationSpec = tween(650))
+        keypadAnim.animateTo(
+            1f,
+            animationSpec = spring(
+                dampingRatio = 0.8f,
+                stiffness = Spring.StiffnessMediumLow
+            )
+        )
     }
 
     val sectionAnim = remember { Animatable(0f) }
@@ -146,16 +186,38 @@ fun NormalCalculatorScreen(
             // keypad can never be crushed to zero height.
             scientificExpanded = false
             sectionAnim.snapTo(0f)
-            sectionAnim.animateTo(1f, animationSpec = tween(400))
+            sectionAnim.animateTo(
+                1f,
+                animationSpec = spring(
+                    dampingRatio = 0.9f,
+                    stiffness = Spring.StiffnessMediumLow
+                )
+            )
+        }
+    }
+
+    // Scientific rows stagger in when the panel opens.
+    val sciAnim = remember { Animatable(0f) }
+    LaunchedEffect(scientificExpanded) {
+        if (scientificExpanded) {
+            sciAnim.snapTo(0f)
+            sciAnim.animateTo(
+                1f,
+                animationSpec = spring(
+                    dampingRatio = 0.85f,
+                    stiffness = Spring.StiffnessMediumLow
+                )
+            )
         }
     }
 
     // While history is open the top bar is hidden, so its clearance
     // space is animated away and given to the history + keypad.
-    // A spring makes the whole screen settle with a physical feel.
+    // Same spring as the panel animations, so everything moves as
+    // one system instead of three springs fighting.
     val topSpacerHeight by animateDpAsState(
         targetValue = if (panelState == HistoryPanelState.CLOSED) 56.dp else 6.dp,
-        animationSpec = spring(dampingRatio = 0.85f, stiffness = Spring.StiffnessMediumLow),
+        animationSpec = spring(dampingRatio = 0.9f, stiffness = Spring.StiffnessMediumLow),
         label = "topSpacerHeight"
     )
 
@@ -364,9 +426,9 @@ fun NormalCalculatorScreen(
                         ) {
                             Box(
                                 modifier = Modifier
-                                    .width(48.dp)
-                                    .height(4.dp)
-                                    .clip(RoundedCornerShape(2.dp))
+                                    .width(56.dp)
+                                    .height(5.dp)
+                                    .clip(RoundedCornerShape(3.dp))
                                     .background(
                                         MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f)
                                     )
@@ -417,26 +479,15 @@ fun NormalCalculatorScreen(
                         }
                 ) {
 
-                    // Display. In compact mode it gets only a small FIXED
-                    // height (just enough for the scaled expression +
-                    // preview), so no space is wasted and the freed
-                    // height goes to the keypad below.
+                    // Display. Its height is an ANIMATED layout weight
+                    // now (displayWeightAnim) — as the weight glides,
+                    // the display and the keypad below resize together,
+                    // continuously, in one motion. No fixed heights, no
+                    // animateContentSize fighting the panel spring.
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .then(
-                                if (compactKeypad) {
-                                    Modifier.height(if (historyOpen) 88.dp else 116.dp)
-                                } else {
-                                    Modifier.weight(1f)
-                                }
-                            )
-                            .animateContentSize(
-                                animationSpec = spring(
-                                    dampingRatio = 0.85f,
-                                    stiffness = Spring.StiffnessMediumLow
-                                )
-                            )
+                            .weight(displayWeightAnim)
                             .padding(horizontal = 10.dp),
                         verticalArrangement = Arrangement.Bottom,
                         horizontalAlignment = Alignment.End
@@ -564,21 +615,20 @@ fun NormalCalculatorScreen(
                                     val clipboardManager = LocalClipboardManager.current
 
                                     val scrollState = rememberScrollState()
-                                    // Keep the caret visible: typing at the
-                                    // end scrolls to the end as before; a
-                                    // caret placed mid-expression scrolls
-                                    // just enough to reveal it. While a
-                                    // selection is live the scroll is
-                                    // frozen, so handle drags stay put.
+                                    // Keep the caret visible. LAG FIX:
+                                    // following the end while typing is
+                                    // an INSTANT scrollTo now — a 120ms
+                                    // animateScrollTo per keystroke
+                                    // queued up behind fast typing and
+                                    // made the whole screen feel laggy.
+                                    // Only a caret placed mid-expression
+                                    // by a tap still animates into view.
                                     LaunchedEffect(expression, cursorPosition) {
                                         val lr = expressionLayout
                                         if (expression.isEmpty()) {
                                             // nothing to scroll
                                         } else if (cursorPosition >= expression.length || lr == null) {
-                                            scrollState.animateScrollTo(
-                                                scrollState.maxValue,
-                                                animationSpec = tween(120)
-                                            )
+                                            scrollState.scrollTo(scrollState.maxValue)
                                         } else {
                                             val safeOffset = formatted.rawToFmt[
                                                 cursorPosition.coerceIn(0, expression.length)
@@ -752,7 +802,11 @@ fun NormalCalculatorScreen(
                                                         // itself in the same frame
                                                         // whose layout is in the
                                                         // holder — always in sync
-                                                        // with the glyphs.
+                                                        // with the glyphs. The caret
+                                                        // is BIGGER now (4dp wide,
+                                                        // 95% of the line height):
+                                                        // the old 3dp / 88% read
+                                                        // as too small.
                                                         val lr = caretHolder.layout
                                                         if (lr != null &&
                                                             lr.layoutInput.text.text == formatted.text
@@ -784,14 +838,14 @@ fun NormalCalculatorScreen(
                                                                 } else {
                                                                     lr.getHorizontalPosition(caretOffset, true)
                                                                 }
-                                                                val caretHeight = size.height * 0.88f
+                                                                val caretHeight = size.height * 0.95f
                                                                 drawRect(
                                                                     color = caretColor,
                                                                     topLeft = Offset(
-                                                                        cx - 1.5.dp.toPx(),
+                                                                        cx - 2.dp.toPx(),
                                                                         (size.height - caretHeight) / 2f
                                                                     ),
-                                                                    size = Size(3.dp.toPx(), caretHeight),
+                                                                    size = Size(4.dp.toPx(), caretHeight),
                                                                     alpha = caretAlpha
                                                                 )
                                                             }
@@ -860,7 +914,10 @@ fun NormalCalculatorScreen(
                                     }
 
                                     // Live result preview (peach) — slides
-                                    // up into place as the value changes
+                                    // up into place as the value changes.
+                                    // Its font follows the CONTINUOUS
+                                    // fontScaleAnim, so it glides with the
+                                    // rest of the layout instead of jumping.
                                     AnimatedContent(
                                         targetState = result,
                                         transitionSpec = {
@@ -883,7 +940,7 @@ fun NormalCalculatorScreen(
                                             if (currentResult != "0" && expression.isNotEmpty()) {
                                                 Text(
                                                     text = formatForDisplay(currentResult),
-                                                    fontSize = (34f * displayScale).sp,
+                                                    fontSize = (34f * fontScaleAnim).sp,
                                                     color = MaterialTheme.colorScheme.primary,
                                                     textAlign = TextAlign.End,
                                                     maxLines = 1,
@@ -917,14 +974,14 @@ fun NormalCalculatorScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable { panelState = HistoryPanelState.HALF }
-                                .padding(vertical = 6.dp),
+                                .padding(vertical = 4.dp),
                             contentAlignment = Alignment.Center
                         ) {
                             Box(
                                 modifier = Modifier
-                                    .width(44.dp)
-                                    .height(4.dp)
-                                    .clip(RoundedCornerShape(2.dp))
+                                    .width(56.dp)
+                                    .height(5.dp)
+                                    .clip(RoundedCornerShape(3.dp))
                                     .background(
                                         MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = handleAlpha)
                                     )
@@ -932,7 +989,9 @@ fun NormalCalculatorScreen(
                         }
                     }
 
-                    // Scientific expand toggle — the arrow rotates smoothly
+                    // Scientific expand toggle — the arrow rotates smoothly.
+                    // Row trimmed (52 -> 44dp): the saved space goes to
+                    // the keypad.
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -945,14 +1004,14 @@ fun NormalCalculatorScreen(
                         )
                         IconButton(
                             onClick = { scientificExpanded = !scientificExpanded },
-                            modifier = Modifier.size(if (compactKeypad) 44.dp else 52.dp)
+                            modifier = Modifier.size(if (compactKeypad) 40.dp else 44.dp)
                         ) {
                             Icon(
                                 Icons.Default.ExpandMore,
                                 contentDescription = "Scientific functions",
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier
-                                    .size(30.dp)
+                                    .size(26.dp)
                                     .graphicsLayer { rotationZ = chevronRotation }
                             )
                         }
@@ -960,6 +1019,8 @@ fun NormalCalculatorScreen(
 
                     // Scientific panel — pill rows, like the reference.
                     // The old ^ pill is now Exp (Casio-style ×10^ entry).
+                    // Rows stagger in on open (sciAnim), instead of the
+                    // whole panel appearing at once.
                     AnimatedVisibility(
                         visible = scientificExpanded,
                         enter = expandVertically(animationSpec = tween(280)) + fadeIn(tween(280)),
@@ -986,9 +1047,16 @@ fun NormalCalculatorScreen(
                             )
                         )
                         Column {
-                            scientificRows.forEach { row ->
+                            scientificRows.forEachIndexed { rowIndex, row ->
                                 Row(
-                                    modifier = Modifier.fillMaxWidth(),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .graphicsLayer {
+                                            val p = (sciAnim.value * 1.5f - rowIndex * 0.15f)
+                                                .coerceIn(0f, 1f)
+                                            alpha = p
+                                            translationX = (1f - p) * 40f
+                                        },
                                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
                                     row.forEach { (displayText, label) ->
@@ -1013,19 +1081,19 @@ fun NormalCalculatorScreen(
                         }
                     }
 
-                    // Keypad — in compact mode the rows share the leftover
-                    // space by weight and the keys become pills; because
-                    // the history and display areas above are now small,
-                    // the pills get much more height than before.
-                    // Normal mode: big circles, big fonts.
-                    // On first show the rows rise in one after another.
+                    // Keypad — ALWAYS weight-based rows and true-circle
+                    // keys (see CalculatorButton): in every panel state
+                    // the rows share the leftover height evenly and the
+                    // circles simply glide bigger/smaller with the
+                    // layout. NO spacers between the rows and only a
+                    // 6dp horizontal gap: every saved dp goes into the
+                    // circles, which end up limited by the cell WIDTH
+                    // (~81dp) — as big as they can be. On first show
+                    // the rows rise in one after another (spring).
                     // There is no ⌫ key any more: a TAP on AC deletes one
                     // character, a LONG-PRESS on AC clears everything.
                     Column(
-                        modifier = Modifier.then(
-                            if (compactKeypad) Modifier.weight(1f)
-                            else Modifier
-                        )
+                        modifier = Modifier.weight(1f)
                     ) {
                         val buttons = listOf(
                             listOf("AC", "()", "^", "÷"),
@@ -1039,17 +1107,14 @@ fun NormalCalculatorScreen(
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .then(
-                                        if (compactKeypad) Modifier.weight(1f)
-                                        else Modifier
-                                    )
+                                    .weight(1f)
                                     .graphicsLayer {
                                         val p = (keypadAnim.value * 1.6f - rowIndex * 0.13f)
                                             .coerceIn(0f, 1f)
                                         alpha = p
                                         translationY = (1f - p) * 36f
                                     },
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 row.forEach { label ->
@@ -1057,12 +1122,9 @@ fun NormalCalculatorScreen(
                                         text = label,
                                         modifier = Modifier
                                             .weight(1f)
-                                            .then(
-                                                if (compactKeypad) Modifier.fillMaxHeight()
-                                                else Modifier.aspectRatio(1f)
-                                            ),
+                                            .fillMaxHeight(),
                                         isOperator = label in listOf("()", "%", "÷", "×", "−", "+", "^"),
-                                        compact = compactKeypad,
+                                        fontScale = fontScaleAnim,
                                         onLongClick = if (label == "AC") {
                                             {
                                                 selActive = false
@@ -1080,7 +1142,6 @@ fun NormalCalculatorScreen(
                                     )
                                 }
                             }
-                            Spacer(modifier = Modifier.height(if (compactKeypad) 6.dp else 8.dp))
                         }
                     }
 
@@ -1305,6 +1366,7 @@ fun CalculatorButton(
     modifier: Modifier = Modifier,
     isOperator: Boolean = false,
     compact: Boolean = false,
+    fontScale: Float = 1f,
     onLongClick: (() -> Unit)? = null,
     onClick: () -> Unit
 ) {
@@ -1335,12 +1397,23 @@ fun CalculatorButton(
         label = "buttonBackground"
     )
 
-    if (onLongClick != null) {
-        // Long-pressable variant (the AC key): identical look, but a
-        // plain box — a Material Button has no long-press. Tap and
-        // hold get different actions (delete-one vs clear-all).
+    // ONE implementation for every key now. Previously AC went
+    // through a plain Box branch and every other key through a
+    // Material Button branch — two different sizing behaviours in
+    // the same keypad. The key fills its cell; the visible circle is
+    // sized by the SMALLER of the cell's width/height and centred,
+    // so it is a true circle in every panel state and resize is
+    // continuous — never an aspectRatio <-> fillMaxHeight switch.
+    // (The compact parameter is kept for call-site compatibility;
+    // sizing is driven by fontScale now.)
+    BoxWithConstraints(
+        modifier = modifier,
+        contentAlignment = Alignment.Center
+    ) {
+        val diameter = minOf(maxWidth, maxHeight)
         Box(
-            modifier = modifier
+            modifier = Modifier
+                .size(diameter)
                 .graphicsLayer {
                     scaleX = pressScale
                     scaleY = pressScale
@@ -1355,25 +1428,7 @@ fun CalculatorButton(
                 ),
             contentAlignment = Alignment.Center
         ) {
-            CalculatorButtonContent(text, contentColor, compact)
-        }
-    } else {
-        Button(
-            onClick = onClick,
-            modifier = modifier.graphicsLayer {
-                scaleX = pressScale
-                scaleY = pressScale
-            },
-            shape = CircleShape,
-            colors = ButtonDefaults.buttonColors(
-                containerColor = animatedBackground,
-                contentColor = contentColor
-            ),
-            elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp),
-            contentPadding = PaddingValues(0.dp),
-            interactionSource = interactionSource
-        ) {
-            CalculatorButtonContent(text, contentColor, compact)
+            CalculatorButtonContent(text, contentColor, fontScale)
         }
     }
 }
@@ -1382,28 +1437,24 @@ fun CalculatorButton(
 private fun CalculatorButtonContent(
     text: String,
     contentColor: Color,
-    compact: Boolean
+    fontScale: Float
 ) {
     if (text == "⌫") {
         Icon(
             Icons.Default.Backspace,
             contentDescription = "Delete",
             tint = contentColor,
-            modifier = Modifier.size(if (compact) 26.dp else 36.dp)
+            modifier = Modifier.size((34f * fontScale).dp.coerceAtLeast(20.dp))
         )
     } else {
         Text(
             text = if (text == "()") "( )" else text,
             color = contentColor,
             fontSize = when {
-                compact && (text == "AC" || text == "()") -> 20.sp
-                compact && text == "%" -> 22.sp
-                compact && text.length > 1 -> 16.sp
-                compact -> 26.sp
-                text == "AC" || text == "()" -> 26.sp
-                text == "%" -> 30.sp
-                text.length > 1 -> 22.sp
-                else -> 38.sp
+                text == "AC" || text == "()" -> (25f * fontScale).sp
+                text == "%" -> (29f * fontScale).sp
+                text.length > 1 -> (21f * fontScale).sp
+                else -> (37f * fontScale).sp
             },
             fontWeight = FontWeight.Bold
         )
