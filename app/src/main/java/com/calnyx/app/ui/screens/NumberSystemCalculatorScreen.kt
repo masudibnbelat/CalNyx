@@ -1,15 +1,11 @@
+// FILE: app/src/main/java/com/calnyx/app/ui/screens/NumberSystemCalculatorScreen.kt
 package com.calnyx.app.ui.screens
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -28,14 +24,12 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -51,7 +45,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
@@ -59,11 +52,13 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.math.BigInteger
@@ -207,27 +202,6 @@ fun NumberSystemCalculatorScreen(
         }
     }
 
-    // Slow aurora drift behind everything (Converter v4 language).
-    val drift = rememberInfiniteTransition(label = "nsDrift")
-    val driftX by drift.animateFloat(
-        initialValue = -26f,
-        targetValue = 26f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 9000, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "nsDriftX"
-    )
-    val driftY by drift.animateFloat(
-        initialValue = 18f,
-        targetValue = -18f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 11000, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "nsDriftY"
-    )
-
     val swapRotation by animateFloatAsState(
         targetValue = swapTurns,
         animationSpec = tween(durationMillis = 450, easing = FastOutSlowInEasing),
@@ -267,413 +241,459 @@ fun NumberSystemCalculatorScreen(
                 .fillMaxSize()
                 .background(colors.background)
         ) {
-            // Aurora blobs (blur needs Android 12+; below that they
-            // are just soft colour washes — still fine)
-            Box(
-                modifier = Modifier
-                    .offset(x = driftX.dp - 70.dp, y = 30.dp + driftY.dp)
-                    .size(230.dp)
-                    .clip(CircleShape)
-                    .background(colors.primary.copy(alpha = 0.30f))
-                    .blur(64.dp)
-            )
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .offset(x = 60.dp - driftX.dp, y = (-40).dp - driftY.dp)
-                    .size(260.dp)
-                    .clip(CircleShape)
-                    .background(colors.tertiary.copy(alpha = 0.26f))
-                    .blur(72.dp)
-            )
+            // LAYOUT — fully responsive: every size below is a
+            // percentage of the real screen (BoxWithConstraints),
+            // so the screen fits ANY phone exactly. Card 52%,
+            // keypad 44%, a 4% bottom margin; all heights,
+            // widths, paddings, margins and fonts scale with
+            // the screen. Background is the plain theme colour.
+            BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                val density = LocalDensity.current
+                val sw = maxWidth
+                val sh = maxHeight
+                fun hSp(frac: Float): TextUnit =
+                    with(density) { (sh * frac).toSp() }
 
-            // LAYOUT by percentage: display card 52%, keypad 48% —
-            // the display panel is the tall zone now, the keys are
-            // back to a comfortable height.
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .statusBarsPadding()
-                    .navigationBarsPadding()
-                    .padding(start = 16.dp, end = 16.dp, top = 2.dp, bottom = 8.dp)
-            ) {
-                // Header — compact, two lines, no wasted band
-                NsAnimatedIn(delayMs = 0) {
-                    Column {
-                        Text(
-                            text = "Number System",
-                            fontSize = 22.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = colors.onBackground
-                        )
-                        Text(
-                            text = "Binary · Decimal · Octal · Hex",
-                            fontSize = 12.sp,
-                            color = colors.onSurfaceVariant
-                        )
+                val sidePad = sw * 0.044f
+                val topPad = sh * 0.016f
+                val bottomPad = sh * 0.011f
+                val titleSize = hSp(0.031f)
+                val titleTopPad = sh * 0.007f
+                val gapHeader = sh * 0.011f
+                val gapCardKeypad = sh * 0.014f
+
+                val cardRadius = sw * 0.078f
+                val cardPadH = sw * 0.044f
+                val cardPadV = sh * 0.017f
+                val labelSize = hSp(0.016f)
+                val labelGap = sh * 0.006f
+                val chipRowH = sh * 0.063f
+                val chipGapH = sw * 0.022f
+                val chipFontSize = hSp(0.021f)
+                val midGap = sh * 0.011f
+                val panelGap = sh * 0.014f
+
+                val panelRadius = sw * 0.056f
+                val panelPadH = sw * 0.039f
+                val panelTopPad = sh * 0.012f
+                val panelBottomPad = sh * 0.011f
+                val tagSize = hSp(0.017f)
+                val tagGapW = sw * 0.028f
+                val inputSize = hSp(0.063f)
+                val inputLine = hSp(0.069f)
+                val caretSize = hSp(0.054f)
+                val inputResultGap = sh * 0.011f
+                val resultSize = hSp(0.053f)
+                val resultLine = hSp(0.058f)
+                val copyBtnSize = sh * 0.049f
+                val copyIconSize = sh * 0.024f
+                val copiedPadTop = sh * 0.014f
+                val copiedIconSize = sh * 0.021f
+                val copiedGapW = sw * 0.017f
+                val copiedSize = hSp(0.018f)
+
+                val keyGapV = sh * 0.013f
+                val keyGapH = sw * 0.028f
+                val swapIconSize = sh * 0.034f
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .statusBarsPadding()
+                        .navigationBarsPadding()
+                        .padding(start = sidePad, end = sidePad, top = topPad, bottom = bottomPad)
+                ) {
+                    // Header — compact, no wasted band
+                    NsAnimatedIn(delayMs = 0) {
+                        Column {
+                            Text(
+                                text = "Number System",
+                                fontSize = titleSize,
+                                fontWeight = FontWeight.Bold,
+                                color = colors.onBackground,
+                                modifier = Modifier.padding(top = titleTopPad)
+                            )
+                        }
                     }
-                }
 
-                Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(gapHeader))
 
-                // ===== 52% — glass card: From/To chips + display panel
-                NsAnimatedIn(modifier = Modifier.weight(0.52f), delayMs = 90) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .clip(RoundedCornerShape(28.dp))
-                            .background(
-                                Brush.verticalGradient(
-                                    listOf(
-                                        colors.surfaceVariant.copy(alpha = 0.55f),
-                                        colors.surfaceVariant.copy(alpha = 0.30f)
-                                    )
-                                )
-                            )
-                            .border(
-                                width = 1.dp,
-                                brush = Brush.verticalGradient(
-                                    listOf(
-                                        Color.White.copy(alpha = 0.22f),
-                                        Color.White.copy(alpha = 0.05f)
-                                    )
-                                ),
-                                shape = RoundedCornerShape(28.dp)
-                            )
-                            .padding(horizontal = 16.dp, vertical = 12.dp)
-                    ) {
-                        Text(
-                            text = "FROM",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = colors.onSurfaceVariant
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(44.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            allBases.forEach { base ->
-                                NsBaseChip(
-                                    base = base,
-                                    selected = base == fromBase,
-                                    modifier = Modifier.weight(1f),
-                                    onClick = {
-                                        fromBase = base
-                                        haptics.performHapticFeedback(
-                                            HapticFeedbackType.TextHandleMove
-                                        )
-                                    }
-                                )
-                            }
-                        }
-                        Spacer(modifier = Modifier.height(10.dp))
-                        // TO label only — the double-arrow swap button
-                        // that used to sit at its right is removed;
-                        // swapping lives in the keypad now.
-                        Text(
-                            text = "TO",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = colors.onSurfaceVariant
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(44.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            allBases.forEach { base ->
-                                NsBaseChip(
-                                    base = base,
-                                    selected = base == toBase,
-                                    modifier = Modifier.weight(1f),
-                                    onClick = {
-                                        toBase = base
-                                        haptics.performHapticFeedback(
-                                            HapticFeedbackType.TextHandleMove
-                                        )
-                                    }
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        // Display panel: a darker inner well that
-                        // FILLS the rest of the card — the input area.
-                        // The value lines sit at its bottom, big.
+                    // ===== 52% — glass card: From/To chips + display panel
+                    NsAnimatedIn(modifier = Modifier.weight(0.52f), delayMs = 90) {
                         Column(
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .weight(1f)
-                                .clip(RoundedCornerShape(20.dp))
-                                .background(colors.background.copy(alpha = 0.28f))
+                                .fillMaxSize()
+                                .clip(RoundedCornerShape(cardRadius))
+                                .background(
+                                    Brush.verticalGradient(
+                                        listOf(
+                                            colors.surfaceVariant.copy(alpha = 0.55f),
+                                            colors.surfaceVariant.copy(alpha = 0.30f)
+                                        )
+                                    )
+                                )
                                 .border(
                                     width = 1.dp,
-                                    color = Color.White.copy(alpha = 0.06f),
-                                    shape = RoundedCornerShape(20.dp)
+                                    brush = Brush.verticalGradient(
+                                        listOf(
+                                            Color.White.copy(alpha = 0.22f),
+                                            Color.White.copy(alpha = 0.05f)
+                                        )
+                                    ),
+                                    shape = RoundedCornerShape(cardRadius)
                                 )
-                                .padding(horizontal = 14.dp, vertical = 12.dp),
-                            verticalArrangement = Arrangement.Bottom
+                                .padding(horizontal = cardPadH, vertical = cardPadV)
                         ) {
-                            // Input value — big, single line, scrollable
+                            Text(
+                                text = "FROM",
+                                fontSize = labelSize,
+                                fontWeight = FontWeight.Bold,
+                                color = colors.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.height(labelGap))
                             Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.Bottom
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(chipRowH),
+                                horizontalArrangement = Arrangement.spacedBy(chipGapH)
                             ) {
-                                Text(
-                                    text = "${fromBase.short} · ${fromBase.radix}",
-                                    fontSize = 12.sp,
-                                    color = colors.onSurfaceVariant
-                                )
-                                Spacer(modifier = Modifier.width(10.dp))
-                                Box(modifier = Modifier.weight(1f)) {
-                                    Row(
-                                        modifier = Modifier.horizontalScroll(inputScrollState),
-                                        horizontalArrangement = Arrangement.End,
-                                        verticalAlignment = Alignment.Bottom
-                                    ) {
-                                        Text(
-                                            text = inputDisplay,
-                                            fontSize = 44.sp,
-                                            lineHeight = 48.sp,
-                                            fontWeight = FontWeight.Medium,
-                                            fontFamily = FontFamily.Monospace,
-                                            color = colors.onSurface,
-                                            textAlign = TextAlign.End,
-                                            maxLines = 1,
-                                            softWrap = false
-                                        )
-                                        Text(
-                                            text = "▌",
-                                            fontSize = 38.sp,
-                                            lineHeight = 48.sp,
-                                            color = colors.primary,
-                                            modifier = Modifier.alpha(if (caretOn) 0.9f else 0f)
-                                        )
-                                    }
+                                allBases.forEach { base ->
+                                    NsBaseChip(
+                                        base = base,
+                                        selected = base == fromBase,
+                                        fontSize = chipFontSize,
+                                        modifier = Modifier.weight(1f),
+                                        onClick = {
+                                            fromBase = base
+                                            haptics.performHapticFeedback(
+                                                HapticFeedbackType.TextHandleMove
+                                            )
+                                        }
+                                    )
                                 }
                             }
-                            Spacer(modifier = Modifier.height(8.dp))
-
-                            // Result — big, single line, scrollable too
+                            Spacer(modifier = Modifier.height(midGap))
+                            // TO label only — the double-arrow swap button
+                            // that used to sit at its right is removed;
+                            // swapping lives in the keypad now.
+                            Text(
+                                text = "TO",
+                                fontSize = labelSize,
+                                fontWeight = FontWeight.Bold,
+                                color = colors.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.height(labelGap))
                             Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(chipRowH),
+                                horizontalArrangement = Arrangement.spacedBy(chipGapH)
                             ) {
-                                Text(
-                                    text = "${toBase.short} · ${toBase.radix}",
-                                    fontSize = 12.sp,
-                                    color = colors.onSurfaceVariant
-                                )
-                                Spacer(modifier = Modifier.width(10.dp))
-                                Box(modifier = Modifier.weight(1f)) {
-                                    Row(
-                                        modifier = Modifier.horizontalScroll(resultScrollState),
-                                        horizontalArrangement = Arrangement.End,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        AnimatedContent(
-                                            targetState = resultDisplay,
-                                            transitionSpec = {
-                                                (slideInVertically(
-                                                    animationSpec = tween(180),
-                                                    initialOffsetY = { it / 2 }
-                                                ) + fadeIn(tween(180))) togetherWith
-                                                        (slideOutVertically(
-                                                            animationSpec = tween(140),
-                                                            targetOffsetY = { -it / 2 }
-                                                        ) + fadeOut(tween(140)))
-                                            },
-                                            label = "nsResult"
-                                        ) { text ->
+                                allBases.forEach { base ->
+                                    NsBaseChip(
+                                        base = base,
+                                        selected = base == toBase,
+                                        fontSize = chipFontSize,
+                                        modifier = Modifier.weight(1f),
+                                        onClick = {
+                                            toBase = base
+                                            haptics.performHapticFeedback(
+                                                HapticFeedbackType.TextHandleMove
+                                            )
+                                        }
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(panelGap))
+
+                            // Display panel: a darker inner well that
+                            // FILLS the rest of the card — the input area.
+                            // The value lines sit near its top, a little
+                            // below the panel edge — no empty band above them.
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(panelRadius))
+                                    .background(colors.background.copy(alpha = 0.28f))
+                                    .border(
+                                        width = 1.dp,
+                                        color = Color.White.copy(alpha = 0.06f),
+                                        shape = RoundedCornerShape(panelRadius)
+                                    )
+                                    .padding(
+                                        start = panelPadH,
+                                        end = panelPadH,
+                                        top = panelTopPad,
+                                        bottom = panelBottomPad
+                                    ),
+                                verticalArrangement = Arrangement.Top
+                            ) {
+                                // Input value — big, single line, scrollable
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.Bottom
+                                ) {
+                                    Text(
+                                        text = "${fromBase.short} · ${fromBase.radix}",
+                                        fontSize = tagSize,
+                                        color = colors.onSurfaceVariant
+                                    )
+                                    Spacer(modifier = Modifier.width(tagGapW))
+                                    Box(modifier = Modifier.weight(1f)) {
+                                        Row(
+                                            modifier = Modifier.horizontalScroll(inputScrollState),
+                                            horizontalArrangement = Arrangement.End,
+                                            verticalAlignment = Alignment.Bottom
+                                        ) {
                                             Text(
-                                                text = text,
-                                                fontSize = 34.sp,
-                                                lineHeight = 38.sp,
-                                                fontWeight = FontWeight.Bold,
+                                                text = inputDisplay,
+                                                fontSize = inputSize,
+                                                lineHeight = inputLine,
+                                                fontWeight = FontWeight.Medium,
                                                 fontFamily = FontFamily.Monospace,
-                                                color = colors.primary,
+                                                color = colors.onSurface,
                                                 textAlign = TextAlign.End,
                                                 maxLines = 1,
                                                 softWrap = false
                                             )
+                                            Text(
+                                                text = "▌",
+                                                fontSize = caretSize,
+                                                lineHeight = inputLine,
+                                                color = colors.primary,
+                                                modifier = Modifier.alpha(if (caretOn) 0.9f else 0f)
+                                            )
                                         }
                                     }
                                 }
-                                // Copy — only fires with a valid result,
-                                // and copies in the From/To format
-                                IconButton(
-                                    onClick = {
-                                        if (resultRaw != null && input.isNotEmpty()) {
-                                            val text = "From ${fromBase.label} (${fromBase.short}) = $input\n" +
-                                                    "To ${toBase.label} (${toBase.short}) = $resultRaw"
-                                            clipboardManager.setText(AnnotatedString(text))
-                                            copiedText = text
-                                            haptics.performHapticFeedback(
-                                                HapticFeedbackType.LongPress
-                                            )
-                                        }
-                                    },
-                                    modifier = Modifier.size(34.dp)
-                                ) {
-                                    Icon(
-                                        Icons.Default.ContentCopy,
-                                        contentDescription = "Copy conversion",
-                                        tint = colors.onSurfaceVariant,
-                                        modifier = Modifier.size(17.dp)
-                                    )
-                                }
-                            }
+                                Spacer(modifier = Modifier.height(inputResultGap))
 
-                            // Copy confirmation, in the same format
-                            AnimatedVisibility(
-                                visible = copiedText != null,
-                                enter = fadeIn(tween(200)) + expandVertically(tween(200)),
-                                exit = fadeOut(tween(180)) + shrinkVertically(tween(180))
-                            ) {
+                                // Result — big, single line, scrollable too
                                 Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(top = 10.dp),
-                                    horizontalArrangement = Arrangement.Center,
+                                    modifier = Modifier.fillMaxWidth(),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Icon(
-                                        Icons.Default.Check,
-                                        contentDescription = null,
-                                        tint = colors.primary,
-                                        modifier = Modifier.size(15.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
                                     Text(
-                                        text = copiedText ?: "",
-                                        fontSize = 12.5.sp,
-                                        fontWeight = FontWeight.Medium,
-                                        color = colors.primary
+                                        text = "${toBase.short} · ${toBase.radix}",
+                                        fontSize = tagSize,
+                                        color = colors.onSurfaceVariant
                                     )
-                                }
-                            }
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                // ===== 48% — keypad. Rows share the zone evenly and
-                // every key FILLS its row height (~69dp now).
-                // Entrance replays when the From base changes.
-                key(fromBase) {
-                    NsAnimatedIn(modifier = Modifier.weight(0.48f), delayMs = 60) {
-                        Column(
-                            modifier = Modifier.fillMaxSize(),
-                            verticalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            val keyRows = listOf(
-                                listOf("7", "8", "9", "A", "B"),
-                                listOf("4", "5", "6", "C", "D"),
-                                listOf("1", "2", "3", "E", "F")
-                            )
-                            keyRows.forEach { row ->
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .weight(1f),
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                                ) {
-                                    row.forEach { keyLabel ->
-                                        NsKey(
-                                            text = keyLabel,
-                                            enabled = keyEnabledInBase(keyLabel, fromBase),
-                                            containerColor = if (keyLabel.length == 1 &&
-                                                keyLabel[0] in 'A'..'F'
-                                            ) {
-                                                colors.secondaryContainer.copy(alpha = 0.75f)
-                                            } else {
-                                                colors.surfaceVariant.copy(alpha = 0.55f)
+                                    Spacer(modifier = Modifier.width(tagGapW))
+                                    Box(modifier = Modifier.weight(1f)) {
+                                        Row(
+                                            modifier = Modifier.horizontalScroll(resultScrollState),
+                                            horizontalArrangement = Arrangement.End,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            AnimatedContent(
+                                                targetState = resultDisplay,
+                                                transitionSpec = {
+                                                    (slideInVertically(
+                                                        animationSpec = tween(180),
+                                                        initialOffsetY = { it / 2 }
+                                                    ) + fadeIn(tween(180))) togetherWith
+                                                            (slideOutVertically(
+                                                                animationSpec = tween(140),
+                                                                targetOffsetY = { -it / 2 }
+                                                            ) + fadeOut(tween(140)))
+                                                },
+                                                label = "nsResult"
+                                            ) { text ->
+                                                Text(
+                                                    text = text,
+                                                    fontSize = resultSize,
+                                                    lineHeight = resultLine,
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontFamily = FontFamily.Monospace,
+                                                    color = colors.primary,
+                                                    textAlign = TextAlign.End,
+                                                    maxLines = 1,
+                                                    softWrap = false
+                                                )
+                                            }
+                                        }
+                                    }
+                                    // Copy — only fires with a valid result,
+                                    // and copies in the From/To format.
+                                    // A plain Box, NOT IconButton: IconButton
+                                    // secretly reserves a 48dp minimum touch
+                                    // size, which made this row taller than
+                                    // the panel and clipped the result.
+                                    Box(
+                                        modifier = Modifier
+                                            .size(copyBtnSize)
+                                            .clip(RoundedCornerShape(percent = 50))
+                                            .clickable {
+                                                if (resultRaw != null && input.isNotEmpty()) {
+                                                    val text = "From ${fromBase.label} (${fromBase.short}) = $input\n" +
+                                                            "To ${toBase.label} (${toBase.short}) = $resultRaw"
+                                                    clipboardManager.setText(AnnotatedString(text))
+                                                    copiedText = text
+                                                    haptics.performHapticFeedback(
+                                                        HapticFeedbackType.LongPress
+                                                    )
+                                                }
                                             },
-                                            contentColor = colors.onSurface,
-                                            modifier = Modifier.weight(1f),
-                                            onClick = { onKey(keyLabel) }
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            Icons.Default.ContentCopy,
+                                            contentDescription = "Copy conversion",
+                                            tint = colors.onSurfaceVariant,
+                                            modifier = Modifier.size(copyIconSize)
+                                        )
+                                    }
+                                }
+
+                                // Copy confirmation, in the same format
+                                AnimatedVisibility(
+                                    visible = copiedText != null,
+                                    enter = fadeIn(tween(200)) + expandVertically(tween(200)),
+                                    exit = fadeOut(tween(180)) + shrinkVertically(tween(180))
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(top = copiedPadTop),
+                                        horizontalArrangement = Arrangement.Center,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Check,
+                                            contentDescription = null,
+                                            tint = colors.primary,
+                                            modifier = Modifier.size(copiedIconSize)
+                                        )
+                                        Spacer(modifier = Modifier.width(copiedGapW))
+                                        Text(
+                                            text = copiedText ?: "",
+                                            fontSize = copiedSize,
+                                            fontWeight = FontWeight.Medium,
+                                            color = colors.primary
                                         )
                                     }
                                 }
                             }
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .weight(1f),
-                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(gapCardKeypad))
+
+                    // ===== 44% — keypad. Rows share the zone evenly and
+                    // every key FILLS its row height, which is a % of
+                    // the screen — shorter keys on any phone.
+                    // Entrance replays when the From base changes.
+                    key(fromBase) {
+                        NsAnimatedIn(modifier = Modifier.weight(0.44f), delayMs = 60) {
+                            Column(
+                                modifier = Modifier.fillMaxSize(),
+                                verticalArrangement = Arrangement.spacedBy(keyGapV)
                             ) {
-                                NsKey(
-                                    text = "±",
-                                    enabled = true,
-                                    containerColor = colors.secondaryContainer.copy(alpha = 0.75f),
-                                    contentColor = colors.onSecondaryContainer,
-                                    modifier = Modifier.weight(1f),
-                                    onClick = { onKey("±") }
+                                val keyRows = listOf(
+                                    listOf("7", "8", "9", "A", "B"),
+                                    listOf("4", "5", "6", "C", "D"),
+                                    listOf("1", "2", "3", "E", "F")
                                 )
-                                NsKey(
-                                    text = "0",
-                                    enabled = true,
-                                    containerColor = colors.surfaceVariant.copy(alpha = 0.55f),
-                                    contentColor = colors.onSurface,
-                                    modifier = Modifier.weight(1f),
-                                    onClick = { onKey("0") }
-                                )
-                                NsKey(
-                                    text = "⌫",
-                                    enabled = true,
-                                    containerColor = colors.secondaryContainer.copy(alpha = 0.75f),
-                                    contentColor = colors.onSecondaryContainer,
-                                    modifier = Modifier.weight(1f),
-                                    onClick = { onKey("⌫") },
-                                    onLongClick = { onKey("AC") }
-                                )
-                                // In-keypad swap (the only swap control now)
-                                val swapInteraction = remember { MutableInteractionSource() }
-                                val swapPressed by swapInteraction.collectIsPressedAsState()
-                                val swapScale by animateFloatAsState(
-                                    targetValue = if (swapPressed) 0.9f else 1f,
-                                    animationSpec = tween(110),
-                                    label = "nsSwapKeyScale"
-                                )
-                                Box(
+                                keyRows.forEach { row ->
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .weight(1f),
+                                        horizontalArrangement = Arrangement.spacedBy(keyGapH)
+                                    ) {
+                                        row.forEach { keyLabel ->
+                                            NsKey(
+                                                text = keyLabel,
+                                                enabled = keyEnabledInBase(keyLabel, fromBase),
+                                                containerColor = if (keyLabel.length == 1 &&
+                                                    keyLabel[0] in 'A'..'F'
+                                                ) {
+                                                    colors.secondaryContainer.copy(alpha = 0.75f)
+                                                } else {
+                                                    colors.surfaceVariant.copy(alpha = 0.55f)
+                                                },
+                                                contentColor = colors.onSurface,
+                                                modifier = Modifier.weight(1f),
+                                                onClick = { onKey(keyLabel) }
+                                            )
+                                        }
+                                    }
+                                }
+                                Row(
                                     modifier = Modifier
-                                        .weight(1f)
-                                        .fillMaxHeight()
-                                        .scale(swapScale)
-                                        .clip(RoundedCornerShape(16.dp))
-                                        .background(colors.surfaceVariant.copy(alpha = 0.55f))
-                                        .rotate(swapRotation)
-                                        .clickable(
-                                            interactionSource = swapInteraction,
-                                            indication = null
-                                        ) { swapBases() },
-                                    contentAlignment = Alignment.Center
+                                        .fillMaxWidth()
+                                        .weight(1f),
+                                    horizontalArrangement = Arrangement.spacedBy(keyGapH)
                                 ) {
-                                    Icon(
-                                        Icons.Default.SwapHoriz,
-                                        contentDescription = "Swap bases",
-                                        tint = colors.onSurface,
-                                        modifier = Modifier.size(24.dp)
+                                    NsKey(
+                                        text = "±",
+                                        enabled = true,
+                                        containerColor = colors.secondaryContainer.copy(alpha = 0.75f),
+                                        contentColor = colors.onSecondaryContainer,
+                                        modifier = Modifier.weight(1f),
+                                        onClick = { onKey("±") }
+                                    )
+                                    NsKey(
+                                        text = "0",
+                                        enabled = true,
+                                        containerColor = colors.surfaceVariant.copy(alpha = 0.55f),
+                                        contentColor = colors.onSurface,
+                                        modifier = Modifier.weight(1f),
+                                        onClick = { onKey("0") }
+                                    )
+                                    NsKey(
+                                        text = "⌫",
+                                        enabled = true,
+                                        containerColor = colors.secondaryContainer.copy(alpha = 0.75f),
+                                        contentColor = colors.onSecondaryContainer,
+                                        modifier = Modifier.weight(1f),
+                                        onClick = { onKey("⌫") },
+                                        onLongClick = { onKey("AC") }
+                                    )
+                                    // In-keypad swap (the only swap control now)
+                                    val swapInteraction = remember { MutableInteractionSource() }
+                                    val swapPressed by swapInteraction.collectIsPressedAsState()
+                                    val swapScale by animateFloatAsState(
+                                        targetValue = if (swapPressed) 0.9f else 1f,
+                                        animationSpec = tween(110),
+                                        label = "nsSwapKeyScale"
+                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .fillMaxHeight()
+                                            .scale(swapScale)
+                                            .clip(RoundedCornerShape(percent = 24))
+                                            .background(colors.surfaceVariant.copy(alpha = 0.55f))
+                                            .rotate(swapRotation)
+                                            .clickable(
+                                                interactionSource = swapInteraction,
+                                                indication = null
+                                            ) { swapBases() },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            Icons.Default.SwapHoriz,
+                                            contentDescription = "Swap bases",
+                                            tint = colors.onSurface,
+                                            modifier = Modifier.size(swapIconSize)
+                                        )
+                                    }
+                                    NsKey(
+                                        text = "AC",
+                                        enabled = true,
+                                        containerColor = colors.primaryContainer,
+                                        contentColor = colors.onPrimaryContainer,
+                                        modifier = Modifier.weight(1f),
+                                        onClick = { onKey("AC") }
                                     )
                                 }
-                                NsKey(
-                                    text = "AC",
-                                    enabled = true,
-                                    containerColor = colors.primaryContainer,
-                                    contentColor = colors.onPrimaryContainer,
-                                    modifier = Modifier.weight(1f),
-                                    onClick = { onKey("AC") }
-                                )
                             }
                         }
                     }
+                    Spacer(modifier = Modifier.weight(0.04f))
                 }
             }
         }
@@ -687,6 +707,7 @@ fun NumberSystemCalculatorScreen(
 private fun NsBaseChip(
     base: NumberBase,
     selected: Boolean,
+    fontSize: TextUnit,
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
@@ -710,14 +731,14 @@ private fun NsBaseChip(
         modifier = modifier
             .fillMaxHeight()
             .scale(chipScale)
-            .clip(RoundedCornerShape(14.dp))
+            .clip(RoundedCornerShape(percent = 32))
             .background(background)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         Text(
             text = base.short,
-            fontSize = 15.sp,
+            fontSize = fontSize,
             fontWeight = FontWeight.Bold,
             color = content,
             maxLines = 1
@@ -746,17 +767,17 @@ private fun NsKey(
         animationSpec = tween(110),
         label = "nsKeyPressScale"
     )
-    Box(
+    BoxWithConstraints(
         modifier = modifier
             .fillMaxHeight()
             .scale(pressScale)
             .alpha(if (enabled) 1f else 0.32f)
-            .clip(RoundedCornerShape(18.dp))
+            .clip(RoundedCornerShape(percent = 26))
             .background(containerColor)
             .border(
                 width = 1.dp,
                 color = Color.White.copy(alpha = 0.10f),
-                shape = RoundedCornerShape(18.dp)
+                shape = RoundedCornerShape(percent = 26)
             )
             .combinedClickable(
                 interactionSource = interactionSource,
@@ -767,13 +788,16 @@ private fun NsKey(
             ),
         contentAlignment = Alignment.Center
     ) {
+        val keyFontSize = with(LocalDensity.current) {
+            (maxHeight * when (text) {
+                "⌫" -> 0.35f
+                "AC" -> 0.29f
+                else -> 0.32f
+            }).toSp()
+        }
         Text(
             text = text,
-            fontSize = when (text) {
-                "⌫" -> 24.sp
-                "AC" -> 20.sp
-                else -> 22.sp
-            },
+            fontSize = keyFontSize,
             fontWeight = FontWeight.Bold,
             color = contentColor
         )

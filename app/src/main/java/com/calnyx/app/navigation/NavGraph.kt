@@ -1,3 +1,4 @@
+// FILE: app/src/main/java/com/calnyx/app/navigation/NavGraph.kt
 package com.calnyx.app.navigation
 
 import androidx.compose.animation.AnimatedVisibility
@@ -17,6 +18,7 @@ import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Functions
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.LightMode
@@ -25,9 +27,7 @@ import androidx.compose.material.icons.filled.NoteAlt
 import androidx.compose.material.icons.filled.Numbers
 import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material.icons.filled.SwapHoriz
-import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -275,15 +275,20 @@ fun CalNyxNavGraph(
                 }
             }
 
-            // Menu — a modern bottom sheet: a brand header with the
-            // theme toggle as a small icon at the top right, one big
-            // rounded row per calculator with its description, and
-            // the App update entry at the bottom.
+            // Menu — a simple modern bottom sheet: a brand header
+            // with two small circular icon buttons at the top right
+            // (App update, then the theme toggle), and one clean
+            // rounded row per calculator with its description.
             if (showMenu) {
                 ModalBottomSheet(
                     onDismissRequest = { showMenu = false },
                     sheetState = sheetState,
-                    containerColor = MaterialTheme.colorScheme.surface,
+                    shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+                    // The sheet must never melt into the app behind
+                    // it: in dark mode it sits on a clearly lighter
+                    // tone than the app background (#181119).
+                    containerColor = if (darkTheme) Color(0xFF241D25)
+                    else MaterialTheme.colorScheme.surface,
                     contentColor = MaterialTheme.colorScheme.onSurface,
                     dragHandle = {
                         Box(
@@ -327,6 +332,20 @@ fun CalNyxNavGraph(
                                     modifier = Modifier.padding(top = 2.dp, bottom = 14.dp)
                                 )
                             }
+                            // App update — same behaviour as the
+                            // old list row (sheet closes, the update
+                            // dialog opens), now just an icon here
+                            TopBarCircleButton(onClick = {
+                                closeMenuAndGo(null) { showUpdate = true }
+                            }) {
+                                Icon(
+                                    Icons.Default.Download,
+                                    contentDescription = "App update",
+                                    tint = MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.size(21.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
                             TopBarCircleButton(onClick = onToggleTheme) {
                                 Icon(
                                     if (darkTheme) Icons.Default.DarkMode else Icons.Default.LightMode,
@@ -347,21 +366,6 @@ fun CalNyxNavGraph(
                             )
                         }
 
-                        HorizontalDivider(
-                            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f),
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 10.dp)
-                        )
-
-                        // App update — closes the menu, opens the modal
-                        SheetMenuItem(
-                            title = "App update",
-                            subtitle = "Check for new versions",
-                            icon = Icons.Default.SystemUpdate,
-                            active = false,
-                            onClick = {
-                                closeMenuAndGo(null) { showUpdate = true }
-                            }
-                        )
                     }
                 }
             }

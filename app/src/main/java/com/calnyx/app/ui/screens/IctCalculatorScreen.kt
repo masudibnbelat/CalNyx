@@ -1,15 +1,11 @@
+// FILE: app/src/main/java/com/calnyx/app/ui/screens/IctCalculatorScreen.kt
 package com.calnyx.app.ui.screens
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -28,7 +24,6 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
@@ -48,7 +43,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
@@ -394,8 +388,19 @@ fun IctCalculatorScreen(
     val expressionDisplay = remember(expression) {
         formatIctExpression(expression).ifEmpty { "0" }
     }
+    // The answer shows in ONE place only: while an expression is
+    // being typed it lives in the preview line, but once "=" has
+    // chained the result back into the expression line (or the
+    // user has typed a lone number) the preview would just repeat
+    // the same value — so it falls back to the placeholder.
+    val isLoneNumber = expression.isNotEmpty() &&
+            expression.removePrefix("-").all { it.isLetterOrDigit() || it == '.' }
     val resultDisplay = when (val e = eval) {
-        is IctEval.Value -> (if (e.exact) "= " else "≈ ") + formatIctResult(e.raw, base)
+        is IctEval.Value -> if (isLoneNumber) {
+            "—"
+        } else {
+            (if (e.exact) "= " else "≈ ") + formatIctResult(e.raw, base)
+        }
         IctEval.DivZero -> "Can't divide by 0"
         IctEval.None -> "—"
     }
@@ -435,27 +440,6 @@ fun IctCalculatorScreen(
             caretOn = !caretOn
         }
     }
-
-    // Slow aurora drift behind everything (Converter v4 language).
-    val drift = rememberInfiniteTransition(label = "ictDrift")
-    val driftX by drift.animateFloat(
-        initialValue = -26f,
-        targetValue = 26f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 9000, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "ictDriftX"
-    )
-    val driftY by drift.animateFloat(
-        initialValue = 18f,
-        targetValue = -18f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 11000, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "ictDriftY"
-    )
 
     fun switchBase(newBase: IctBase) {
         if (newBase == base) return
@@ -585,28 +569,10 @@ fun IctCalculatorScreen(
                 .fillMaxSize()
                 .background(colors.background)
         ) {
-            // Aurora blobs
-            Box(
-                modifier = Modifier
-                    .offset(x = driftX.dp - 70.dp, y = 30.dp + driftY.dp)
-                    .size(230.dp)
-                    .clip(CircleShape)
-                    .background(colors.primary.copy(alpha = 0.30f))
-                    .blur(64.dp)
-            )
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .offset(x = 60.dp - driftX.dp, y = (-40).dp - driftY.dp)
-                    .size(260.dp)
-                    .clip(CircleShape)
-                    .background(colors.tertiary.copy(alpha = 0.26f))
-                    .blur(72.dp)
-            )
-
-            // LAYOUT by percentage: display card 48%, keypad 52%.
+            // LAYOUT by percentage: display card 44%, keypad 56%.
             // Inside the card there is NO dead spacer any more —
             // the display panel fills everything under the chips.
+            // Background is the plain theme colour — no effects.
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -621,20 +587,16 @@ fun IctCalculatorScreen(
                             text = "ICT Calculator",
                             fontSize = 22.sp,
                             fontWeight = FontWeight.Bold,
-                            color = colors.onBackground
-                        )
-                        Text(
-                            text = "Arithmetic in binary · octal · decimal · hex",
-                            fontSize = 12.sp,
-                            color = colors.onSurfaceVariant
+                            color = colors.onBackground,
+                            modifier = Modifier.padding(top = 12.dp)
                         )
                     }
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // ===== 48% — glass card: base chips + FULL display panel
-                IctAnimatedIn(modifier = Modifier.weight(0.48f), delayMs = 90) {
+                // ===== 44% — glass card: base chips + FULL display panel
+                IctAnimatedIn(modifier = Modifier.weight(0.44f), delayMs = 90) {
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
@@ -685,8 +647,8 @@ fun IctCalculatorScreen(
                         Spacer(modifier = Modifier.height(12.dp))
 
                         // Display panel: fills ALL the remaining
-                        // card height. Expression + result are
-                        // centred inside it, big.
+                        // card height. Expression + result sit at
+                        // its top, a little below the panel edge.
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -698,8 +660,8 @@ fun IctCalculatorScreen(
                                     color = Color.White.copy(alpha = 0.06f),
                                     shape = RoundedCornerShape(20.dp)
                                 )
-                                .padding(horizontal = 14.dp, vertical = 12.dp),
-                            verticalArrangement = Arrangement.Center
+                                .padding(start = 14.dp, end = 14.dp, top = 16.dp, bottom = 12.dp),
+                            verticalArrangement = Arrangement.Top
                         ) {
                             // Expression — big, single line, scrollable,
                             // with the typing pulse
@@ -831,11 +793,11 @@ fun IctCalculatorScreen(
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                // ===== 52% — keypad. Only possible keys are active:
+                // ===== 56% — keypad. Only possible keys are active:
                 // digits outside the base, operators with nowhere
                 // legal to go, and "=" for an impossible or
                 // incomplete expression all stay dim and dead.
-                IctAnimatedIn(modifier = Modifier.weight(0.52f), delayMs = 180) {
+                IctAnimatedIn(modifier = Modifier.weight(0.56f), delayMs = 180) {
                     Column(
                         modifier = Modifier.fillMaxSize(),
                         verticalArrangement = Arrangement.spacedBy(9.dp)

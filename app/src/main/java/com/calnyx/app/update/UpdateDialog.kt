@@ -22,7 +22,6 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -66,7 +65,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -85,9 +83,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
 import java.util.Locale
-import kotlin.math.cos
 import kotlin.math.roundToInt
-import kotlin.math.sin
 
 private sealed interface UpdateUiState {
     object Checking : UpdateUiState
@@ -98,12 +94,12 @@ private sealed interface UpdateUiState {
     data class Failed(val message: String) : UpdateUiState
 }
 
-// V3: a floating glass card, not a bottom sheet. An aurora-gradient
-// hero with rotating orbit rings and drifting particles lives at
-// the top; its centre morphs per state (bouncing icon, self-drawing
-// check + confetti, gradient progress ring, shaking error). The body
-// below staggers in piece by piece and the primary button carries a
-// shimmer sweep, so something is always visibly moving.
+// V4: simple modern. No hero band, no aurora, no particles — one
+// clean card. A circular status badge (or a plain progress ring
+// while downloading) sits at the top and morphs with the state;
+// title, subtitle and one solid primary button follow. The motion
+// that stays is the motion that reads: the card springs in, the
+// badge pops, the check draws itself, states cross-fade.
 @Composable
 fun UpdateDialog(onDismiss: () -> Unit) {
     val context = LocalContext.current
@@ -147,225 +143,260 @@ fun UpdateDialog(onDismiss: () -> Unit) {
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
         Surface(
-            shape = RoundedCornerShape(32.dp),
+            shape = RoundedCornerShape(28.dp),
             color = MaterialTheme.colorScheme.surface,
             contentColor = MaterialTheme.colorScheme.onSurface,
             tonalElevation = 6.dp,
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 22.dp)
+                .padding(horizontal = 24.dp)
                 .graphicsLayer {
                     val e = entry.value
-                    scaleX = 0.86f + 0.14f * e
-                    scaleY = 0.86f + 0.14f * e
+                    scaleX = 0.9f + 0.1f * e
+                    scaleY = 0.9f + 0.1f * e
                     alpha = e
-                    translationY = (1f - e) * 90f
+                    translationY = (1f - e) * 60f
                 }
         ) {
             Box(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Hero(state = state)
-
-                    AnimatedContent(
-                        targetState = state,
-                        contentKey = { it.javaClass },
-                        transitionSpec = {
-                            (fadeIn(
-                                tween(durationMillis = 320, easing = FastOutSlowInEasing)
-                            ) + scaleIn(
-                                tween(durationMillis = 320, easing = FastOutSlowInEasing),
-                                initialScale = 0.96f
-                            )) togetherWith (fadeOut(
-                                tween(durationMillis = 150, easing = LinearEasing)
-                            ) + scaleOut(
-                                tween(durationMillis = 150, easing = LinearEasing),
-                                targetScale = 0.98f
-                            ))
-                        },
-                        label = "updateBody",
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 24.dp)
-                            .padding(top = 20.dp, bottom = 24.dp)
-                    ) { s ->
-                        Column(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            when (s) {
-                                UpdateUiState.Checking -> {
-                                    FadeSlideIn(delayMillis = 0) {
-                                        StateTitle("Checking for updates")
-                                    }
-                                    FadeSlideIn(delayMillis = 70) {
-                                        StateSubtitle("Looking on GitHub for a newer CalNyx…")
-                                    }
-                                    FadeSlideIn(delayMillis = 140) {
-                                        BouncingDots()
-                                    }
+                AnimatedContent(
+                    targetState = state,
+                    contentKey = { it.javaClass },
+                    transitionSpec = {
+                        (fadeIn(
+                            tween(durationMillis = 300, easing = FastOutSlowInEasing)
+                        ) + scaleIn(
+                            tween(durationMillis = 300, easing = FastOutSlowInEasing),
+                            initialScale = 0.97f
+                        )) togetherWith (fadeOut(
+                            tween(durationMillis = 140, easing = LinearEasing)
+                        ) + scaleOut(
+                            tween(durationMillis = 140, easing = LinearEasing),
+                            targetScale = 0.98f
+                        ))
+                    },
+                    label = "updateContent",
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 24.dp)
+                        .padding(top = 30.dp, bottom = 24.dp)
+                ) { s ->
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        when (s) {
+                            UpdateUiState.Checking -> {
+                                StatusBadge(
+                                    container = MaterialTheme.colorScheme.primaryContainer,
+                                    pulse = true
+                                ) {
+                                    Icon(
+                                        Icons.Default.SystemUpdate,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(36.dp),
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
                                 }
-
-                                UpdateUiState.UpToDate -> {
-                                    FadeSlideIn(delayMillis = 0) {
-                                        StateTitle("You're up to date")
-                                    }
-                                    FadeSlideIn(delayMillis = 70) {
-                                        StateSubtitle("CalNyx v$current is the latest version")
-                                    }
-                                    Spacer(modifier = Modifier.height(22.dp))
-                                    FadeSlideIn(delayMillis = 150) {
-                                        GhostButton("Close", onDismiss)
-                                    }
+                                Spacer(modifier = Modifier.height(18.dp))
+                                FadeSlideIn(delayMillis = 0) {
+                                    StateTitle("Checking for updates")
                                 }
+                                FadeSlideIn(delayMillis = 70) {
+                                    StateSubtitle("Looking on GitHub for a newer CalNyx…")
+                                }
+                                FadeSlideIn(delayMillis = 140) {
+                                    BouncingDots()
+                                }
+                            }
 
-                                is UpdateUiState.Available -> {
-                                    FadeSlideIn(delayMillis = 0) {
-                                        StateTitle("Update available")
-                                    }
+                            UpdateUiState.UpToDate -> {
+                                StatusBadge(
+                                    container = MaterialTheme.colorScheme.tertiaryContainer,
+                                ) {
+                                    AnimatedCheck(MaterialTheme.colorScheme.tertiary)
+                                }
+                                Spacer(modifier = Modifier.height(18.dp))
+                                FadeSlideIn(delayMillis = 0) {
+                                    StateTitle("You're up to date")
+                                }
+                                FadeSlideIn(delayMillis = 70) {
+                                    StateSubtitle("CalNyx v$current is the latest version")
+                                }
+                                Spacer(modifier = Modifier.height(22.dp))
+                                FadeSlideIn(delayMillis = 150) {
+                                    GhostButton("Close", onDismiss)
+                                }
+                            }
+
+                            is UpdateUiState.Available -> {
+                                StatusBadge(
+                                    container = MaterialTheme.colorScheme.primaryContainer,
+                                ) {
+                                    Icon(
+                                        Icons.Default.SystemUpdate,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(36.dp),
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(18.dp))
+                                FadeSlideIn(delayMillis = 0) {
+                                    StateTitle("Update available")
+                                }
+                                Spacer(modifier = Modifier.height(12.dp))
+                                FadeSlideIn(delayMillis = 80) {
+                                    VersionChips(current = current, new = s.info.version)
+                                }
+                                if (s.info.sizeBytes > 0) {
                                     Spacer(modifier = Modifier.height(12.dp))
-                                    FadeSlideIn(delayMillis = 80) {
-                                        VersionChips(current = current, new = s.info.version)
+                                    FadeSlideIn(delayMillis = 140) {
+                                        SizePill(s.info.sizeBytes)
                                     }
-                                    if (s.info.sizeBytes > 0) {
-                                        Spacer(modifier = Modifier.height(12.dp))
-                                        FadeSlideIn(delayMillis = 140) {
-                                            SizePill(s.info.sizeBytes)
+                                }
+                                if (s.info.notes.isNotEmpty()) {
+                                    Spacer(modifier = Modifier.height(14.dp))
+                                    FadeSlideIn(delayMillis = 200) {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clip(RoundedCornerShape(16.dp))
+                                                .background(MaterialTheme.colorScheme.surfaceVariant)
+                                                .padding(14.dp)
+                                        ) {
+                                            Text(
+                                                text = s.info.notes,
+                                                fontSize = 13.sp,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                maxLines = 8,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
                                         }
                                     }
-                                    if (s.info.notes.isNotEmpty()) {
-                                        Spacer(modifier = Modifier.height(14.dp))
-                                        FadeSlideIn(delayMillis = 200) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .clip(RoundedCornerShape(16.dp))
-                                                    .background(MaterialTheme.colorScheme.surfaceVariant)
-                                                    .padding(14.dp)
-                                            ) {
-                                                Text(
-                                                    text = s.info.notes,
-                                                    fontSize = 13.sp,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                    maxLines = 8,
-                                                    overflow = TextOverflow.Ellipsis
+                                }
+                                Spacer(modifier = Modifier.height(22.dp))
+                                FadeSlideIn(delayMillis = 270) {
+                                    PrimaryButton(
+                                        text = "Download update",
+                                        icon = Icons.Default.Download
+                                    ) {
+                                        state = UpdateUiState.Downloading(s.info, 0f)
+                                        scope.launch {
+                                            try {
+                                                val file = AppUpdateManager.downloadApk(
+                                                    context,
+                                                    s.info
+                                                ) { progress ->
+                                                    state = UpdateUiState.Downloading(
+                                                        s.info,
+                                                        progress
+                                                    )
+                                                }
+                                                state = UpdateUiState.Ready(s.info, file)
+                                            } catch (e: Exception) {
+                                                state = UpdateUiState.Failed(
+                                                    e.message ?: "Download failed"
                                                 )
                                             }
                                         }
                                     }
-                                    Spacer(modifier = Modifier.height(22.dp))
-                                    FadeSlideIn(delayMillis = 270) {
-                                        GradientButton(
-                                            text = "Download update",
-                                            icon = Icons.Default.Download
-                                        ) {
-                                            state = UpdateUiState.Downloading(s.info, 0f)
-                                            scope.launch {
-                                                try {
-                                                    val file = AppUpdateManager.downloadApk(
-                                                        context,
-                                                        s.info
-                                                    ) { progress ->
-                                                        state = UpdateUiState.Downloading(
-                                                            s.info,
-                                                            progress
-                                                        )
-                                                    }
-                                                    state = UpdateUiState.Ready(s.info, file)
-                                                } catch (e: Exception) {
-                                                    state = UpdateUiState.Failed(
-                                                        e.message ?: "Download failed"
-                                                    )
-                                                }
-                                            }
-                                        }
-                                    }
-                                    FadeSlideIn(delayMillis = 330) {
-                                        TextButton(onClick = onDismiss) {
-                                            Text(
-                                                text = "Later",
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                        }
-                                    }
                                 }
-
-                                is UpdateUiState.Downloading -> {
-                                    FadeSlideIn(delayMillis = 0) {
-                                        StateTitle("Downloading update")
-                                    }
-                                    FadeSlideIn(delayMillis = 70) {
-                                        StateSubtitle(
-                                            if (s.info.sizeBytes > 0) {
-                                                "${formatMb(s.progress.toDouble() * s.info.sizeBytes.toDouble())} MB" +
-                                                        " of ${formatMb(s.info.sizeBytes.toDouble())} MB"
-                                            } else {
-                                                "Keep the app open until it finishes…"
-                                            }
-                                        )
-                                    }
-                                    Spacer(modifier = Modifier.height(16.dp))
-                                    FadeSlideIn(delayMillis = 140) {
-                                        GradientProgressBar(progress = s.progress)
-                                    }
-                                }
-
-                                is UpdateUiState.Ready -> {
-                                    FadeSlideIn(delayMillis = 0) {
-                                        StateTitle("Ready to install")
-                                    }
-                                    FadeSlideIn(delayMillis = 70) {
-                                        StateSubtitle("CalNyx v${s.info.version} has been downloaded")
-                                    }
-                                    Spacer(modifier = Modifier.height(22.dp))
-                                    FadeSlideIn(delayMillis = 150) {
-                                        GradientButton(
-                                            text = "Install",
-                                            icon = Icons.Default.Check
-                                        ) {
-                                            AppUpdateManager.installApk(context, s.file)
-                                        }
-                                    }
-                                    FadeSlideIn(delayMillis = 210) {
+                                FadeSlideIn(delayMillis = 330) {
+                                    TextButton(onClick = onDismiss) {
                                         Text(
-                                            text = "If Android asks, allow \"Install unknown apps\" " +
-                                                    "for CalNyx, then tap Install again.",
-                                            fontSize = 12.sp,
-                                            textAlign = TextAlign.Center,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            modifier = Modifier.padding(top = 12.dp)
+                                            text = "Later",
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
                                     }
-                                    FadeSlideIn(delayMillis = 260) {
-                                        TextButton(onClick = onDismiss) {
-                                            Text(
-                                                text = "Later",
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
+                                }
+                            }
+
+                            is UpdateUiState.Downloading -> {
+                                ProgressRing(
+                                    progress = s.progress,
+                                    version = s.info.version,
+                                    accent = MaterialTheme.colorScheme.primary
+                                )
+                                Spacer(modifier = Modifier.height(18.dp))
+                                FadeSlideIn(delayMillis = 0) {
+                                    StateTitle("Downloading update")
+                                }
+                                FadeSlideIn(delayMillis = 70) {
+                                    StateSubtitle(
+                                        if (s.info.sizeBytes > 0) {
+                                            "${formatMb(s.progress.toDouble() * s.info.sizeBytes.toDouble())} MB" +
+                                                    " of ${formatMb(s.info.sizeBytes.toDouble())} MB"
+                                        } else {
+                                            "Keep the app open until it finishes…"
                                         }
+                                    )
+                                }
+                            }
+
+                            is UpdateUiState.Ready -> {
+                                StatusBadge(
+                                    container = MaterialTheme.colorScheme.tertiaryContainer,
+                                ) {
+                                    AnimatedCheck(MaterialTheme.colorScheme.tertiary)
+                                }
+                                Spacer(modifier = Modifier.height(18.dp))
+                                FadeSlideIn(delayMillis = 0) {
+                                    StateTitle("Ready to install")
+                                }
+                                FadeSlideIn(delayMillis = 70) {
+                                    StateSubtitle("CalNyx v${s.info.version} has been downloaded")
+                                }
+                                Spacer(modifier = Modifier.height(22.dp))
+                                FadeSlideIn(delayMillis = 150) {
+                                    PrimaryButton(
+                                        text = "Install",
+                                        icon = Icons.Default.Check
+                                    ) {
+                                        AppUpdateManager.installApk(context, s.file)
                                     }
                                 }
+                                FadeSlideIn(delayMillis = 210) {
+                                    Text(
+                                        text = "If Android asks, allow \"Install unknown apps\" " +
+                                                "for CalNyx, then tap Install again.",
+                                        fontSize = 12.sp,
+                                        textAlign = TextAlign.Center,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(top = 12.dp)
+                                    )
+                                }
+                                FadeSlideIn(delayMillis = 260) {
+                                    TextButton(onClick = onDismiss) {
+                                        Text(
+                                            text = "Later",
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                            }
 
-                                is UpdateUiState.Failed -> {
-                                    FadeSlideIn(delayMillis = 0) {
-                                        StateTitle("Couldn't check for updates")
-                                    }
-                                    FadeSlideIn(delayMillis = 70) {
-                                        StateSubtitle(s.message)
-                                    }
-                                    Spacer(modifier = Modifier.height(22.dp))
-                                    FadeSlideIn(delayMillis = 150) {
-                                        GradientButton(
-                                            text = "Retry",
-                                            icon = Icons.Default.Refresh
-                                        ) { check() }
-                                    }
-                                    FadeSlideIn(delayMillis = 210) {
-                                        TextButton(onClick = onDismiss) {
-                                            Text(
-                                                text = "Close",
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                        }
+                            is UpdateUiState.Failed -> {
+                                ErrorBadge()
+                                Spacer(modifier = Modifier.height(18.dp))
+                                FadeSlideIn(delayMillis = 0) {
+                                    StateTitle("Couldn't check for updates")
+                                }
+                                FadeSlideIn(delayMillis = 70) {
+                                    StateSubtitle(s.message)
+                                }
+                                Spacer(modifier = Modifier.height(22.dp))
+                                FadeSlideIn(delayMillis = 150) {
+                                    PrimaryButton(
+                                        text = "Retry",
+                                        icon = Icons.Default.Refresh
+                                    ) { check() }
+                                }
+                                FadeSlideIn(delayMillis = 210) {
+                                    TextButton(onClick = onDismiss) {
+                                        Text(
+                                            text = "Close",
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
                                     }
                                 }
                             }
@@ -377,11 +408,11 @@ fun UpdateDialog(onDismiss: () -> Unit) {
                     onClick = onDismiss,
                     modifier = Modifier
                         .align(Alignment.TopEnd)
-                        .padding(12.dp)
+                        .padding(10.dp)
                         .size(34.dp)
                         .clip(CircleShape)
                         .background(
-                            MaterialTheme.colorScheme.surface.copy(alpha = 0.75f)
+                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f)
                         )
                 ) {
                     Icon(
@@ -396,228 +427,90 @@ fun UpdateDialog(onDismiss: () -> Unit) {
     }
 }
 
-// The animated top zone: drifting aurora blobs + particles + orbit
-// rings behind a centre that morphs with the state. The whole hero
-// tint cross-fades when the state family changes.
+// One clean circular badge: tinted container, an icon or the
+// animated check inside. It pops in with a spring, cross-fades its
+// colour when the state family changes, and (while checking)
+// breathes gently so the wait feels alive without being busy.
 @Composable
-private fun Hero(state: UpdateUiState) {
-    val isError = state is UpdateUiState.Failed
-    val isSuccess = state is UpdateUiState.UpToDate || state is UpdateUiState.Ready
-    val heroTarget = when {
-        isError -> MaterialTheme.colorScheme.errorContainer
-        isSuccess -> MaterialTheme.colorScheme.tertiaryContainer
-        else -> MaterialTheme.colorScheme.primaryContainer
-    }
-    val heroColor by animateColorAsState(
-        targetValue = heroTarget,
-        animationSpec = tween(durationMillis = 600, easing = FastOutSlowInEasing),
-        label = "heroColor"
+private fun StatusBadge(
+    container: Color,
+    pulse: Boolean = false,
+    content: @Composable () -> Unit
+) {
+    val bg by animateColorAsState(
+        targetValue = container,
+        animationSpec = tween(durationMillis = 450, easing = FastOutSlowInEasing),
+        label = "badgeBg"
     )
-    val accent = when {
-        isError -> MaterialTheme.colorScheme.error
-        isSuccess -> MaterialTheme.colorScheme.tertiary
-        else -> MaterialTheme.colorScheme.primary
-    }
-
-    val drift = rememberInfiniteTransition(label = "heroDrift")
-    val phase by drift.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 7000, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "heroPhase"
-    )
-
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(188.dp)
-            .background(
-                Brush.linearGradient(
-                    colors = listOf(
-                        heroColor,
-                        MaterialTheme.colorScheme.secondaryContainer,
-                        heroColor
-                    ),
-                    start = Offset.Zero,
-                    end = Offset.Infinite
-                )
-            ),
-        contentAlignment = Alignment.Center
-    ) {
-        // Drifting aurora blobs
-        Box(
-            modifier = Modifier
-                .size(190.dp)
-                .offset {
-                    IntOffset(
-                        (cos(phase * 6.283f) * 90f).roundToInt() - 130,
-                        (sin(phase * 6.283f) * 34f).roundToInt() - 60
-                    )
-                }
-                .clip(CircleShape)
-                .background(accent.copy(alpha = 0.25f))
-        )
-        Box(
-            modifier = Modifier
-                .size(150.dp)
-                .offset {
-                    IntOffset(
-                        (sin(phase * 6.283f + 2.1f) * 100f).roundToInt() + 120,
-                        (cos(phase * 6.283f + 2.1f) * 30f).roundToInt() + 55
-                    )
-                }
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.22f))
-        )
-
-        // Floating particles
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val spots = listOf(
-                0.12f to 0.28f, 0.24f to 0.72f, 0.82f to 0.24f,
-                0.90f to 0.66f, 0.68f to 0.84f, 0.38f to 0.16f
-            )
-            spots.forEachIndexed { i, (fx, fy) ->
-                val wobble = sin(phase * 6.283f + i * 1.7f) * 9f
-                drawCircle(
-                    color = accent.copy(alpha = 0.35f),
-                    radius = 3.5f + (i % 3) * 1.6f,
-                    center = Offset(size.width * fx, size.height * fy + wobble)
-                )
-            }
-        }
-
-        // Rotating orbit rings
-        Canvas(modifier = Modifier.size(158.dp)) {
-            val ringStroke = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round)
-            drawCircle(
-                color = accent.copy(alpha = 0.16f),
-                style = Stroke(width = 2.dp.toPx())
-            )
-            drawArc(
-                color = accent,
-                startAngle = phase * 360f,
-                sweepAngle = 95f,
-                useCenter = false,
-                style = ringStroke
-            )
-            drawArc(
-                color = accent.copy(alpha = 0.55f),
-                startAngle = -phase * 360f + 140f,
-                sweepAngle = 55f,
-                useCenter = false,
-                topLeft = Offset(14.dp.toPx(), 14.dp.toPx()),
-                size = androidx.compose.ui.geometry.Size(
-                    size.width - 28.dp.toPx(),
-                    size.height - 28.dp.toPx()
-                ),
-                style = ringStroke
-            )
-        }
-
-        // Morphing centre
-        AnimatedContent(
-            targetState = state,
-            contentKey = { it.javaClass },
-            transitionSpec = {
-                (fadeIn(
-                    tween(durationMillis = 300, easing = FastOutSlowInEasing)
-                ) + scaleIn(
-                    tween(durationMillis = 300, easing = FastOutSlowInEasing),
-                    initialScale = 0.7f
-                )) togetherWith (fadeOut(
-                    tween(durationMillis = 140, easing = LinearEasing)
-                ) + scaleOut(
-                    tween(durationMillis = 140, easing = LinearEasing),
-                    targetScale = 0.8f
-                ))
-            },
-            label = "heroCentre"
-        ) { s ->
-            Box(contentAlignment = Alignment.Center) {
-                when (s) {
-                    UpdateUiState.Checking -> CentreBadge(accent) { BouncingIcon(accent) }
-                    is UpdateUiState.Available -> CentreBadge(accent) {
-                        Icon(
-                            Icons.Default.SystemUpdate,
-                            contentDescription = null,
-                            modifier = Modifier.size(40.dp),
-                            tint = accent
-                        )
-                    }
-
-                    UpdateUiState.UpToDate, is UpdateUiState.Ready -> {
-                        ConfettiBurst(accent)
-                        CentreBadge(accent) { AnimatedCheck(accent) }
-                    }
-
-                    is UpdateUiState.Downloading -> GradientProgressRing(
-                        progress = s.progress,
-                        version = s.info.version,
-                        accent = accent
-                    )
-
-                    is UpdateUiState.Failed -> ShakeBadge()
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun CentreBadge(accent: Color, content: @Composable () -> Unit) {
-    val scale = remember { Animatable(0f) }
+    val pop = remember { Animatable(0.6f) }
     LaunchedEffect(Unit) {
-        scale.animateTo(
+        pop.animateTo(
             1f,
             animationSpec = spring(
-                dampingRatio = 0.5f,
+                dampingRatio = 0.55f,
                 stiffness = Spring.StiffnessMedium
             )
         )
     }
+    val pulseTransition = rememberInfiniteTransition(label = "badgePulse")
+    val pulseScale by pulseTransition.animateFloat(
+        initialValue = 1f,
+        targetValue = 1.05f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 900, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "badgePulseScale"
+    )
+    val scale = pop.value * if (pulse) pulseScale else 1f
     Box(
         modifier = Modifier
-            .size(88.dp)
+            .size(76.dp)
             .graphicsLayer {
-                scaleX = scale.value
-                scaleY = scale.value
+                scaleX = scale
+                scaleY = scale
             }
             .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.surface)
-            .border(
-                width = 1.5.dp,
-                color = accent.copy(alpha = 0.35f),
-                shape = CircleShape
-            ),
+            .background(bg),
         contentAlignment = Alignment.Center
     ) {
         content()
     }
 }
 
+// The error badge: same clean circle, one short shake on entry.
 @Composable
-private fun BouncingIcon(accent: Color) {
-    val bounce = rememberInfiniteTransition(label = "iconBounce")
-    val y by bounce.animateFloat(
-        initialValue = -5f,
-        targetValue = 5f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 620, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "iconBounceY"
-    )
-    Icon(
-        Icons.Default.SystemUpdate,
-        contentDescription = null,
+private fun ErrorBadge() {
+    val offsetX = remember { Animatable(0f) }
+    LaunchedEffect(Unit) {
+        offsetX.animateTo(
+            0f,
+            animationSpec = keyframes {
+                durationMillis = 480
+                0f at 0
+                (-14f) at 70
+                14f at 150
+                (-8f) at 240
+                8f at 330
+                0f at 480
+            }
+        )
+    }
+    Box(
         modifier = Modifier
-            .size(40.dp)
-            .offset { IntOffset(0, y.roundToInt()) },
-        tint = accent
-    )
+            .size(76.dp)
+            .offset { IntOffset(offsetX.value.roundToInt(), 0) }
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.errorContainer),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            Icons.Default.ErrorOutline,
+            contentDescription = null,
+            modifier = Modifier.size(36.dp),
+            tint = MaterialTheme.colorScheme.error
+        )
+    }
 }
 
 // A checkmark that draws itself, stroke by stroke.
@@ -631,7 +524,7 @@ private fun AnimatedCheck(accent: Color) {
             animationSpec = tween(durationMillis = 520, easing = FastOutSlowInEasing)
         )
     }
-    Canvas(modifier = Modifier.size(44.dp)) {
+    Canvas(modifier = Modifier.size(40.dp)) {
         val start = Offset(size.width * 0.26f, size.height * 0.53f)
         val mid = Offset(size.width * 0.44f, size.height * 0.70f)
         val end = Offset(size.width * 0.76f, size.height * 0.32f)
@@ -671,62 +564,26 @@ private fun AnimatedCheck(accent: Color) {
     }
 }
 
-// One-shot particle burst behind the success check.
+// Download progress: one plain ring in the accent colour, the
+// percentage in the middle. This is the only progress indicator —
+// the MB count below it is text, not a second bar.
 @Composable
-private fun ConfettiBurst(accent: Color) {
-    val burst = remember { Animatable(0f) }
-    LaunchedEffect(Unit) {
-        delay(120)
-        burst.animateTo(
-            1f,
-            animationSpec = tween(durationMillis = 750, easing = FastOutSlowInEasing)
-        )
-    }
-    val secondary = MaterialTheme.colorScheme.secondary
-    val tertiary = MaterialTheme.colorScheme.tertiary
-    Canvas(modifier = Modifier.size(170.dp)) {
-        val colors = listOf(accent, secondary, tertiary)
-        val v = burst.value
-        if (v <= 0f || v >= 1f) return@Canvas
-        for (i in 0 until 12) {
-            val angle = (i * 30f) * (3.14159f / 180f)
-            val dist = v * 62.dp.toPx()
-            drawCircle(
-                color = colors[i % 3].copy(alpha = 1f - v),
-                radius = (1f - v) * 5.dp.toPx() + 1.5f,
-                center = Offset(
-                    center.x + cos(angle) * dist,
-                    center.y + sin(angle) * dist
-                )
-            )
-        }
-    }
-}
-
-// Download ring with a gradient sweep stroke and the % in the middle.
-@Composable
-private fun GradientProgressRing(progress: Float, version: String, accent: Color) {
+private fun ProgressRing(progress: Float, version: String, accent: Color) {
     val animated by animateFloatAsState(
         targetValue = progress,
         animationSpec = tween(durationMillis = 250, easing = FastOutSlowInEasing),
         label = "ringProgress"
     )
-    val track = MaterialTheme.colorScheme.surface
+    val track = MaterialTheme.colorScheme.surfaceVariant
     Box(
-        modifier = Modifier.size(126.dp),
+        modifier = Modifier.size(104.dp),
         contentAlignment = Alignment.Center
     ) {
         Canvas(modifier = Modifier.fillMaxSize()) {
-            val stroke = Stroke(width = 10.dp.toPx(), cap = StrokeCap.Round)
-            drawCircle(color = track.copy(alpha = 0.85f), style = stroke)
+            val stroke = Stroke(width = 9.dp.toPx(), cap = StrokeCap.Round)
+            drawCircle(color = track, style = stroke)
             drawArc(
-                brush = Brush.sweepGradient(
-                    listOf(
-                        accent,
-                        Color(0xFFF4B8AD),
-                        accent
-                    )
-                ),
+                color = accent,
                 startAngle = -90f,
                 sweepAngle = 360f * animated.coerceIn(0f, 1f),
                 useCenter = false,
@@ -736,7 +593,7 @@ private fun GradientProgressRing(progress: Float, version: String, accent: Color
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
                 text = "${(animated * 100).toInt()}%",
-                fontSize = 24.sp,
+                fontSize = 22.sp,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface
             )
@@ -746,55 +603,6 @@ private fun GradientProgressRing(progress: Float, version: String, accent: Color
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-    }
-}
-
-@Composable
-private fun ShakeBadge() {
-    val offsetX = remember { Animatable(0f) }
-    LaunchedEffect(Unit) {
-        offsetX.animateTo(
-            0f,
-            animationSpec = keyframes {
-                durationMillis = 480
-                0f at 0
-                (-14f) at 70
-                14f at 150
-                (-8f) at 240
-                8f at 330
-                0f at 480
-            }
-        )
-    }
-    val pulse = rememberInfiniteTransition(label = "errorPulse")
-    val ringAlpha by pulse.animateFloat(
-        initialValue = 0.45f,
-        targetValue = 0.1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 900, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "errorPulseAlpha"
-    )
-    Box(
-        modifier = Modifier
-            .size(88.dp)
-            .offset { IntOffset(offsetX.value.roundToInt(), 0) }
-            .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.surface)
-            .border(
-                width = 2.dp,
-                color = MaterialTheme.colorScheme.error.copy(alpha = ringAlpha + 0.35f),
-                shape = CircleShape
-            ),
-        contentAlignment = Alignment.Center
-    ) {
-        Icon(
-            Icons.Default.ErrorOutline,
-            contentDescription = null,
-            modifier = Modifier.size(40.dp),
-            tint = MaterialTheme.colorScheme.error
-        )
     }
 }
 
@@ -855,42 +663,10 @@ private fun BouncingDots() {
 }
 
 @Composable
-private fun GradientProgressBar(progress: Float) {
-    val animated by animateFloatAsState(
-        targetValue = progress,
-        animationSpec = tween(durationMillis = 250, easing = FastOutSlowInEasing),
-        label = "barProgress"
-    )
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(7.dp)
-            .clip(RoundedCornerShape(percent = 50))
-            .background(MaterialTheme.colorScheme.surfaceVariant)
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth(animated.coerceIn(0f, 1f))
-                .height(7.dp)
-                .clip(RoundedCornerShape(percent = 50))
-                .background(
-                    Brush.horizontalGradient(
-                        listOf(
-                            MaterialTheme.colorScheme.primary,
-                            MaterialTheme.colorScheme.tertiary,
-                            Color(0xFFF4B8AD)
-                        )
-                    )
-                )
-        )
-    }
-}
-
-@Composable
 private fun StateTitle(text: String) {
     Text(
         text = text,
-        fontSize = 21.sp,
+        fontSize = 20.sp,
         fontWeight = FontWeight.Bold,
         textAlign = TextAlign.Center,
         color = MaterialTheme.colorScheme.onSurface
@@ -979,45 +755,27 @@ private fun SizePill(sizeBytes: Long) {
     }
 }
 
-// Primary action: gradient fill, a shimmer sweep that keeps moving,
-// and a physical press-in scale.
+// Primary action: one solid colour, rounded, with a physical
+// press-in scale. No gradients, no shimmer.
 @Composable
-private fun GradientButton(text: String, icon: ImageVector, onClick: () -> Unit) {
+private fun PrimaryButton(text: String, icon: ImageVector, onClick: () -> Unit) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     val pressScale by animateFloatAsState(
-        targetValue = if (isPressed) 0.96f else 1f,
+        targetValue = if (isPressed) 0.97f else 1f,
         animationSpec = tween(durationMillis = 120, easing = FastOutSlowInEasing),
-        label = "gradientPress"
+        label = "primaryPress"
     )
-    val shimmer = rememberInfiniteTransition(label = "btnShimmer")
-    val sweep by shimmer.animateFloat(
-        initialValue = -1f,
-        targetValue = 2f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 2400, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "btnSweep"
-    )
-    val primary = MaterialTheme.colorScheme.primary
-    val tertiary = MaterialTheme.colorScheme.tertiary
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(56.dp)
+            .height(54.dp)
             .graphicsLayer {
                 scaleX = pressScale
                 scaleY = pressScale
             }
-            .clip(RoundedCornerShape(18.dp))
-            .background(
-                Brush.linearGradient(
-                    colors = listOf(primary, tertiary, primary),
-                    start = Offset(sweep * 700f - 350f, 0f),
-                    end = Offset(sweep * 700f + 150f, 120f)
-                )
-            )
+            .clip(RoundedCornerShape(16.dp))
+            .background(MaterialTheme.colorScheme.primary)
             .clickable(
                 interactionSource = interactionSource,
                 indication = null,
