@@ -44,7 +44,10 @@ fun BusinessCalculatorScreen(
                     style = MaterialTheme.typography.headlineMedium
                 )
                 Spacer(modifier = Modifier.height(12.dp))
-                Text(
+
+
+
+                        Text(
                     "Coming soon...\n\nProfit/Loss, Discount, Markup, Tax, Percentage, Break-even",
                     textAlign = TextAlign.Center,
                     color = MaterialTheme.colorScheme.onSurfaceVariant

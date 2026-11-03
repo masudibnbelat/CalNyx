@@ -13,22 +13,27 @@ plugins {
 // Before a release build, `git describe --tags --abbrev=0` must
 // print the intended tag. If git or a tag is missing, the build
 // falls back to 1.0.0 so local builds never break.
-fun gitText(vararg args: String): String {
-    return try {
-        val process = ProcessBuilder("git", *args)
-            .directory(rootDir)
-            .redirectError(ProcessBuilder.Redirect.DISCARD)
-            .start()
-        val text = process.inputStream.bufferedReader().readText().trim()
+fun gitText(vararg args: String): String =
+    try {
+        val process =
+            ProcessBuilder("git", *args)
+                .directory(rootDir)
+                .redirectError(ProcessBuilder.Redirect.DISCARD)
+                .start()
+        val text =
+            process.inputStream
+                .bufferedReader()
+                .readText()
+                .trim()
         if (process.waitFor() == 0) text else ""
     } catch (e: Exception) {
         ""
     }
-}
 
-val appVersionName: String = gitText("describe", "--tags", "--abbrev=0")
-    .removePrefix("v")
-    .ifEmpty { "1.0.0" }
+val appVersionName: String =
+    gitText("describe", "--tags", "--abbrev=0")
+        .removePrefix("v")
+        .ifEmpty { "1.0.0" }
 val appVersionCode: Int = gitText("rev-list", "--count", "HEAD").toIntOrNull() ?: 1
 
 android {
@@ -50,13 +55,13 @@ android {
 
     buildTypes {
         release {
-             signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("debug")
             isMinifyEnabled = true
             isShrinkResources = true
 
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
+                "proguard-rules.pro",
             )
         }
     }

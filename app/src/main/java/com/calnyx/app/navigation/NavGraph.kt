@@ -15,13 +15,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Calculate
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Functions
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.LightMode
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.NoteAlt
 import androidx.compose.material.icons.filled.Numbers
@@ -48,6 +48,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -65,39 +67,73 @@ import com.calnyx.app.ui.screens.NormalCalculatorScreen
 import com.calnyx.app.ui.screens.NotepadCalculatorScreen
 import com.calnyx.app.ui.screens.NumberSystemCalculatorScreen
 import com.calnyx.app.ui.screens.ScientificCalculatorScreen
+import com.calnyx.app.ui.screens.VaultScreen
+import com.calnyx.app.ui.screens.VaultSetupScreen
 import com.calnyx.app.update.UpdateDialog
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
-sealed class Screen(val route: String, val title: String, val subtitle: String, val icon: ImageVector) {
+sealed class Screen(
+        val route: String,
+        val title: String,
+        val subtitle: String,
+        val icon: ImageVector
+) {
     object Normal : Screen("normal", "Normal", "Everyday calculator", Icons.Default.Calculate)
-    object Scientific : Screen("scientific", "Scientific", "Advanced functions", Icons.Default.Functions)
+    object Scientific :
+            Screen("scientific", "Scientific", "Advanced functions", Icons.Default.Functions)
     object Notepad : Screen("notepad", "Notepad", "Notes with calculations", Icons.Default.NoteAlt)
-    object CalTape : Screen("caltape", "CalTape", "Tape with sheets & totals", Icons.Default.ReceiptLong)
-    object Converter : Screen("converter", "Converter", "Length, weight, volume & more", Icons.Default.SwapHoriz)
-    object NumberSystem : Screen("numbersystem", "Number System", "Binary, decimal, octal & hex", Icons.Default.Numbers)
-    object Ict : Screen("ict", "ICT Calculator", "Binary, octal, decimal & hex arithmetic", Icons.Default.Computer)
+    object CalTape :
+            Screen("caltape", "CalTape", "Tape with sheets & totals", Icons.Default.ReceiptLong)
+    object Converter :
+            Screen(
+                    "converter",
+                    "Converter",
+                    "Length, weight, volume & more",
+                    Icons.Default.SwapHoriz
+            )
+    object NumberSystem :
+            Screen(
+                    "numbersystem",
+                    "Number System",
+                    "Binary, decimal, octal & hex",
+                    Icons.Default.Numbers
+            )
+    object Ict :
+            Screen(
+                    "ict",
+                    "ICT Calculator",
+                    "Binary, octal, decimal & hex arithmetic",
+                    Icons.Default.Computer
+            )
     object History : Screen("history", "History", "Past calculations", Icons.Default.History)
+
+    // Hidden vault — menuScreens-এ যোগ করা হয়নি, তাই মেনুতে
+    // দেখাবে না। শুধু Normal calculator-এ সিক্রেট হিসাব
+    // লিখে = চাপলেই এই রুটে যাওয়া যাবে।
+    object Vault : Screen("vault", "Vault", "Hidden space", Icons.Default.Lock)
+
+    // Setup — vault-এর মতোই মেনুতে নেই।
+    // Normal calculator-e "=" long-press করলে যাওয়া যাবে।
+    // Prothombar purono secret lagbe na, pore bodlate
+    // chaile purono secret dite hobe।
+    object VaultSetup :
+            Screen("vault_setup", "Vault Setup", "Set hidden space code", Icons.Default.Lock)
 }
 
-// Only these pages appear in the menu, and only these are remembered
-// as the "last active page". (Financial, Matrix and Business were
-// removed entirely, on the user's call.)
-val menuScreens = listOf(
-    Screen.Normal,
-    Screen.CalTape,
-    Screen.Scientific,
-    Screen.Converter,
-    Screen.NumberSystem,
-    Screen.Ict,
-)
+val menuScreens =
+        listOf(
+                Screen.Normal,
+                Screen.CalTape,
+                Screen.Scientific,
+                Screen.Converter,
+                Screen.NumberSystem,
+                Screen.Ict,
+        )
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CalNyxNavGraph(
-    darkTheme: Boolean,
-    onToggleTheme: () -> Unit
-) {
+fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
     val context = LocalContext.current
     val navStateDao = remember { NavStateDatabase.get(context).navStateDao() }
 
@@ -106,7 +142,6 @@ fun CalNyxNavGraph(
     val currentRoute = navBackStackEntry?.destination?.route
     var normalHistoryOpen by remember { mutableStateOf(false) }
 
-    // Menu bottom sheet + the app-update modal it can open
     var showMenu by remember { mutableStateOf(false) }
     var showUpdate by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -114,20 +149,17 @@ fun CalNyxNavGraph(
 
     val persistRoutes = remember { menuScreens.map { it.route }.toSet() }
 
-    // Read the saved page once; the NavHost is only created after this
-    // arrives, so a cold reopen lands directly on the last active page.
-    // A saved page that no longer exists falls back to Normal.
     var startRoute by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(Unit) {
         val saved = navStateDao.observe().first()?.route
-        startRoute = if (saved != null && saved in persistRoutes) {
-            saved
-        } else {
-            Screen.Normal.route
-        }
+        startRoute =
+                if (saved != null && saved in persistRoutes) {
+                    saved
+                } else {
+                    Screen.Normal.route
+                }
     }
 
-    // Save the page on every navigation change.
     LaunchedEffect(currentRoute) {
         val route = currentRoute ?: return@LaunchedEffect
         if (route in persistRoutes) {
@@ -141,9 +173,7 @@ fun CalNyxNavGraph(
             after()
             if (route != null && route != currentRoute) {
                 navController.navigate(route) {
-                    popUpTo(navController.graph.findStartDestination().id) {
-                        saveState = true
-                    }
+                    popUpTo(navController.graph.findStartDestination().id) { saveState = true }
                     launchSingleTop = true
                     restoreState = true
                 }
@@ -151,226 +181,218 @@ fun CalNyxNavGraph(
         }
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-    ) {
+    Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         val start = startRoute
         if (start != null) {
             NavHost(
-                navController = navController,
-                startDestination = start,
-                modifier = Modifier.fillMaxSize(),
-                enterTransition = {
-                    fadeIn(animationSpec = tween(320)) +
-                            slideInHorizontally(animationSpec = tween(320)) { it / 4 }
-                },
-                exitTransition = {
-                    fadeOut(animationSpec = tween(200)) +
-                            slideOutHorizontally(animationSpec = tween(320)) { -it / 6 }
-                },
-                popEnterTransition = {
-                    fadeIn(animationSpec = tween(320)) +
-                            slideInHorizontally(animationSpec = tween(320)) { -it / 4 }
-                },
-                popExitTransition = {
-                    fadeOut(animationSpec = tween(200)) +
-                            slideOutHorizontally(animationSpec = tween(320)) { it / 6 }
-                }
+                    navController = navController,
+                    startDestination = start,
+                    modifier = Modifier.fillMaxSize(),
+                    enterTransition = {
+                        fadeIn(animationSpec = tween(320)) +
+                                slideInHorizontally(animationSpec = tween(320)) { it / 4 }
+                    },
+                    exitTransition = {
+                        fadeOut(animationSpec = tween(200)) +
+                                slideOutHorizontally(animationSpec = tween(320)) { -it / 6 }
+                    },
+                    popEnterTransition = {
+                        fadeIn(animationSpec = tween(320)) +
+                                slideInHorizontally(animationSpec = tween(320)) { -it / 4 }
+                    },
+                    popExitTransition = {
+                        fadeOut(animationSpec = tween(200)) +
+                                slideOutHorizontally(animationSpec = tween(320)) { it / 6 }
+                    }
             ) {
                 composable(Screen.Normal.route) {
                     NormalCalculatorScreen(
-                        darkTheme = darkTheme,
-                        onToggleTheme = onToggleTheme,
-                        onOpenHistory = { navController.navigate(Screen.History.route) },
-                        onHistoryVisibilityChange = { normalHistoryOpen = it }
+                            darkTheme = darkTheme,
+                            onToggleTheme = onToggleTheme,
+                            onOpenHistory = { navController.navigate(Screen.History.route) },
+                            onHistoryVisibilityChange = { normalHistoryOpen = it },
+                            onOpenVault = { navController.navigate(Screen.Vault.route) },
+                            onOpenVaultSetup = { navController.navigate(Screen.VaultSetup.route) }
                     )
                 }
                 composable(Screen.Scientific.route) {
-                    ScientificCalculatorScreen(
-                        darkTheme = darkTheme,
-                        onToggleTheme = onToggleTheme
-                    )
+                    ScientificCalculatorScreen(darkTheme = darkTheme, onToggleTheme = onToggleTheme)
                 }
                 composable(Screen.Notepad.route) {
-                    NotepadCalculatorScreen(
-                        darkTheme = darkTheme,
-                        onToggleTheme = onToggleTheme
-                    )
+                    NotepadCalculatorScreen(darkTheme = darkTheme, onToggleTheme = onToggleTheme)
                 }
                 composable(Screen.CalTape.route) {
-                    CalTapeCalculatorScreen(
-                        darkTheme = darkTheme,
-                        onToggleTheme = onToggleTheme
-                    )
+                    CalTapeCalculatorScreen(darkTheme = darkTheme, onToggleTheme = onToggleTheme)
                 }
                 composable(Screen.Converter.route) {
-                    ConverterCalculatorScreen(
-                        darkTheme = darkTheme,
-                        onToggleTheme = onToggleTheme
-                    )
+                    ConverterCalculatorScreen(darkTheme = darkTheme, onToggleTheme = onToggleTheme)
                 }
                 composable(Screen.NumberSystem.route) {
                     NumberSystemCalculatorScreen(
-                        darkTheme = darkTheme,
-                        onToggleTheme = onToggleTheme
+                            darkTheme = darkTheme,
+                            onToggleTheme = onToggleTheme
                     )
                 }
                 composable(Screen.Ict.route) {
-                    IctCalculatorScreen(
-                        darkTheme = darkTheme,
-                        onToggleTheme = onToggleTheme
-                    )
+                    IctCalculatorScreen(darkTheme = darkTheme, onToggleTheme = onToggleTheme)
                 }
                 composable(Screen.History.route) {
-                    HistoryScreen(
-                        onBack = { navController.popBackStack() }
+                    HistoryScreen(onBack = { navController.popBackStack() })
+                }
+                composable(Screen.Vault.route) {
+                    VaultScreen(onBack = { navController.popBackStack() })
+                }
+                composable(Screen.VaultSetup.route) {
+                    VaultSetupScreen(
+                            onBack = { navController.popBackStack() },
+                            onSaved = {
+                                navController.popBackStack()
+                                navController.navigate(Screen.Vault.route)
+                            }
                     )
                 }
             }
 
-            // Floating top bar: back button on the History route, menu
-            // button on the right — both on soft circular backdrops.
-            // While the Normal calculator's history area is open (HALF
-            // or FULL), the WHOLE bar fades away completely.
+            // Compact floating top bar — 36dp buttons, কম padding
+            // Vault আর VaultSetup-এ এটা লুকানো থাকে, কারণ ওদের
+            // নিজের back বার আছে।
             AnimatedVisibility(
-                visible = !(currentRoute == Screen.Normal.route && normalHistoryOpen),
-                enter = fadeIn(animationSpec = tween(250)),
-                exit = fadeOut(animationSpec = tween(250))
+                    visible =
+                            !(currentRoute == Screen.Normal.route && normalHistoryOpen) &&
+                                    currentRoute != Screen.Vault.route &&
+                                    currentRoute != Screen.VaultSetup.route,
+                    enter = fadeIn(animationSpec = tween(250)),
+                    exit = fadeOut(animationSpec = tween(250))
             ) {
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .statusBarsPadding()
-                        .padding(horizontal = 10.dp, vertical = 6.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                        modifier =
+                                Modifier.fillMaxWidth()
+                                        .statusBarsPadding()
+                                        .padding(horizontal = 10.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                 ) {
                     when (currentRoute) {
                         Screen.History.route -> {
                             TopBarCircleButton(onClick = { navController.popBackStack() }) {
                                 Icon(
-                                    Icons.AutoMirrored.Filled.ArrowBack,
-                                    contentDescription = "Back",
-                                    tint = MaterialTheme.colorScheme.onSurface,
-                                    modifier = Modifier.size(24.dp)
+                                        Icons.AutoMirrored.Filled.ArrowBack,
+                                        contentDescription = "Back",
+                                        tint = MaterialTheme.colorScheme.onSurface,
+                                        modifier = Modifier.size(22.dp)
                                 )
                             }
                         }
-
                         else -> {
-                            Spacer(modifier = Modifier.size(42.dp))
+                            Spacer(modifier = Modifier.size(36.dp))
                         }
                     }
 
                     TopBarCircleButton(onClick = { showMenu = true }) {
                         Icon(
-                            Icons.Default.MoreVert,
-                            contentDescription = "Menu",
-                            tint = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.size(24.dp)
+                                Icons.Default.MoreVert,
+                                contentDescription = "Menu",
+                                tint = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.size(22.dp)
                         )
                     }
                 }
             }
 
-            // Menu — a simple modern bottom sheet: a brand header
-            // with two small circular icon buttons at the top right
-            // (App update, then the theme toggle), and one clean
-            // rounded row per calculator with its description.
+            // Modern menu sheet — বড় simple tile, শুধু icon + title,
+            // কোনো description নেই
             if (showMenu) {
                 ModalBottomSheet(
-                    onDismissRequest = { showMenu = false },
-                    sheetState = sheetState,
-                    shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-                    // The sheet must never melt into the app behind
-                    // it: in dark mode it sits on a clearly lighter
-                    // tone than the app background (#181119).
-                    containerColor = if (darkTheme) Color(0xFF241D25)
-                    else MaterialTheme.colorScheme.surface,
-                    contentColor = MaterialTheme.colorScheme.onSurface,
-                    dragHandle = {
-                        Box(
-                            modifier = Modifier
-                                .padding(vertical = 10.dp)
-                                .width(36.dp)
-                                .height(4.dp)
-                                .clip(RoundedCornerShape(2.dp))
-                                .background(
-                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-                                )
-                        )
-                    }
+                        onDismissRequest = { showMenu = false },
+                        sheetState = sheetState,
+                        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+                        containerColor =
+                                if (darkTheme) Color(0xFF241D25)
+                                else MaterialTheme.colorScheme.surface,
+                        contentColor = MaterialTheme.colorScheme.onSurface,
+                        dragHandle = {
+                            Box(
+                                    modifier =
+                                            Modifier.padding(vertical = 8.dp)
+                                                    .width(32.dp)
+                                                    .height(4.dp)
+                                                    .clip(RoundedCornerShape(2.dp))
+                                                    .background(
+                                                            MaterialTheme.colorScheme
+                                                                    .onSurfaceVariant.copy(
+                                                                    alpha = 0.4f
+                                                            )
+                                                    )
+                            )
+                        }
                 ) {
                     Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .navigationBarsPadding()
-                            .padding(horizontal = 16.dp)
-                            .padding(bottom = 20.dp)
+                            modifier =
+                                    Modifier.fillMaxWidth()
+                                            .navigationBarsPadding()
+                                            .padding(horizontal = 20.dp)
+                                            .padding(bottom = 20.dp)
                     ) {
-                        // Header: title on the left, theme icon at
-                        // the top right (tap to flip light / dark —
-                        // the sheet stays open)
+                        // Simple header — শুধু title আর দুটো icon button
                         Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(start = 8.dp),
-                            verticalAlignment = Alignment.Top
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = "CalNyx",
-                                    fontSize = 22.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Text(
-                                    text = "Choose a calculator",
-                                    fontSize = 13.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(top = 2.dp, bottom = 14.dp)
-                                )
-                            }
-                            // App update — same behaviour as the
-                            // old list row (sheet closes, the update
-                            // dialog opens), now just an icon here
-                            TopBarCircleButton(onClick = {
-                                closeMenuAndGo(null) { showUpdate = true }
-                            }) {
+                            Text(text = "CalNyx", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                            Spacer(modifier = Modifier.weight(1f))
+                            TopBarCircleButton(
+                                    onClick = { closeMenuAndGo(null) { showUpdate = true } }
+                            ) {
                                 Icon(
-                                    Icons.Default.Download,
-                                    contentDescription = "App update",
-                                    tint = MaterialTheme.colorScheme.onSurface,
-                                    modifier = Modifier.size(21.dp)
+                                        Icons.Default.Download,
+                                        contentDescription = "App update",
+                                        tint = MaterialTheme.colorScheme.onSurface,
+                                        modifier = Modifier.size(20.dp)
                                 )
                             }
                             Spacer(modifier = Modifier.width(8.dp))
                             TopBarCircleButton(onClick = onToggleTheme) {
                                 Icon(
-                                    if (darkTheme) Icons.Default.DarkMode else Icons.Default.LightMode,
-                                    contentDescription = "Toggle theme",
-                                    tint = MaterialTheme.colorScheme.onSurface,
-                                    modifier = Modifier.size(21.dp)
+                                        if (darkTheme) Icons.Default.DarkMode
+                                        else Icons.Default.LightMode,
+                                        contentDescription = "Toggle theme",
+                                        tint = MaterialTheme.colorScheme.onSurface,
+                                        modifier = Modifier.size(20.dp)
                                 )
                             }
                         }
 
-                        menuScreens.forEach { screen ->
-                            SheetMenuItem(
-                                title = screen.title,
-                                subtitle = screen.subtitle,
-                                icon = screen.icon,
-                                active = currentRoute == screen.route,
-                                onClick = { closeMenuAndGo(screen.route) }
-                            )
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        // Big simple tiles — 2 column, শুধু icon + title
+                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            menuScreens.chunked(2).forEach { rowItems ->
+                                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                    rowItems.forEach { screen ->
+                                        BigMenuTile(
+                                                title = screen.title,
+                                                icon = screen.icon,
+                                                active = currentRoute == screen.route,
+                                                onClick = { closeMenuAndGo(screen.route) },
+                                                modifier = Modifier.weight(1f)
+                                        )
+                                    }
+                                    if (rowItems.size == 1) {
+                                        Spacer(modifier = Modifier.weight(1f))
+                                    }
+                                }
+                            }
                         }
 
+                        // NOTE: vault setup-এর কোনো বোতাম মেনুতে
+                        // রাখা হয়নি, ইচ্ছা করে। মেনুতে দেখালেই
+                        // বোঝা যাবে এখানে লুকানো কিছু আছে।
+                        // Setup শুধু Normal calculator-e "="
+                        // long-press করলে খুলবে।
                     }
                 }
             }
 
-            // App update modal
             if (showUpdate) {
                 UpdateDialog(onDismiss = { showUpdate = false })
             }
@@ -378,85 +400,71 @@ fun CalNyxNavGraph(
     }
 }
 
-// Small circular backdrop button, used by the floating top bar and
-// the menu sheet's header (theme toggle).
 @Composable
 private fun TopBarCircleButton(
-    onClick: () -> Unit,
-    content: @Composable () -> Unit
+        onClick: () -> Unit,
+        buttonSize: Dp = 36.dp,
+        content: @Composable () -> Unit
 ) {
     Box(
-        modifier = Modifier
-            .size(42.dp)
-            .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)),
-        contentAlignment = Alignment.Center
-    ) {
-        IconButton(onClick = onClick) {
-            content()
-        }
-    }
+            modifier =
+                    Modifier.size(buttonSize)
+                            .clip(CircleShape)
+                            .background(
+                                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+                            ),
+            contentAlignment = Alignment.Center
+    ) { IconButton(onClick = onClick, modifier = Modifier.size(buttonSize)) { content() } }
 }
 
-// One menu row in the bottom sheet: icon inside a tinted circle, name
-// + description, and the ACTIVE page filled with a pill + peach check.
+// একটা big simple tile: মাঝখানে বড় icon circle, নিচে শুধু title —
+// কোনো subtitle / description / check mark নেই। Active tile টা
+// primaryContainer রঙে আলাদা বোঝা যায়।
 @Composable
-private fun SheetMenuItem(
-    title: String,
-    subtitle: String,
-    icon: ImageVector,
-    active: Boolean,
-    onClick: () -> Unit
+private fun BigMenuTile(
+        title: String,
+        icon: ImageVector,
+        active: Boolean,
+        onClick: () -> Unit,
+        modifier: Modifier = Modifier
 ) {
     val colors = MaterialTheme.colorScheme
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 3.dp)
-            .clip(RoundedCornerShape(16.dp))
-            .background(if (active) colors.primaryContainer else Color.Transparent)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically
+    Column(
+            modifier =
+                    modifier.clip(RoundedCornerShape(24.dp))
+                            .background(
+                                    if (active) colors.primaryContainer
+                                    else colors.surfaceVariant.copy(alpha = 0.35f)
+                            )
+                            .clickable(onClick = onClick)
+                            .padding(vertical = 20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Box(
-            modifier = Modifier
-                .size(42.dp)
-                .clip(CircleShape)
-                .background(
-                    if (active) colors.primary.copy(alpha = 0.30f)
-                    else colors.surfaceVariant
-                ),
-            contentAlignment = Alignment.Center
+                modifier =
+                        Modifier.size(58.dp)
+                                .clip(CircleShape)
+                                .background(
+                                        if (active) colors.primary.copy(alpha = 0.25f)
+                                        else colors.surfaceVariant
+                                ),
+                contentAlignment = Alignment.Center
         ) {
             Icon(
-                icon,
-                contentDescription = title,
-                modifier = Modifier.size(21.dp),
-                tint = if (active) colors.primary else colors.onSurfaceVariant
+                    icon,
+                    contentDescription = title,
+                    modifier = Modifier.size(28.dp),
+                    tint = if (active) colors.primary else colors.onSurface
             )
         }
-        Spacer(modifier = Modifier.width(14.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
+        Spacer(modifier = Modifier.height(10.dp))
+        Text(
                 title,
-                fontSize = 16.sp,
+                fontSize = 15.sp,
                 fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium,
-                color = if (active) colors.onPrimaryContainer else colors.onSurface
-            )
-            Text(
-                subtitle,
-                fontSize = 12.5.sp,
-                color = colors.onSurfaceVariant
-            )
-        }
-        if (active) {
-            Icon(
-                Icons.Default.Check,
-                contentDescription = null,
-                modifier = Modifier.size(20.dp),
-                tint = colors.primary
-            )
-        }
+                color = if (active) colors.onPrimaryContainer else colors.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+        )
     }
 }
