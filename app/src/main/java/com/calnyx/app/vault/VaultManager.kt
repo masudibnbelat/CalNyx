@@ -2,31 +2,27 @@
 package com.calnyx.app.vault
 
 import android.app.RecoverableSecurityException
+import android.content.ContentUris
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.content.IntentSender
+import android.media.MediaScannerConnection
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import android.provider.OpenableColumns
+import android.provider.DocumentsContract
 import androidx.core.content.FileProvider
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import kotlin.coroutines.resume
 
-/**
- * Vault folders live in the app's INTERNAL storage: filesDir/vault/photos, videos, documents, audio
- * Other apps and the gallery cannot see internal storage, and MediaStore never indexes it. No extra
- * permission is needed to read/write here. Warning: uninstalling the app deletes the vault, so
- * restore important files before uninstalling.
- *
- * v1 is HIDDEN, not file-by-file encrypted. On a non-rooted phone only this app can read these
- * files, which is what Calculator Vault apps do. Encryption is a separate next step if you want it.
- */
 enum class VaultCategory(val folder: String, val title: String, val pickerMime: String) {
     PHOTOS("photos", "Photos", "image/*"),
     VIDEOS("videos", "Videos", "video/*"),
@@ -38,43 +34,36 @@ object VaultPrefs {
     private const val PREFS = "vault_prefs"
     private const val KEY_SECRET = "vault_secret"
     private const val KEY_SET = "vault_secret_set"
+    private const val KEY_ICON = "theme_icon"
 
-    /**
-     * Old fallback, kept ONLY for users who already opened the vault with it before they set their
-     * own secret. Once a user sets their own secret, this stops working. New users must NOT need to
-     * know this — they set their own secret from the menu setup screen, or by long-pressing "=" in
-     * the Normal calculator while no secret is set.
-     */
     const val DEFAULT_SECRET = "112233"
 
-    /** Null when the user has not set their own secret yet. */
-    fun getSecret(context: Context): String? {
-        return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_SECRET, null)
-    }
+    private fun prefs(context: Context) =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
-    /** True only after the user has saved their own secret. */
+    fun getSecret(context: Context): String? =
+        prefs(context).getString(KEY_SECRET, null)
+
     fun isSecretSet(context: Context): Boolean {
-        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        return prefs.getBoolean(KEY_SET, false) &&
-                !prefs.getString(KEY_SECRET, null).isNullOrBlank()
+        val p = prefs(context)
+        return p.getBoolean(KEY_SET, false) && !p.getString(KEY_SECRET, null).isNullOrBlank()
     }
 
     fun setSecret(context: Context, secret: String) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                .edit()
-                .putString(KEY_SECRET, secret.trim())
-                .putBoolean(KEY_SET, true)
-                .apply()
+        prefs(context).edit()
+            .putString(KEY_SECRET, secret.trim())
+            .putBoolean(KEY_SET, true)
+            .apply()
     }
 
-    /** Old name, kept for VaultScreen: true = own secret not set yet. */
+    fun getThemeIcon(context: Context): String? =
+        prefs(context).getString(KEY_ICON, null)
+
+    fun setThemeIcon(context: Context, icon: String) =
+        prefs(context).edit().putString(KEY_ICON, icon).apply()
+
     fun isDefault(context: Context): Boolean = !isSecretSet(context)
 
-    /**
-     * Does this expression open the vault? Own secret always works. The old default works only
-     * until the user sets their own secret, so existing vault files are not locked out by an
-     * update.
-     */
     fun matches(context: Context, expression: String): Boolean {
         val own = getSecret(context)
         if (!own.isNullOrBlank() && expression == own) return true
@@ -84,20 +73,18 @@ object VaultPrefs {
 }
 
 sealed interface DeleteStatus {
-    /** Original was deleted from shared storage. */
     data object Deleted : DeleteStatus
-
-    /** Android needs the user to confirm this delete in a system dialog. */
     data class NeedsConfirmation(val sender: IntentSender) : DeleteStatus
-
-    /** Copy succeeded, but the original could not be deleted. */
     data object Failed : DeleteStatus
 }
 
 data class ImportResult(
-        val vaultFile: File?,
-        val deleteStatus: DeleteStatus?,
-        val error: String? = null
+    val vaultFile: File?,
+    val deleteStatus: DeleteStatus?,
+    val error: String? = null,
+    // FIX: import-এর সময় resolve করা আসল MediaStore URI.
+    // সিস্টেম পারমিশন এই URI-র জন্য দেওয়া হয়, picker URI-র জন্য না।
+    val mediaUri: Uri? = null
 )
 
 object VaultManager {
@@ -106,20 +93,14 @@ object VaultManager {
         val root = File(context.filesDir, "vault")
         val dir = File(root, category.folder)
         if (!dir.exists()) dir.mkdirs()
-        // Extra safety: even if a scanner ever looked here, skip it.
         val nomedia = File(root, ".nomedia")
-        if (!nomedia.exists()) {
-            try {
-                nomedia.createNewFile()
-            } catch (_: Exception) {}
-        }
+        if (!nomedia.exists()) try { nomedia.createNewFile() } catch (_: Exception) {}
         return dir
     }
 
-    fun listFiles(context: Context, category: VaultCategory): List<File> {
-        val dir = vaultDir(context, category)
-        return dir.listFiles()?.sortedByDescending { it.lastModified() } ?: emptyList()
-    }
+    fun listFiles(context: Context, category: VaultCategory): List<File> =
+        vaultDir(context, category).listFiles()
+            ?.sortedByDescending { it.lastModified() } ?: emptyList()
 
     fun fileSizeString(file: File): String {
         val bytes = file.length()
@@ -130,38 +111,34 @@ object VaultManager {
         }
     }
 
-    fun mimeFor(file: File): String {
-        return when (file.extension.lowercase()) {
-            "jpg", "jpeg" -> "image/jpeg"
-            "png" -> "image/png"
-            "webp" -> "image/webp"
-            "gif" -> "image/gif"
-            "mp4" -> "video/mp4"
-            "mov" -> "video/quicktime"
-            "mkv" -> "video/x-matroska"
-            "webm" -> "video/webm"
-            "mp3" -> "audio/mpeg"
-            "wav" -> "audio/wav"
-            "m4a" -> "audio/mp4"
-            "aac" -> "audio/aac"
-            "ogg" -> "audio/ogg"
-            "pdf" -> "application/pdf"
-            "doc" -> "application/msword"
-            "docx" -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-            "xls" -> "application/vnd.ms-excel"
-            "xlsx" -> "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            "txt" -> "text/plain"
-            else -> "application/octet-stream"
-        }
+    fun mimeFor(file: File): String = when (file.extension.lowercase()) {
+        "jpg", "jpeg" -> "image/jpeg"
+        "png"         -> "image/png"
+        "webp"        -> "image/webp"
+        "gif"         -> "image/gif"
+        "mp4"         -> "video/mp4"
+        "mov"         -> "video/quicktime"
+        "mkv"         -> "video/x-matroska"
+        "webm"        -> "video/webm"
+        "mp3"         -> "audio/mpeg"
+        "wav"         -> "audio/wav"
+        "m4a"         -> "audio/mp4"
+        "aac"         -> "audio/aac"
+        "ogg"         -> "audio/ogg"
+        "pdf"         -> "application/pdf"
+        "doc"         -> "application/msword"
+        "docx"        -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        "xls"         -> "application/vnd.ms-excel"
+        "xlsx"        -> "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        "txt"         -> "text/plain"
+        else          -> "application/octet-stream"
     }
 
-    private fun sanitize(name: String): String {
-        return name
-                .map { ch -> if (ch in "/\\:*?\"<>|") '_' else ch }
-                .joinToString("")
-                .trim()
-                .ifBlank { "file_${System.currentTimeMillis()}" }
-    }
+    private fun sanitize(name: String) = name
+        .map { if (it in "/\\:*?\"<>|") '_' else it }
+        .joinToString("")
+        .trim()
+        .ifBlank { "file_${System.currentTimeMillis()}" }
 
     private fun uniqueFile(dir: File, originalName: String): File {
         val clean = sanitize(originalName)
@@ -169,170 +146,294 @@ object VaultManager {
         var i = 1
         while (candidate.exists()) {
             val base = clean.substringBeforeLast(".", clean)
-            val ext = if (clean.contains(".")) "." + clean.substringAfterLast(".") else ""
+            val ext = if (clean.contains(".")) ".${clean.substringAfterLast(".")}" else ""
             candidate = File(dir, "${base}_$i$ext")
             i++
         }
         return candidate
     }
 
-    private fun displayNameFromUri(context: Context, uri: Uri): String? {
-        return try {
-            context.contentResolver.query(
-                            uri,
-                            arrayOf(OpenableColumns.DISPLAY_NAME),
-                            null,
-                            null,
-                            null
-                    )
-                    ?.use { cursor ->
-                        if (cursor.moveToFirst()) {
-                            val idx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                            if (idx >= 0) cursor.getString(idx) else null
-                        } else null
-                    }
-        } catch (_: Exception) {
-            null
+    private fun displayNameFromUri(context: Context, uri: Uri): String? = try {
+        context.contentResolver.query(
+            uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null
+        )?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                val idx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (idx >= 0) cursor.getString(idx) else null
+            } else null
         }
+    } catch (_: Exception) { null }
+
+    /**
+     * picker URI (content://com.android.providers.media.documents/...)
+     * থেকে real MediaStore URI বের করে।
+     *
+     * Strategy:
+     * 1. URI তে "_id" column query করার চেষ্টা — MediaStore URI হলে সরাসরি পাওয়া যাবে
+     * 2. Display name দিয়ে MediaStore এ search করবো
+     * 3. দুটোই fail করলে original URI return
+     */
+    private fun resolveToMediaStoreUri(context: Context, pickerUri: Uri, category: VaultCategory): Uri {
+        val authority = pickerUri.authority ?: ""
+        val path = pickerUri.path ?: ""
+
+        // FIX3: স্ক্রিনশটের আসল URI:
+        // content://media/picker_get_content/0/com.android.providers.media.photopicker/media/<id>
+        // আগের v2 শুধু "/picker/" খুঁজত, কিন্তু এখানে "picker_get_content"
+        // আছে, তাই v2 ওই চেক মিস করেছে। picker / picker_get_content —
+        // দুটোতেই শেষের segment-ই আসল MediaStore id।
+        // এটা সবার আগে চেক করতে হবে, query-র _ID-র আগে, কারণ
+        // picker provider-এর query ভুল id দিতে পারে।
+        if (authority == "media" && path.contains("picker")) {
+            val id = pickerUri.lastPathSegment?.toLongOrNull()
+            if (id != null) {
+                return ContentUris.withAppendedId(mediaStoreCollection(category), id)
+            }
+        }
+        // Already a direct MediaStore URI? content://media/external/.../media/<id>
+        if (authority == "media" && path.contains("/external/")) return pickerUri
+
+        // FIX: DocumentsProvider URI হলে (যেমন
+        // com.android.providers.media.documents/document/image:123)
+        // documentId থেকে সরাসরি MediaStore id বের করো।
+        // এটা query / নাম দিয়ে খোঁজার চেয়ে নির্ভরযোগ্য।
+        // শুধু image:/video:/audio: prefix-এর id-ই ব্যবহার করো,
+        // msf: বা primary: পাথের ক্ষেত্রে নাম দিয়ে খোঁজা ভালো।
+        try {
+            val docId = DocumentsContract.getDocumentId(pickerUri)
+            if (docId.contains(":")) {
+                val prefix = docId.substringBefore(":")
+                val id = docId.substringAfter(":").toLongOrNull()
+                if (id != null && prefix in listOf("image", "video", "audio")) {
+                    return ContentUris.withAppendedId(mediaStoreCollection(category), id)
+                }
+            }
+        } catch (_: Exception) {}
+
+        // FIX3 safety net: শেষ segment numeric হলে সেটাই MediaStore id
+        // (picker_get_content ছাড়া অন্য picker-এর ক্ষেত্রেও কাজ করবে)।
+        pickerUri.lastPathSegment?.toLongOrNull()?.let { id ->
+            if (authority == "media") {
+                return ContentUris.withAppendedId(mediaStoreCollection(category), id)
+            }
+        }
+
+        // Try to get _id directly from the picker URI
+        try {
+            context.contentResolver.query(
+                pickerUri,
+                arrayOf(MediaStore.MediaColumns._ID, MediaStore.MediaColumns.DISPLAY_NAME),
+                null, null, null
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val idIdx = cursor.getColumnIndex(MediaStore.MediaColumns._ID)
+                    if (idIdx >= 0) {
+                        val id = cursor.getLong(idIdx)
+                        if (id > 0) {
+                            val collection = mediaStoreCollection(category)
+                            return ContentUris.withAppendedId(collection, id)
+                        }
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+
+        // Fallback: search by display name in MediaStore
+        val displayName = displayNameFromUri(context, pickerUri) ?: return pickerUri
+        return findMediaStoreUriByName(context, displayName, category) ?: pickerUri
     }
 
-    /**
-     * Copy first, then try to delete the original. Never delete before the copy is safely on disk.
-     * Returns NeedsConfirmation on Android 11+ when the system must ask the user — the caller
-     * launches that IntentSender.
-     */
+    private fun mediaStoreCollection(category: VaultCategory): Uri = when (category) {
+        VaultCategory.PHOTOS    -> MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+        VaultCategory.VIDEOS    -> MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+        VaultCategory.AUDIO     -> MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+        VaultCategory.DOCUMENTS -> MediaStore.Files.getContentUri("external")
+    }
+
+    private fun findMediaStoreUriByName(
+        context: Context,
+        displayName: String,
+        category: VaultCategory
+    ): Uri? {
+        val collection = mediaStoreCollection(category)
+        return try {
+            context.contentResolver.query(
+                collection,
+                arrayOf(MediaStore.MediaColumns._ID),
+                "${MediaStore.MediaColumns.DISPLAY_NAME} = ?",
+                arrayOf(displayName),
+                "${MediaStore.MediaColumns.DATE_ADDED} DESC"
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val id = cursor.getLong(0)
+                    ContentUris.withAppendedId(collection, id)
+                } else null
+            }
+        } catch (_: Exception) { null }
+    }
+
+    private fun deleteMediaStoreUri(context: Context, uri: Uri): DeleteStatus {
+        return try {
+            val deleted = context.contentResolver.delete(uri, null, null)
+            if (deleted > 0) DeleteStatus.Deleted else DeleteStatus.Failed
+        } catch (e: RecoverableSecurityException) {
+            // Android 11+ — video/audio needs user confirmation dialog
+            try {
+                DeleteStatus.NeedsConfirmation(e.userAction.actionIntent.intentSender)
+            } catch (_: Exception) { DeleteStatus.Failed }
+        } catch (_: SecurityException) { DeleteStatus.Failed }
+        catch (_: Exception) { DeleteStatus.Failed }
+    }
+
+    /** FIX2: এই MediaStore URI-টা এখনো আছে কিনা। */
+    fun mediaUriExists(context: Context, uri: Uri): Boolean {
+        return try {
+            context.contentResolver.query(
+                uri, arrayOf(MediaStore.MediaColumns._ID), null, null, null
+            )?.use { it.moveToFirst() } ?: false
+        } catch (_: Exception) { false }
+    }
+
+    /** FIX2: Android 11+ এর অফিসিয়াল delete request-এর sender, বা null। */
+    fun createDeleteRequestSender(context: Context, uri: Uri): IntentSender? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return null
+        return try {
+            val pending = MediaStore.createDeleteRequest(
+                context.contentResolver, listOf(uri)
+            )
+            pending.intentSender
+        } catch (_: Exception) { null }
+    }
+
     suspend fun importUri(context: Context, uri: Uri, category: VaultCategory): ImportResult =
-            withContext(Dispatchers.IO) {
-                val dir = vaultDir(context, category)
-                val originalName =
-                        displayNameFromUri(context, uri) ?: "imported_${System.currentTimeMillis()}"
-                val target = uniqueFile(dir, originalName)
-                try {
-                    val input =
-                            context.contentResolver.openInputStream(uri)
-                                    ?: return@withContext ImportResult(
-                                            null,
-                                            null,
-                                            "File khola jayni"
-                                    )
-                    input.use { src -> FileOutputStream(target).use { dst -> src.copyTo(dst) } }
-                } catch (e: Exception) {
-                    try {
-                        target.delete()
-                    } catch (_: Exception) {}
-                    return@withContext ImportResult(null, null, "Copy hoyni: ${e.message}")
-                }
+        withContext(Dispatchers.IO) {
+            val dir = vaultDir(context, category)
+            val originalName = displayNameFromUri(context, uri)
+                ?: "imported_${System.currentTimeMillis()}"
+            val target = uniqueFile(dir, originalName)
 
-                // Copy is safe now — try to remove the original.
-                val status: DeleteStatus =
-                        try {
-                            val deleted = context.contentResolver.delete(uri, null, null)
-                            if (deleted > 0) DeleteStatus.Deleted else DeleteStatus.Failed
-                        } catch (e: RecoverableSecurityException) {
-                            try {
-                                val sender = e.userAction.actionIntent.intentSender
-                                DeleteStatus.NeedsConfirmation(sender)
-                            } catch (_: Exception) {
-                                DeleteStatus.Failed
-                            }
-                        } catch (_: SecurityException) {
-                            DeleteStatus.Failed
-                        } catch (_: Exception) {
-                            DeleteStatus.Failed
-                        }
-                ImportResult(target, status, null)
+            // Step 1: vault এ copy করো
+            try {
+                val input = context.contentResolver.openInputStream(uri)
+                    ?: return@withContext ImportResult(null, null, "File khola jayni")
+                input.use { src -> FileOutputStream(target).use { dst -> src.copyTo(dst) } }
+            } catch (e: Exception) {
+                try { target.delete() } catch (_: Exception) {}
+                return@withContext ImportResult(null, null, "Copy hoyni: ${e.message}")
             }
 
-    /** Retry a delete after the user confirmed it in the system dialog. */
+            // Step 2: original delete — real MediaStore URI resolve করে
+            val mediaUri = resolveToMediaStoreUri(context, uri, category)
+            var status = deleteMediaStoreUri(context, mediaUri)
+            // FIX2: সরাসরি delete Failed হলে (Recoverable-ও আসেনি),
+            // অফিসিয়াল createDeleteRequest দিয়ে সিস্টেম ডায়ালগের
+            // আরেকটা সুযোগ নাও — এটাই স্ক্রিনশটের Failed কেসের ফিক্স।
+            if (status is DeleteStatus.Failed) {
+                val sender = createDeleteRequestSender(context, mediaUri)
+                if (sender != null) {
+                    status = DeleteStatus.NeedsConfirmation(sender)
+                }
+            }
+
+            ImportResult(vaultFile = target, deleteStatus = status, mediaUri = mediaUri)
+        }
+
     suspend fun retryDelete(context: Context, uri: Uri): Boolean =
-            withContext(Dispatchers.IO) {
-                try {
-                    context.contentResolver.delete(uri, null, null) > 0
-                } catch (_: Exception) {
-                    false
-                }
-            }
+        withContext(Dispatchers.IO) {
+            try { context.contentResolver.delete(uri, null, null) > 0 }
+            catch (_: Exception) { false }
+        }
 
-    /**
-     * Restore: write the vault file back to public storage through MediaStore (so it appears in
-     * Gallery / Files again), then delete it from the vault. Android 10+ only in this version.
-     */
     suspend fun restoreFile(context: Context, file: File, category: VaultCategory): Boolean =
-            withContext(Dispatchers.IO) {
-                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return@withContext false
-                try {
-                    val (collection, relativePath) =
-                            when (category) {
-                                VaultCategory.PHOTOS ->
-                                        MediaStore.Images.Media.EXTERNAL_CONTENT_URI to
-                                                "${Environment.DIRECTORY_PICTURES}/CalNyx"
-                                VaultCategory.VIDEOS ->
-                                        MediaStore.Video.Media.EXTERNAL_CONTENT_URI to
-                                                "${Environment.DIRECTORY_MOVIES}/CalNyx"
-                                VaultCategory.AUDIO ->
-                                        MediaStore.Audio.Media.EXTERNAL_CONTENT_URI to
-                                                "${Environment.DIRECTORY_MUSIC}/CalNyx"
-                                VaultCategory.DOCUMENTS ->
-                                        MediaStore.Downloads.EXTERNAL_CONTENT_URI to
-                                                "${Environment.DIRECTORY_DOWNLOADS}/CalNyx"
-                            }
-                    val values =
-                            ContentValues().apply {
-                                put(MediaStore.MediaColumns.DISPLAY_NAME, file.name)
-                                put(MediaStore.MediaColumns.MIME_TYPE, mimeFor(file))
-                                put(MediaStore.MediaColumns.RELATIVE_PATH, relativePath)
-                            }
-                    val uri =
-                            context.contentResolver.insert(collection, values)
-                                    ?: return@withContext false
-                    context.contentResolver.openOutputStream(uri)?.use { out ->
-                        FileInputStream(file).use { src -> src.copyTo(out) }
-                    }
-                            ?: return@withContext false
-                    file.delete()
-                    true
-                } catch (_: Exception) {
-                    false
-                }
+        withContext(Dispatchers.IO) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                restoreViaMediaStore(context, file, category)
+            } else {
+                restoreViaLegacy(context, file, category)
             }
+        }
 
-    /** Rename inside the vault. A missing extension keeps the old one. */
+    private fun restoreViaMediaStore(
+        context: Context, file: File, category: VaultCategory
+    ): Boolean {
+        return try {
+            val (collection, relativePath) = when (category) {
+                VaultCategory.PHOTOS    -> MediaStore.Images.Media.EXTERNAL_CONTENT_URI to
+                        "${Environment.DIRECTORY_PICTURES}/CalNyx"
+                VaultCategory.VIDEOS    -> MediaStore.Video.Media.EXTERNAL_CONTENT_URI to
+                        "${Environment.DIRECTORY_MOVIES}/CalNyx"
+                VaultCategory.AUDIO     -> MediaStore.Audio.Media.EXTERNAL_CONTENT_URI to
+                        "${Environment.DIRECTORY_MUSIC}/CalNyx"
+                VaultCategory.DOCUMENTS -> MediaStore.Downloads.EXTERNAL_CONTENT_URI to
+                        "${Environment.DIRECTORY_DOWNLOADS}/CalNyx"
+            }
+            val values = ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, file.name)
+                put(MediaStore.MediaColumns.MIME_TYPE, mimeFor(file))
+                put(MediaStore.MediaColumns.RELATIVE_PATH, relativePath)
+            }
+            val uri = context.contentResolver.insert(collection, values) ?: return false
+            context.contentResolver.openOutputStream(uri)?.use { out ->
+                FileInputStream(file).use { src -> src.copyTo(out) }
+            } ?: return false
+            file.delete()
+            true
+        } catch (_: Exception) { false }
+    }
+
+    private suspend fun restoreViaLegacy(
+        context: Context, file: File, category: VaultCategory
+    ): Boolean {
+        return try {
+            val publicDir = when (category) {
+                VaultCategory.PHOTOS    -> Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
+                VaultCategory.VIDEOS    -> Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES)
+                VaultCategory.AUDIO     -> Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC)
+                VaultCategory.DOCUMENTS -> Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+            }
+            val destDir = File(publicDir, "CalNyx").also { it.mkdirs() }
+            val dest = File(destDir, file.name)
+            FileInputStream(file).use { src ->
+                FileOutputStream(dest).use { dst -> src.copyTo(dst) }
+            }
+            suspendCancellableCoroutine { cont ->
+                MediaScannerConnection.scanFile(
+                    context,
+                    arrayOf(dest.absolutePath),
+                    arrayOf(mimeFor(file))
+                ) { _, _ -> cont.resume(Unit) }
+            }
+            file.delete()
+            true
+        } catch (_: Exception) { false }
+    }
+
     fun renameFile(file: File, newName: String): Boolean {
         val clean = sanitize(newName)
         if (clean.isBlank()) return false
-        val withExt =
-                if (clean.contains(".")) clean
-                else {
-                    val ext = file.extension
-                    if (ext.isNotBlank()) "$clean.$ext" else clean
-                }
+        val withExt = if (clean.contains(".")) clean
+        else {
+            val ext = file.extension
+            if (ext.isNotBlank()) "$clean.$ext" else clean
+        }
         val target = File(file.parentFile, withExt)
         if (target.exists()) return false
         return file.renameTo(target)
     }
 
-    fun deleteFile(file: File): Boolean {
-        return try {
-            file.delete()
-        } catch (_: Exception) {
-            false
-        }
-    }
+    fun deleteFile(file: File): Boolean = try { file.delete() } catch (_: Exception) { false }
 
-    /** Open a vault file in an external viewer via FileProvider. */
     fun openWithExternalViewer(context: Context, file: File): Boolean {
         return try {
-            val uri =
-                    FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
-            val intent =
-                    Intent(Intent.ACTION_VIEW).apply {
-                        setDataAndType(uri, mimeFor(file))
-                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    }
+            val uri = FileProvider.getUriForFile(
+                context, "${context.packageName}.fileprovider", file
+            )
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, mimeFor(file))
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
             context.startActivity(Intent.createChooser(intent, "Open with"))
             true
-        } catch (_: Exception) {
-            false
-        }
+        } catch (_: Exception) { false }
     }
 }

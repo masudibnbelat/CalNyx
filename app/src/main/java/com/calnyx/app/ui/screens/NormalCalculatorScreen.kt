@@ -4,6 +4,7 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -16,6 +17,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -234,12 +236,12 @@ fun NormalCalculatorScreen(
                                                                         val finalScrollState =
                                                                                 rememberScrollState()
                                                                         LaunchedEffect(final) {
-                                                                                finalScrollState
-                                                                                        .scrollTo(
-                                                                                                finalScrollState
-                                                                                                        .maxValue
-                                                                                        )
-                                                                        }
+    // FIX: answer-এর প্রথম অংশ দেখাবে, শেষে নয়।
+    finalScrollState.scrollTo(0)
+}
+                        // ANSWER COPY: final answer select + copy-র জন্য।
+                        val answerClipboard = LocalClipboardManager.current
+                        var answerCopied by remember(final) { mutableStateOf(false) }
                                                                         Row(
                                                                                 modifier =
                                                                                         Modifier.fillMaxWidth()
@@ -253,7 +255,8 @@ fun NormalCalculatorScreen(
                                                                                         Arrangement
                                                                                                 .End
                                                                         ) {
-                                                                                Text(
+                                                                                SelectionContainer {
+ Text(
                                                                                         text =
                                                                                                 formattedFinal,
                                                                                         fontSize =
@@ -273,7 +276,19 @@ fun NormalCalculatorScreen(
                                                                                         softWrap =
                                                                                                 false
                                                                                 )
+ } // end SelectionContainer
                                                                         }
+ Row(
+     modifier = Modifier.fillMaxWidth(),
+     horizontalArrangement = Arrangement.End
+ ) {
+     TextButton(onClick = {
+         answerClipboard.setText(AnnotatedString(formattedFinal))
+         answerCopied = true
+     }) {
+         Text(if (answerCopied) "Copied ✓" else "Copy", fontSize = 14.sp)
+     }
+ }
                                                                 }
                                                         } else {
                                                                 Column(
@@ -1087,10 +1102,9 @@ fun NormalCalculatorScreen(
                                                         val previewScrollState =
                                                                 rememberScrollState()
                                                         LaunchedEffect(result) {
-                                                                previewScrollState.scrollTo(
-                                                                        previewScrollState.maxValue
-                                                                )
-                                                        }
+    // FIX: preview-ও প্রথম অংশ থেকে দেখাবে।
+    previewScrollState.scrollTo(0)
+}
                                                         Row(
                                                                 modifier =
                                                                         Modifier.horizontalScroll(
@@ -1883,41 +1897,24 @@ fun NormalCalculatorScreen(
                                                                                                                         .Start
                                                                                                 ) {
                                                                                                         Text(
-                                                                                                                text =
-                                                                                                                        formatForDisplay(
-                                                                                                                                item.expression
-                                                                                                                        ),
-                                                                                                                fontSize =
-                                                                                                                        20.sp,
-                                                                                                                color =
-                                                                                                                        MaterialTheme
-                                                                                                                                .colorScheme
-                                                                                                                                .onSurfaceVariant,
-                                                                                                                textAlign =
-                                                                                                                        TextAlign
-                                                                                                                                .Start
-                                                                                                        )
-                                                                                                        Spacer(
-                                                                                                                modifier =
-                                                                                                                        Modifier.height(
-                                                                                                                                2.dp
-                                                                                                                        )
-                                                                                                        )
-                                                                                                        Text(
-                                                                                                                text =
-                                                                                                                        formatForDisplay(
-                                                                                                                                item.result
-                                                                                                                        ),
-                                                                                                                fontSize =
-                                                                                                                        34.sp,
-                                                                                                                color =
-                                                                                                                        MaterialTheme
-                                                                                                                                .colorScheme
-                                                                                                                                .onSurface,
-                                                                                                                textAlign =
-                                                                                                                        TextAlign
-                                                                                                                                .Start
-                                                                                                        )
+    text = formatForDisplay(item.expression),
+    fontSize = 20.sp,
+    lineHeight = 26.sp,
+    color = MaterialTheme.colorScheme.onSurfaceVariant,
+    textAlign = TextAlign.Start,
+    softWrap = true,
+    modifier = Modifier.fillMaxWidth()
+)
+Spacer(modifier = Modifier.height(6.dp))
+Text(
+    text = formatForDisplay(item.result),
+    fontSize = 34.sp,
+    lineHeight = 42.sp,
+    color = MaterialTheme.colorScheme.onSurface,
+    textAlign = TextAlign.Start,
+    softWrap = true,
+    modifier = Modifier.fillMaxWidth()
+)
                                                                                                 }
                                                                                         }
                                                                                         item(
@@ -2049,8 +2046,8 @@ private fun tokenRangeAt(raw: String, index: Int): Pair<Int, Int> {
         }
 }
 
-// One scientific TEXT key (scientific mode only): plain text, no
-// key shell at all — exactly like the reference. Long labels
+// One scientific TEXT key (scientific mode only): now with the
+// same background + border as other keys (FIX). Long labels
 // (sin⁻¹, cos⁻¹, tan⁻¹) get a smaller font so they fit the cell.
 @Composable
 private fun ScientificTextKey(
@@ -2060,13 +2057,23 @@ private fun ScientificTextKey(
         onClick: () -> Unit
 ) {
         val interactionSource = remember { MutableInteractionSource() }
+        // FIX: scientific key-গুলোতে এখন সংখ্যার বাটনের মতো
+        // background + border আছে, শুধু লেখা নয়।
         Box(
                 modifier =
-                        modifier.clickable(
-                                interactionSource = interactionSource,
-                                indication = null,
-                                onClick = onClick
-                        ),
+                        modifier
+                                .clip(RoundedCornerShape(percent = 28))
+                                .background(MaterialTheme.colorScheme.surfaceVariant)
+                                .border(
+                                        1.dp,
+                                        MaterialTheme.colorScheme.outlineVariant,
+                                        RoundedCornerShape(percent = 28)
+                                )
+                                .clickable(
+                                        interactionSource = interactionSource,
+                                        indication = null,
+                                        onClick = onClick
+                                ),
                 contentAlignment = Alignment.Center
         ) {
                 Text(

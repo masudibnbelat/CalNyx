@@ -1,4 +1,6 @@
 // FILE: app/src/main/java/com/calnyx/app/navigation/NavGraph.kt
+// MODERN version: top bar আগের মতোই (শুধু 3-dot), menu sheet + tiles black/white, new update icon.
+// Navigation logic, routes, vault hiding — all unchanged from user's version.
 package com.calnyx.app.navigation
 
 import androidx.compose.animation.AnimatedVisibility
@@ -8,6 +10,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -17,7 +20,6 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.DarkMode
-import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Functions
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.LightMode
@@ -27,6 +29,7 @@ import androidx.compose.material.icons.filled.NoteAlt
 import androidx.compose.material.icons.filled.Numbers
 import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material.icons.filled.Update
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -44,6 +47,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -131,6 +135,16 @@ val menuScreens =
                 Screen.Ict,
         )
 
+// MODERN palette: only off-white / off-black / grey. No purple, no colour accents.
+private val NavOffWhite = Color(0xFFF6F4EF)
+private val NavOffBlack = Color(0xFF0E0E0E)
+private val NavCardWhite = Color(0xFFFFFFFF)
+private val NavCardBlack = Color(0xFF1B1B1B)
+private val NavBorderLight = Color(0xFFE9E6DF)
+private val NavBorderDark = Color(0xFF2B2B2B)
+private val NavThumbLight = Color(0xFFEFEDE8)
+private val NavThumbDark = Color(0xFF262626)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
@@ -146,6 +160,11 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
     var showUpdate by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
+
+    // MODERN colours, derived from darkTheme only.
+    val pageBg = if (darkTheme) NavOffBlack else NavOffWhite
+    val cardBg = if (darkTheme) NavCardBlack else NavCardWhite
+    val onPageColor = if (darkTheme) NavOffWhite else NavOffBlack
 
     val persistRoutes = remember { menuScreens.map { it.route }.toSet() }
 
@@ -181,7 +200,7 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
         }
     }
 
-    Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+    Box(modifier = Modifier.fillMaxSize().background(pageBg)) {
         val start = startRoute
         if (start != null) {
             NavHost(
@@ -253,7 +272,8 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
                 }
             }
 
-            // Compact floating top bar — 36dp buttons, কম padding
+            // Top bar — আগের মতোই: কোনো বড় বার নেই, কোনো app name নেই,
+            // শুধু উপরে ডান কোণে ভাসমান 3-dot মেনু বাটন। History-তে বামে Back।
             // Vault আর VaultSetup-এ এটা লুকানো থাকে, কারণ ওদের
             // নিজের back বার আছে।
             AnimatedVisibility(
@@ -299,30 +319,24 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
                 }
             }
 
-            // Modern menu sheet — বড় simple tile, শুধু icon + title,
-            // কোনো description নেই
+            // MODERN menu sheet — off-white / off-black, কোনো বেগুনি
+            // রঙ নেই। Header-এ CalNyx + ছোট সাবটাইটেল, ডানদিকে
+            // আপডেট আর থিম বাটন।
             if (showMenu) {
                 ModalBottomSheet(
                         onDismissRequest = { showMenu = false },
                         sheetState = sheetState,
-                        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-                        containerColor =
-                                if (darkTheme) Color(0xFF241D25)
-                                else MaterialTheme.colorScheme.surface,
-                        contentColor = MaterialTheme.colorScheme.onSurface,
+                        shape = RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp),
+                        containerColor = cardBg,
+                        contentColor = onPageColor,
                         dragHandle = {
                             Box(
                                     modifier =
-                                            Modifier.padding(vertical = 8.dp)
-                                                    .width(32.dp)
-                                                    .height(4.dp)
-                                                    .clip(RoundedCornerShape(2.dp))
-                                                    .background(
-                                                            MaterialTheme.colorScheme
-                                                                    .onSurfaceVariant.copy(
-                                                                    alpha = 0.4f
-                                                            )
-                                                    )
+                                            Modifier.padding(vertical = 10.dp)
+                                                    .width(40.dp)
+                                                    .height(5.dp)
+                                                    .clip(RoundedCornerShape(3.dp))
+                                                    .background(Color.Gray.copy(alpha = 0.4f))
                             )
                         }
                 ) {
@@ -333,36 +347,44 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
                                             .padding(horizontal = 20.dp)
                                             .padding(bottom = 20.dp)
                     ) {
-                        // Simple header — শুধু title আর দুটো icon button
                         Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(text = "CalNyx", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                            Column {
+                                Text(text = "CalNyx", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = onPageColor)
+                                Text(text = "Calculator & tools", fontSize = 12.sp, color = Color.Gray)
+                            }
                             Spacer(modifier = Modifier.weight(1f))
-                            TopBarCircleButton(
-                                    onClick = { closeMenuAndGo(null) { showUpdate = true } }
+                            MenuCircleButton(
+                                    onClick = { closeMenuAndGo(null) { showUpdate = true } },
+                                    darkTheme = darkTheme
                             ) {
                                 Icon(
-                                        Icons.Default.Download,
+                                        // MODERN update icon: আগের Download-এর বদলে
+                                        // ঘড়ি-তির (Update) আইকন — আপডেট বোঝাতে এটাই পরিষ্কার।
+                                        Icons.Default.Update,
                                         contentDescription = "App update",
-                                        tint = MaterialTheme.colorScheme.onSurface,
-                                        modifier = Modifier.size(20.dp)
+                                        tint = if (darkTheme) NavOffBlack else NavOffWhite,
+                                        modifier = Modifier.size(22.dp)
                                 )
                             }
-                            Spacer(modifier = Modifier.width(8.dp))
-                            TopBarCircleButton(onClick = onToggleTheme) {
+                            Spacer(modifier = Modifier.width(10.dp))
+                            MenuCircleButton(
+                                    onClick = onToggleTheme,
+                                    darkTheme = darkTheme
+                            ) {
                                 Icon(
                                         if (darkTheme) Icons.Default.DarkMode
                                         else Icons.Default.LightMode,
                                         contentDescription = "Toggle theme",
-                                        tint = MaterialTheme.colorScheme.onSurface,
-                                        modifier = Modifier.size(20.dp)
+                                        tint = if (darkTheme) NavOffBlack else NavOffWhite,
+                                        modifier = Modifier.size(22.dp)
                                 )
                             }
                         }
 
-                        Spacer(modifier = Modifier.height(16.dp))
+                        Spacer(modifier = Modifier.height(18.dp))
 
                         // Big simple tiles — 2 column, শুধু icon + title
                         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -373,6 +395,7 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
                                                 title = screen.title,
                                                 icon = screen.icon,
                                                 active = currentRoute == screen.route,
+                                                darkTheme = darkTheme,
                                                 onClick = { closeMenuAndGo(screen.route) },
                                                 modifier = Modifier.weight(1f)
                                         )
@@ -400,6 +423,8 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
     }
 }
 
+// Top-bar circle button — আগের মতোই: 36dp, হালকা translucent
+// surfaceVariant ব্যাকগ্রাউন্ড, কোনো শ্যাডো/বর্ডার/কালো বাটন নেই।
 @Composable
 private fun TopBarCircleButton(
         onClick: () -> Unit,
@@ -417,25 +442,69 @@ private fun TopBarCircleButton(
     ) { IconButton(onClick = onClick, modifier = Modifier.size(buttonSize)) { content() } }
 }
 
+// Menu header circle button — মেনু শিটের ভেতরে মডার্ন লুক:
+// লাইট মোডে কালো বাটন সাদা আইকন, ডার্ক মোডে সাদা বাটন কালো আইকন।
+@Composable
+private fun MenuCircleButton(
+        onClick: () -> Unit,
+        buttonSize: Dp = 44.dp,
+        darkTheme: Boolean = false,
+        content: @Composable () -> Unit
+) {
+    Box(
+            modifier =
+                    Modifier.size(buttonSize)
+                            .shadow(6.dp, CircleShape)
+                            .clip(CircleShape)
+                            .background(if (darkTheme) NavOffWhite else NavOffBlack)
+                            .border(
+                                    1.dp,
+                                    if (darkTheme) Color.White.copy(alpha = 0.18f)
+                                    else Color.Black.copy(alpha = 0.08f),
+                                    CircleShape
+                            ),
+            contentAlignment = Alignment.Center
+    ) { IconButton(onClick = onClick, modifier = Modifier.size(buttonSize)) { content() } }
+}
+
 // একটা big simple tile: মাঝখানে বড় icon circle, নিচে শুধু title —
-// কোনো subtitle / description / check mark নেই। Active tile টা
-// primaryContainer রঙে আলাদা বোঝা যায়।
+// কোনো subtitle / description / check mark নেই।
+// Active tile: লাইটে কালো, ডার্কে সাদা — উল্টো রঙের লেখা/আইকন।
+// Inactive tile: সাদা/কালো কার্ড, শ্যাডো + বর্ডার।
 @Composable
 private fun BigMenuTile(
         title: String,
         icon: ImageVector,
         active: Boolean,
+        darkTheme: Boolean,
         onClick: () -> Unit,
         modifier: Modifier = Modifier
 ) {
-    val colors = MaterialTheme.colorScheme
+    val tileBg = when {
+        active && darkTheme -> NavOffWhite
+        active -> NavOffBlack
+        darkTheme -> NavCardBlack
+        else -> NavCardWhite
+    }
+    val tileBorder = if (darkTheme) NavBorderDark else NavBorderLight
+    val tileText = when {
+        active && darkTheme -> NavOffBlack
+        active -> NavOffWhite
+        darkTheme -> NavOffWhite
+        else -> NavOffBlack
+    }
+    val iconBg = when {
+        active && darkTheme -> NavOffBlack.copy(alpha = 0.12f)
+        active -> NavOffWhite.copy(alpha = 0.18f)
+        darkTheme -> NavThumbDark
+        else -> NavThumbLight
+    }
     Column(
             modifier =
-                    modifier.clip(RoundedCornerShape(24.dp))
-                            .background(
-                                    if (active) colors.primaryContainer
-                                    else colors.surfaceVariant.copy(alpha = 0.35f)
-                            )
+                    modifier.shadow(8.dp, RoundedCornerShape(24.dp))
+                            .clip(RoundedCornerShape(24.dp))
+                            .background(tileBg)
+                            .border(1.dp, tileBorder, RoundedCornerShape(24.dp))
                             .clickable(onClick = onClick)
                             .padding(vertical = 20.dp),
             horizontalAlignment = Alignment.CenterHorizontally
@@ -444,17 +513,14 @@ private fun BigMenuTile(
                 modifier =
                         Modifier.size(58.dp)
                                 .clip(CircleShape)
-                                .background(
-                                        if (active) colors.primary.copy(alpha = 0.25f)
-                                        else colors.surfaceVariant
-                                ),
+                                .background(iconBg),
                 contentAlignment = Alignment.Center
         ) {
             Icon(
                     icon,
                     contentDescription = title,
                     modifier = Modifier.size(28.dp),
-                    tint = if (active) colors.primary else colors.onSurface
+                    tint = tileText
             )
         }
         Spacer(modifier = Modifier.height(10.dp))
@@ -462,7 +528,7 @@ private fun BigMenuTile(
                 title,
                 fontSize = 15.sp,
                 fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium,
-                color = if (active) colors.onPrimaryContainer else colors.onSurface,
+                color = tileText,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
         )
