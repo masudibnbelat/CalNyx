@@ -1,5 +1,7 @@
 // FILE: app/src/main/java/com/calnyx/app/applock/AppLockManager.kt
-// NEW FILE - App Lock এর সব state এখানে থাকে।
+// MIDUSEFIX VERSION - based on UNLOCKFIX, plus one thing:
+// last foreground package is now PERSISTED, not only in memory,
+// so a service restart cannot forget which app was in front.
 // VaultPrefs এর মতোই SharedPreferences, কোনো সার্ভার নেই, অফলাইন।
 package com.calnyx.app.applock
 
@@ -18,6 +20,7 @@ object AppLockManager {
     private const val KEY_UNLOCK_DURATION_MS = "unlock_duration_ms"
     private const val KEY_SESSION_PKG = "unlocked_session_package"
     private const val KEY_CALNYX_INTERVENED = "calnyx_intervened"
+    private const val KEY_LAST_FOREGROUND = "last_foreground_package"
 
     private fun prefs(context: Context) =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -34,7 +37,22 @@ object AppLockManager {
             edit.remove(KEY_CALNYX_INTERVENED)
             edit.remove(KEY_ALLOWED_PKG)
             edit.remove(KEY_ALLOWED_UNTIL)
+            edit.remove(KEY_LAST_FOREGROUND)
         }
+        edit.apply()
+    }
+
+    // Last launchable app in front, PERSISTED. The service used
+    // to keep this only in memory, so a restart forgot it and
+    // treated the next screen inside the same app as a fresh
+    // open. Now it survives a restart.
+    fun getLastForegroundPkg(context: Context): String? =
+        prefs(context).getString(KEY_LAST_FOREGROUND, null)
+
+    fun setLastForegroundPkg(context: Context, packageName: String?) {
+        val edit = prefs(context).edit()
+        if (packageName == null) edit.remove(KEY_LAST_FOREGROUND)
+        else edit.putString(KEY_LAST_FOREGROUND, packageName)
         edit.apply()
     }
 

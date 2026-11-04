@@ -1,5 +1,10 @@
 // FILE: app/src/main/java/com/calnyx/app/navigation/NavGraph.kt
-// UPDATED FULL VERSION - replace your old NavGraph.kt with this file.
+// MIDUSEFIX VERSION - replace your old NavGraph.kt with this file.
+// Logic is the same as UNLOCKFIX: ON_RESUME ends the session
+// when CalNyx itself comes back (user left the locked app for
+// CalNyx), so the service's session-allow cannot be bypassed
+// by returning from CalNyx. Apply together with
+// AppLockService-MIDUSEFIX.kt + AppLockManager-MIDUSEFIX.kt.
 // Changes vs your old file (everything else is unchanged):
 // 1. Screen.AppLock route added, hidden from menuScreens like Vault.
 // 2. VaultScreen now gets onOpenAppLock -> navigates to AppLock.

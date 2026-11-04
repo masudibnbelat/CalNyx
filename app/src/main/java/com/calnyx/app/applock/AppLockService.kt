@@ -1,5 +1,32 @@
 // FILE: app/src/main/java/com/calnyx/app/applock/AppLockService.kt
-// UNLOCK FIX VERSION - replace your old AppLockService.kt with this file.
+// MIDUSEFIX VERSION - replace your old AppLockService.kt with this file.
+// Apply TOGETHER with AppLockManager-MIDUSEFIX.kt and
+// NavGraph-MIDUSEFIX.kt (which ends the session when CalNyx
+// itself resumes). The calculator file that sets the session
+// on unlock (NormalCalculatorScreen-UNLOCK / LIFTED) must
+// already be in place.
+// Rule, exactly as the user stated: while the user is INSIDE
+// a locked app, it NEVER locks, no matter how long. The
+// timer starts ONLY when the user really leaves that app,
+// and only then does the grace time count.
+// Two holes in UNLOCKFIX that could still lock mid-use:
+//  1. onServiceConnected() called endUnlockedSession(), so a
+//     service restart (Oppo kills background services, an
+//     app update, a reboot of the service) turned a live
+//     session into a short grace window. After that grace
+//     expired, the next screen inside the SAME app blocked.
+//     Now a restart NEVER ends a session. The session ends
+//     only on a real switch away (below) or on CalNyx resume
+//     (NavGraph). After a reboot the first foreground app is
+//     not the locked app, so that switch ends it then —
+//     privacy after reboot is kept, without breaking mid-use.
+//  2. lastForegroundPkg lived only in memory, so a restart
+//     forgot it and the next screen inside the same app
+//     looked like a fresh open. Now it is persisted in
+//     AppLockManager, and restored on connect. On top of
+//     that, a session app is allowed by its session alone,
+//     even if lastForeground was lost — a session app is
+//     only ended by leaving it, never by a restart.
 // Root cause of the unlock loop in the video:
 // The service blocked on EVERY window change of a locked app.
 // After unlock, the app's own next window change (new screen,
@@ -43,10 +70,28 @@ class AppLockService : AccessibilityService() {
             notificationTimeout = 100
         }
         serviceInfo = info
-        lastForegroundPkg = null
+        // MIDUSEFIX: restore, do NOT end the session here.
+        // A restart while the user is inside a locked app must
+        // not start any timer and must not lock that app.
+        lastForegroundPkg = try {
+            AppLockManager.getLastForegroundPkg(this)
+        } catch (_: Exception) {
+            null
+        }
+        Log.d("CalNyxAppLock", "service connected, restored last=$lastForegroundPkg session=" + try {
+            AppLockManager.getUnlockedSession(this)
+        } catch (_: Exception) {
+            null
+        })
+        // NOTE: intervened is deliberately NOT cleared here.
+        // It is consumed on the next locked-app event, so a
+        // return after CalNyx is still checked as a switch.
+    }
+
+    private fun setLastForeground(packageName: String?) {
+        lastForegroundPkg = packageName
         try {
-            AppLockManager.endUnlockedSession(this)
-            AppLockManager.clearCalNyxIntervened(this)
+            AppLockManager.setLastForegroundPkg(this, packageName)
         } catch (_: Exception) {
         }
     }
@@ -72,7 +117,7 @@ class AppLockService : AccessibilityService() {
         if (pkg == packageName) return
 
         if (!AppLockManager.isEnabled(this)) {
-            lastForegroundPkg = null
+            setLastForeground(null)
             return
         }
 
@@ -95,23 +140,42 @@ class AppLockService : AccessibilityService() {
             }
         }
 
-        // Continuation: same app still in front, and CalNyx did
-        // not intervene in between. NEVER block here, no matter
-        // how long the user has been inside the app.
-        if (pkg == lastForegroundPkg && !intervened) {
-            Log.d("CalNyxAppLock", "continuation allow pkg=$pkg")
-            return
-        }
-
-        // App switch.
-        val previous = lastForegroundPkg
-        lastForegroundPkg = pkg
-
         var session = try {
             AppLockManager.getUnlockedSession(this)
         } catch (_: Exception) {
             null
         }
+
+        // MIDUSEFIX, session first: if this IS the session app
+        // and CalNyx did not intervene in between, it is still
+        // the same use, no matter how long, and no matter
+        // whether the service restarted in between and lost
+        // its in-memory lastForeground. NEVER block here.
+        if (session != null && pkg == session && !intervened) {
+            Log.d("CalNyxAppLock", "session allow pkg=$pkg")
+            setLastForeground(pkg)
+            return
+        }
+
+        // Continuation of an UNLOCKED app: harmless, allow.
+        // A locked app without a session is NOT allowed here
+        // on continuation alone — it must go through the
+        // grace/block check below, otherwise re-locking an
+        // app while it is still in front would be bypassed.
+        if (pkg == lastForegroundPkg && !intervened && !AppLockManager.isLocked(this, pkg)) {
+            Log.d("CalNyxAppLock", "continuation allow unlocked pkg=$pkg")
+            return
+        }
+
+        // App switch. This is the ONLY place a session ends
+        // in this service, and this is where the timer starts:
+        // the user really left the session app for another
+        // real app. Staying inside the same app, opening a
+        // new screen/chat/dialog inside it, the keyboard, or
+        // the notification shade never reaches here as a
+        // switch away from the session app.
+        val previous = lastForegroundPkg
+        setLastForeground(pkg)
 
         // The previous app was the unlocked session app and the
         // user left it for a real app: session ends, grace starts.
@@ -126,12 +190,6 @@ class AppLockService : AccessibilityService() {
 
         if (!AppLockManager.isLocked(this, pkg)) {
             Log.d("CalNyxAppLock", "switch to unlocked app pkg=$pkg")
-            return
-        }
-
-        // This app itself is the unlocked session app.
-        if (session != null && pkg == session) {
-            Log.d("CalNyxAppLock", "session allow pkg=$pkg")
             return
         }
 
@@ -152,7 +210,7 @@ class AppLockService : AccessibilityService() {
         // CalNyx becomes foreground next, but its events are
         // ignored, so record it here: the next locked-app event
         // must be a switch, not a continuation.
-        lastForegroundPkg = packageName
+        setLastForeground(packageName)
         val intent = packageManager.getLaunchIntentForPackage(packageName) ?: return
         intent.addFlags(
             Intent.FLAG_ACTIVITY_NEW_TASK or
