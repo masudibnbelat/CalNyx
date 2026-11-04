@@ -245,6 +245,10 @@ class CalculatorViewModel(application: Application) : AndroidViewModel(applicati
                                     "x⁻¹",
                                     "x³",
                                     "EXP",
+                                    // E-UPDATE: "=" -এর পর E চাপলে আগের আনসার থেকে
+                                    // chain হবে (যেমন: আনসার 5, তারপর E, 2 -> 500)।
+                                    // এটা না থাকলে E চাপলে finalResult আটকে থাকত।
+                                    "E",
                                     "ROOT"
                             )
             when {
@@ -371,6 +375,9 @@ class CalculatorViewModel(application: Application) : AndroidViewModel(applicati
             }
             "RanInt" -> insertAtCursor(Random.nextInt(0, 1000).toString())
             else -> {
+                // E-UPDATE: "E" এখানে এসে else-তে insertAtCursor("E")
+                // হবে — অর্থাৎ expression-এ "2E3" লেখা থাকবে, আর
+                // evaluate()-এর E-UPDATE সেটাকে (2*10^3) বানাবে।
                 insertAtCursor(
                         when (label) {
                             "×" -> "*"
@@ -412,7 +419,9 @@ class CalculatorViewModel(application: Application) : AndroidViewModel(applicati
 
     private fun updatePreview() {
         val current = _expression.value
-        val hasOperator = current.any { it in "+-*/%^()PC" } || current.contains("mod")
+        // E-UPDATE: 'E' যোগ করা হয়েছে, না হলে "2E3" লিখলেও
+        // preview "0" দেখাত, কারণ E-কে operator ধরা হতো না।
+        val hasOperator = current.any { it in "+-*/%^()PCE" } || current.contains("mod")
         _result.value =
                 if (!hasOperator) {
                     "0"
@@ -423,6 +432,21 @@ class CalculatorViewModel(application: Application) : AndroidViewModel(applicati
 
     private fun evaluate(raw: String): String? {
         var expr = raw.replace("×", "*").replace("÷", "/").replace("−", "-")
+
+        // E-UPDATE: exp4j বড় হাতের "E" নিজে বোঝে না (ওটা unknown
+        // variable হিসেবে fail করত, "=" -এ Error আসত)।
+        // তাই exp4j-এর আগে E-notation বদলে নেওয়া হলো:
+        //   a E b = a * 10^b, বামে সংখ্যা না থাকলে 1
+        //   E2 -> (1*10^2) = 100
+        //   2E3 -> (2*10^3) = 2000
+        //   5E7 -> (5*10^7) = 50000000
+        // "exp(" (ছোট হাতের eˣ) -এর সাথে এটা মিলবে না।
+        expr =
+                Regex("(\\d+(?:\\.\\d+)?)?E(-?\\d+)").replace(expr) { match ->
+                    val coeff = match.groupValues[1].ifEmpty { "1" }
+                    val exp = match.groupValues[2]
+                    "($coeff*10^$exp)"
+                }
 
         // Phone-calculator percent (see applyPercentRules): after a
         // + or − the % is a share of the base value, everywhere else

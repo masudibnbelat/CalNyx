@@ -1137,7 +1137,7 @@ fun NormalCalculatorScreen(
                                 }
 
                                 // Scientific strip — ONE long pill under the panel
-                                // (√, π, xⁿ, !) plus a SEPARATE round toggle button
+                                // (√, π, xⁿ, E) plus a SEPARATE round toggle button
                                 // beside it, like the reference: a flask icon in
                                 // number mode, "123" in scientific mode. The toggle
                                 // swaps the keypad's digits for scientific text keys.
@@ -1170,7 +1170,7 @@ fun NormalCalculatorScreen(
                                                                 "√" to "√",
                                                                 "π" to "π",
                                                                 "xⁿ" to "^",
-                                                                "!" to "!"
+                                                                "E" to "E"
                                                         )
                                                         .forEach { (displayText, label) ->
                                                                 Box(
@@ -1682,7 +1682,7 @@ fun NormalCalculatorScreen(
                                                                                 }
                                                                         )
                                                                 }
-                                                                // Row 5 — e and eˣ as text, ⌫ and =
+                                                                // Row 5 — ! and eˣ as text, ⌫ and =
                                                                 // as keys
                                                                 Row(
                                                                         modifier =
@@ -1698,7 +1698,7 @@ fun NormalCalculatorScreen(
                                                                                         .CenterVertically
                                                                 ) {
                                                                         ScientificTextKey(
-                                                                                text = "e",
+                                                                                text = "!",
                                                                                 modifier =
                                                                                         Modifier.weight(
                                                                                                         1f
@@ -1707,9 +1707,7 @@ fun NormalCalculatorScreen(
                                                                                 fontScale =
                                                                                         keyFontScale,
                                                                                 onClick = {
-                                                                                        handleKeyLabel(
-                                                                                                "e"
-                                                                                        )
+                                                                                        handleKeyLabel("!")
                                                                                 }
                                                                         )
                                                                         ScientificTextKey(
