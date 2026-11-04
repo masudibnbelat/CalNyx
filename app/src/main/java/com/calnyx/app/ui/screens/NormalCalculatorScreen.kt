@@ -43,6 +43,8 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import android.content.Intent
+import com.calnyx.app.applock.AppLockManager
 import com.calnyx.app.vault.VaultPrefs
 import com.calnyx.app.viewmodel.CalculatorViewModel
 import com.calnyx.app.viewmodel.HistoryViewModel
@@ -110,7 +112,29 @@ fun NormalCalculatorScreen(
                 // tar age purono default-tao kaj korbe (migration).
                 if (label == "=" && VaultPrefs.matches(context, expression.trim())) {
                         viewModel.onButtonClick("AC")
-                        onOpenVault()
+                        // APP LOCK UNLOCK: kono locked app block hoye thakle
+                        // Vault na khule sei app-tai khulbe. Pending na
+                        // thakle ager moto Vault khulbe.
+                        val pending = AppLockManager.getPending(context)
+                        if (pending != null && AppLockManager.isEnabled(context) && AppLockManager.isLocked(context, pending)) {
+                                // SESSION: timer ekhan theke cholbe na. Ekhon theke
+                                // jotokhon user ei app-er moddhei thakbe, lock hobe na.
+                                // Ber hole service nijei grace timer suru korbe.
+                                AppLockManager.setUnlockedSession(context, pending)
+                                AppLockManager.clearPending(context)
+                                val launchIntent = context.packageManager.getLaunchIntentForPackage(pending)
+                                if (launchIntent != null) {
+                                        launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                        context.startActivity(launchIntent)
+                                } else {
+                                        // App-ta khola gelo na (uninstall ityadi) —
+                                        // session rekhe dile pore abar secret chara khulto.
+                                        AppLockManager.clearUnlockedSession(context)
+                                        onOpenVault()
+                                }
+                        } else {
+                                onOpenVault()
+                        }
                         return
                 }
                 if (selActive && selEnd > selStart) {
@@ -148,14 +172,23 @@ fun NormalCalculatorScreen(
         //
         // The panel weight is 0.45 vs the pager's 1f — a bigger panel
         // and slightly shorter keys than the first filled layout.
-        val displayWeight = 0.45f
+        val displayWeight = 0.55f
         val keyFontScale = 1f
 
-        // Display font sizes are FIXED — long expressions and answers
-        // never shrink; their lines scroll horizontally instead.
-        val expressionFontSize = 72.sp
-        val finalFontSize = 80.sp
-        val previewFontSize = 32.sp
+        // ADAPTIVE display font, Google Calculator style:
+        // starts big (78sp typing, 86sp answer). When the text
+        // gets longer than what fits, it shrinks 2sp at a time,
+        // never below 52sp. After 52sp it stays FIXED at that
+        // size and further typing only scrolls horizontally —
+        // it never keeps shrinking to tiny. Deleting characters
+        // grows it back, because the size is computed from the
+        // current text length, not from a shrinking state.
+        // LIFTED: both lines sit higher in the panel (bigger
+        // bottom spacer, taller preview strip), so the live
+        // result never touches the panel's bottom edge.
+        val expressionFontSize = 78.sp
+        val finalFontSize = 86.sp
+        val previewFontSize = 36.sp
 
         val groupedHistory = remember(history) { history.groupBy { dayLabel(it.createdAt) } }
         val groupedEntries = remember(groupedHistory) { groupedHistory.entries.toList() }
@@ -233,6 +266,17 @@ fun NormalCalculatorScreen(
                                                                                                 final
                                                                                         )
                                                                                 }
+                                                                        // 86sp theke suru, 7 char-er
+                                                                        // beshi hole 2sp kore kombe,
+                                                                        // 52sp-e giye theme jabe.
+                                                                        val adaptiveFinalFontSize =
+                                                                                remember(formattedFinal) {
+                                                                                        val excess =
+                                                                                                (formattedFinal.length - 7)
+                                                                                                        .coerceAtLeast(0)
+                                                                                        (finalFontSize.value - 2f * excess)
+                                                                                                .coerceAtLeast(52f).sp
+                                                                                }
                                                                         val finalScrollState =
                                                                                 rememberScrollState()
                                                                         LaunchedEffect(final) {
@@ -260,7 +304,7 @@ fun NormalCalculatorScreen(
                                                                                         text =
                                                                                                 formattedFinal,
                                                                                         fontSize =
-                                                                                                finalFontSize,
+                                                                                                adaptiveFinalFontSize,
                                                                                         fontWeight =
                                                                                                 FontWeight
                                                                                                         .Normal,
@@ -679,10 +723,19 @@ fun NormalCalculatorScreen(
                                                                         }
 
                                                                         // Single line only — never
-                                                                        // wraps, never
-                                                                        // shrinks; it scrolls
-                                                                        // horizontally and
-                                                                        // the end stays visible
+                                                                        // wraps. ADAPTIVE: 78sp theke
+                                                                        // suru, 8 char-er beshi hole
+                                                                        // 2sp kore kombe, 52sp-e giye
+                                                                        // theme jabe, tarpor shudhu
+                                                                        // scroll hobe, ar choto hobe na.
+                                                                        val adaptiveExpressionFontSize =
+                                                                                remember(formatted.text) {
+                                                                                        val excess =
+                                                                                                (formatted.text.length - 8)
+                                                                                                        .coerceAtLeast(0)
+                                                                                        (expressionFontSize.value - 2f * excess)
+                                                                                                .coerceAtLeast(52f).sp
+                                                                                }
                                                                         Row(
                                                                                 modifier =
                                                                                         Modifier.fillMaxWidth()
@@ -704,7 +757,7 @@ fun NormalCalculatorScreen(
                                                                                                         formatted
                                                                                                                 .text,
                                                                                                 fontSize =
-                                                                                                        expressionFontSize,
+                                                                                                        adaptiveExpressionFontSize,
                                                                                                 fontWeight =
                                                                                                         FontWeight
                                                                                                                 .Normal,
@@ -1083,7 +1136,7 @@ fun NormalCalculatorScreen(
                                                 }
                                         }
 
-                                        // Answer preview line — a RESERVED 48dp strip of
+                                        // Answer preview line — a RESERVED 56dp strip of
                                         // its own, always present at the panel's bottom,
                                         // so the answer is never pushed out or clipped.
                                         // The line scrolls horizontally like the others
@@ -1091,7 +1144,7 @@ fun NormalCalculatorScreen(
                                         Box(
                                                 modifier =
                                                         Modifier.fillMaxWidth()
-                                                                .height(48.dp)
+                                                                .height(56.dp)
                                                                 .padding(horizontal = 20.dp),
                                                 contentAlignment = Alignment.CenterEnd
                                         ) {
@@ -1133,7 +1186,7 @@ fun NormalCalculatorScreen(
                                                 }
                                         }
 
-                                        Spacer(modifier = Modifier.height(10.dp))
+                                        Spacer(modifier = Modifier.height(24.dp))
                                 }
 
                                 // Scientific strip — ONE long pill under the panel
@@ -1268,7 +1321,7 @@ fun NormalCalculatorScreen(
                                                                                 horizontal = 12.dp
                                                                         ),
                                                         verticalArrangement =
-                                                                Arrangement.spacedBy(10.dp)
+                                                                Arrangement.spacedBy(8.dp)
                                                 ) {
                                                         if (!scientificExpanded) {
                                                                 val buttons:
@@ -1322,7 +1375,7 @@ fun NormalCalculatorScreen(
                                                                                 horizontalArrangement =
                                                                                         Arrangement
                                                                                                 .spacedBy(
-                                                                                                        10.dp
+                                                                                                        8.dp
                                                                                                 ),
                                                                                 verticalAlignment =
                                                                                         Alignment
@@ -1381,7 +1434,7 @@ fun NormalCalculatorScreen(
                                                                         horizontalArrangement =
                                                                                 Arrangement
                                                                                         .spacedBy(
-                                                                                                10.dp
+                                                                                                8.dp
                                                                                         ),
                                                                         verticalAlignment =
                                                                                 Alignment
@@ -1460,7 +1513,7 @@ fun NormalCalculatorScreen(
                                                                         horizontalArrangement =
                                                                                 Arrangement
                                                                                         .spacedBy(
-                                                                                                10.dp
+                                                                                                8.dp
                                                                                         ),
                                                                         verticalAlignment =
                                                                                 Alignment
@@ -1537,7 +1590,7 @@ fun NormalCalculatorScreen(
                                                                         horizontalArrangement =
                                                                                 Arrangement
                                                                                         .spacedBy(
-                                                                                                10.dp
+                                                                                                8.dp
                                                                                         ),
                                                                         verticalAlignment =
                                                                                 Alignment
@@ -1614,7 +1667,7 @@ fun NormalCalculatorScreen(
                                                                         horizontalArrangement =
                                                                                 Arrangement
                                                                                         .spacedBy(
-                                                                                                10.dp
+                                                                                                8.dp
                                                                                         ),
                                                                         verticalAlignment =
                                                                                 Alignment
@@ -1691,7 +1744,7 @@ fun NormalCalculatorScreen(
                                                                         horizontalArrangement =
                                                                                 Arrangement
                                                                                         .spacedBy(
-                                                                                                10.dp
+                                                                                                8.dp
                                                                                         ),
                                                                         verticalAlignment =
                                                                                 Alignment
@@ -1946,7 +1999,7 @@ Text(
                                 Row(
                                         modifier =
                                                 Modifier.fillMaxWidth()
-                                                        .padding(top = 6.dp, bottom = 10.dp),
+                                                        .padding(top = 4.dp, bottom = 6.dp),
                                         horizontalArrangement = Arrangement.Center,
                                         verticalAlignment = Alignment.CenterVertically
                                 ) {

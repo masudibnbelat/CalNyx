@@ -87,6 +87,72 @@ class CalculatorViewModel(application: Application) : AndroidViewModel(applicati
         _cursorPosition.value = pos + text.length
     }
 
+    // Insert a binary operator (+ - * / ^) so that the result
+    // can always be calculated: never two binary operators in a
+    // row, except one unary minus after a binary operator.
+    // Examples: 5 ×, ÷ -> 5/ ; 5 +, + -> 5+ ; 5 ×, − -> 5*- ;
+    // 5*-, ÷ -> 5/ ; empty or (, then ×/÷/+ -> ignored, but
+    // − is allowed (negative number: -5, (-5).
+    private fun insertOperator(op: String) {
+        val current = _expression.value
+        val pos = _cursorPosition.value.coerceIn(0, current.length)
+        val before = current.substring(0, pos)
+        val after = current.substring(pos)
+        val binaryOps = "+-*/^"
+
+        // Caret in the middle, just before an operator, after a
+        // number: replace THAT operator (5[|]+3, × -> 5×3).
+        if (before.isNotEmpty() &&
+                        before.last() !in binaryOps &&
+                        before.last() != '(' &&
+                        after.isNotEmpty() &&
+                        after.first() in binaryOps
+        ) {
+            _expression.value = before + op + after.drop(1)
+            _cursorPosition.value = pos + 1
+            return
+        }
+
+        // Tail is "operator + minus sign", e.g. "5*-":
+        // minus again -> ignore; any other operator replaces
+        // both (5*-, ÷ -> 5/).
+        if (before.length >= 2 &&
+                        before.last() == '-' &&
+                        before[before.length - 2] in binaryOps
+        ) {
+            if (op == "-") return
+            _expression.value = before.dropLast(2) + op + after
+            _cursorPosition.value = pos - 1
+            return
+        }
+
+        // Tail is a single binary operator, e.g. "5*":
+        if (before.isNotEmpty() && before.last() in binaryOps) {
+            // Minus after an operator is a sign, not a second
+            // operator: 5* -> 5*- (so 5*-3 can be typed).
+            if (op == "-" && before.last() != '-') {
+                insertAtCursor("-")
+                return
+            }
+            // Any other case: replace the operator (5* -> 5/,
+            // and 5- then - does NOT become 5--).
+            if (op != "-") {
+                _expression.value = before.dropLast(1) + op + after
+                _cursorPosition.value = pos
+            }
+            return
+        }
+
+        // No left operand yet: only minus may start a number.
+        if (before.isEmpty() || before.last() == '(') {
+            if (op == "-") insertAtCursor("-")
+            return
+        }
+
+        // Normal case: number, ')', '%', '!' etc. before it.
+        insertAtCursor(op)
+    }
+
     // Replace the whole expression and park the caret (default: end).
     private fun setExpression(text: String, cursor: Int = text.length) {
         _expression.value = text
@@ -366,6 +432,33 @@ class CalculatorViewModel(application: Application) : AndroidViewModel(applicati
                                         before == '%' ||
                                         before == '!')
                 insertAtCursor(if (hasOperandBefore) "*10^(" else "10^(")
+            }
+            // OPERATOR FIX: only operators that can be calculated
+            // may appear. Pressing an operator right after another
+            // operator REPLACES the old one (5 ×, then ÷ -> 5 ÷),
+            // it never appends a second one (never "5×÷").
+            // The one exception is minus as a sign: 5 ×, then −
+            // -> "5*-", because 5×-3 is a valid calculation.
+            "+", "−", "×", "÷", "^" -> {
+                val op =
+                        when (label) {
+                            "×" -> "*"
+                            "÷" -> "/"
+                            "−" -> "-"
+                            else -> label
+                        }
+                insertOperator(op)
+            }
+            "%" -> {
+                // % is a postfix value, not a binary operator:
+                // it needs a number before it. 5%× works, but
+                // ×% or %% can never be calculated, so ignore them.
+                val current = _expression.value
+                val pos = _cursorPosition.value.coerceIn(0, current.length)
+                val before = if (pos > 0) current[pos - 1] else null
+                if (before != null && before !in "+-*/^(%") {
+                    insertAtCursor("%")
+                }
             }
             "nPr" -> insertAtCursor("P")
             "nCr" -> insertAtCursor("C")

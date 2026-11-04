@@ -1,4 +1,18 @@
 // FILE: app/src/main/java/com/calnyx/app/vault/VaultManager.kt
+// ENCRYPTED VERSION - replace your old VaultManager.kt with this file.
+// Keep the file name VaultManager.kt, do not keep both files,
+// otherwise you will get a duplicate class error.
+// Also add the new file VaultCrypto.kt in the same folder.
+//
+// What changed vs your old file (everything else is unchanged):
+// 1. importUri: copies the picked file ENCRYPTED, not plain.
+// 2. restoreFile: decrypts while restoring to the CalNyx folder.
+// 3. openWithExternalViewer: decrypts to app cache (vault_preview),
+//    opens that, never opens the encrypted file directly. The cache
+//    file is cleared on the next open, and it is never in gallery.
+// 4. New helpers: decodeSampledBitmap, migratePlainFilesToEncrypted,
+//    clearPreviewCache.
+// 5. Delete / resolve / MediaStore logic is exactly as before.
 package com.calnyx.app.vault
 
 import android.app.RecoverableSecurityException
@@ -7,6 +21,8 @@ import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.content.IntentSender
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.media.MediaScannerConnection
 import android.net.Uri
 import android.os.Build
@@ -82,8 +98,6 @@ data class ImportResult(
     val vaultFile: File?,
     val deleteStatus: DeleteStatus?,
     val error: String? = null,
-    // FIX: import-এর সময় resolve করা আসল MediaStore URI.
-    // সিস্টেম পারমিশন এই URI-র জন্য দেওয়া হয়, picker URI-র জন্য না।
     val mediaUri: Uri? = null
 )
 
@@ -164,41 +178,18 @@ object VaultManager {
         }
     } catch (_: Exception) { null }
 
-    /**
-     * picker URI (content://com.android.providers.media.documents/...)
-     * থেকে real MediaStore URI বের করে।
-     *
-     * Strategy:
-     * 1. URI তে "_id" column query করার চেষ্টা — MediaStore URI হলে সরাসরি পাওয়া যাবে
-     * 2. Display name দিয়ে MediaStore এ search করবো
-     * 3. দুটোই fail করলে original URI return
-     */
     private fun resolveToMediaStoreUri(context: Context, pickerUri: Uri, category: VaultCategory): Uri {
         val authority = pickerUri.authority ?: ""
         val path = pickerUri.path ?: ""
 
-        // FIX3: স্ক্রিনশটের আসল URI:
-        // content://media/picker_get_content/0/com.android.providers.media.photopicker/media/<id>
-        // আগের v2 শুধু "/picker/" খুঁজত, কিন্তু এখানে "picker_get_content"
-        // আছে, তাই v2 ওই চেক মিস করেছে। picker / picker_get_content —
-        // দুটোতেই শেষের segment-ই আসল MediaStore id।
-        // এটা সবার আগে চেক করতে হবে, query-র _ID-র আগে, কারণ
-        // picker provider-এর query ভুল id দিতে পারে।
         if (authority == "media" && path.contains("picker")) {
             val id = pickerUri.lastPathSegment?.toLongOrNull()
             if (id != null) {
                 return ContentUris.withAppendedId(mediaStoreCollection(category), id)
             }
         }
-        // Already a direct MediaStore URI? content://media/external/.../media/<id>
         if (authority == "media" && path.contains("/external/")) return pickerUri
 
-        // FIX: DocumentsProvider URI হলে (যেমন
-        // com.android.providers.media.documents/document/image:123)
-        // documentId থেকে সরাসরি MediaStore id বের করো।
-        // এটা query / নাম দিয়ে খোঁজার চেয়ে নির্ভরযোগ্য।
-        // শুধু image:/video:/audio: prefix-এর id-ই ব্যবহার করো,
-        // msf: বা primary: পাথের ক্ষেত্রে নাম দিয়ে খোঁজা ভালো।
         try {
             val docId = DocumentsContract.getDocumentId(pickerUri)
             if (docId.contains(":")) {
@@ -210,15 +201,12 @@ object VaultManager {
             }
         } catch (_: Exception) {}
 
-        // FIX3 safety net: শেষ segment numeric হলে সেটাই MediaStore id
-        // (picker_get_content ছাড়া অন্য picker-এর ক্ষেত্রেও কাজ করবে)।
         pickerUri.lastPathSegment?.toLongOrNull()?.let { id ->
             if (authority == "media") {
                 return ContentUris.withAppendedId(mediaStoreCollection(category), id)
             }
         }
 
-        // Try to get _id directly from the picker URI
         try {
             context.contentResolver.query(
                 pickerUri,
@@ -238,7 +226,6 @@ object VaultManager {
             }
         } catch (_: Exception) {}
 
-        // Fallback: search by display name in MediaStore
         val displayName = displayNameFromUri(context, pickerUri) ?: return pickerUri
         return findMediaStoreUriByName(context, displayName, category) ?: pickerUri
     }
@@ -277,7 +264,6 @@ object VaultManager {
             val deleted = context.contentResolver.delete(uri, null, null)
             if (deleted > 0) DeleteStatus.Deleted else DeleteStatus.Failed
         } catch (e: RecoverableSecurityException) {
-            // Android 11+ — video/audio needs user confirmation dialog
             try {
                 DeleteStatus.NeedsConfirmation(e.userAction.actionIntent.intentSender)
             } catch (_: Exception) { DeleteStatus.Failed }
@@ -285,7 +271,6 @@ object VaultManager {
         catch (_: Exception) { DeleteStatus.Failed }
     }
 
-    /** FIX2: এই MediaStore URI-টা এখনো আছে কিনা। */
     fun mediaUriExists(context: Context, uri: Uri): Boolean {
         return try {
             context.contentResolver.query(
@@ -294,7 +279,6 @@ object VaultManager {
         } catch (_: Exception) { false }
     }
 
-    /** FIX2: Android 11+ এর অফিসিয়াল delete request-এর sender, বা null। */
     fun createDeleteRequestSender(context: Context, uri: Uri): IntentSender? {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return null
         return try {
@@ -305,6 +289,7 @@ object VaultManager {
         } catch (_: Exception) { null }
     }
 
+    // ── ENCRYPTED IMPORT ──────────────────────────────────────────
     suspend fun importUri(context: Context, uri: Uri, category: VaultCategory): ImportResult =
         withContext(Dispatchers.IO) {
             val dir = vaultDir(context, category)
@@ -312,22 +297,23 @@ object VaultManager {
                 ?: "imported_${System.currentTimeMillis()}"
             val target = uniqueFile(dir, originalName)
 
-            // Step 1: vault এ copy করো
+            // Step 1: vault-এ ENCRYPT করে copy করো (আগে plain copy ছিল)
             try {
                 val input = context.contentResolver.openInputStream(uri)
                     ?: return@withContext ImportResult(null, null, "File khola jayni")
-                input.use { src -> FileOutputStream(target).use { dst -> src.copyTo(dst) } }
+                input.use { src ->
+                    FileOutputStream(target).use { dst ->
+                        VaultCrypto.encryptStream(src, dst)
+                    }
+                }
             } catch (e: Exception) {
                 try { target.delete() } catch (_: Exception) {}
                 return@withContext ImportResult(null, null, "Copy hoyni: ${e.message}")
             }
 
-            // Step 2: original delete — real MediaStore URI resolve করে
+            // Step 2: original delete — আগের মতোই
             val mediaUri = resolveToMediaStoreUri(context, uri, category)
             var status = deleteMediaStoreUri(context, mediaUri)
-            // FIX2: সরাসরি delete Failed হলে (Recoverable-ও আসেনি),
-            // অফিসিয়াল createDeleteRequest দিয়ে সিস্টেম ডায়ালগের
-            // আরেকটা সুযোগ নাও — এটাই স্ক্রিনশটের Failed কেসের ফিক্স।
             if (status is DeleteStatus.Failed) {
                 val sender = createDeleteRequestSender(context, mediaUri)
                 if (sender != null) {
@@ -344,6 +330,68 @@ object VaultManager {
             catch (_: Exception) { false }
         }
 
+    // ── ENCRYPTED PHOTO PREVIEW (memory only) ─────────────────────
+    // VaultScreen-এর পুরনো decodeSampled() এর বদলে এটা ব্যবহার করবে।
+    // ফাইলটা ডিক্রিপ্ট করে memory-তে Bitmap বানায়, ফোনে কোনো
+    // plain ফাইল তৈরি করে না।
+    fun decodeSampledBitmap(file: File, reqSize: Int): Bitmap? {
+        return try {
+            val bytes = try {
+                VaultCrypto.decryptToBytes(file)
+            } catch (_: Exception) {
+                // পুরনো plain ফাইল (migration-এর আগে) হলে plain পড়ো
+                file.readBytes()
+            }
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+            var sample = 1
+            while (bounds.outWidth / sample > reqSize || bounds.outHeight / sample > reqSize) sample *= 2
+            BitmapFactory.decodeByteArray(
+                bytes, 0, bytes.size,
+                BitmapFactory.Options().apply { inSampleSize = sample }
+            )
+        } catch (_: Exception) { null }
+    }
+
+    // ── ONE-TIME MIGRATION: পুরনো plain -> encrypted ─────────────
+    // VaultScreen খোলার সময় একবার চালাও (patch ফাইলে দেওয়া আছে)।
+    // Already encrypted ফাইল ছোঁয়া হবে না, শুধু plain ফাইল
+    // এনক্রিপ্ট হবে। ফেরত দেয় কয়টা ফাইল migrate হলো।
+    suspend fun migratePlainFilesToEncrypted(context: Context): Int =
+        withContext(Dispatchers.IO) {
+            var migrated = 0
+            for (cat in VaultCategory.entries) {
+                for (file in listFiles(context, cat)) {
+                    val temp = File(file.parentFile, "${file.name}.tmp")
+                    // 1. Decrypt চেষ্টা করো — সফল হলে already encrypted
+                    val alreadyEncrypted = try {
+                        FileInputStream(file).use { src ->
+                            FileOutputStream(temp).use { dst ->
+                                VaultCrypto.decryptStream(src, dst)
+                            }
+                        }
+                        true
+                    } catch (_: Exception) { false }
+                    try { temp.delete() } catch (_: Exception) {}
+                    if (alreadyEncrypted) continue
+                    // 2. Plain হলে encrypt করে replace করো
+                    try {
+                        FileInputStream(file).use { src ->
+                            FileOutputStream(temp).use { dst ->
+                                VaultCrypto.encryptStream(src, dst)
+                            }
+                        }
+                        if (file.delete() && temp.renameTo(file)) migrated++
+                        else try { temp.delete() } catch (_: Exception) {}
+                    } catch (_: Exception) {
+                        try { temp.delete() } catch (_: Exception) {}
+                    }
+                }
+            }
+            migrated
+        }
+
+    // ── ENCRYPTED RESTORE ─────────────────────────────────────────
     suspend fun restoreFile(context: Context, file: File, category: VaultCategory): Boolean =
         withContext(Dispatchers.IO) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -373,9 +421,17 @@ object VaultManager {
                 put(MediaStore.MediaColumns.RELATIVE_PATH, relativePath)
             }
             val uri = context.contentResolver.insert(collection, values) ?: return false
-            context.contentResolver.openOutputStream(uri)?.use { out ->
-                FileInputStream(file).use { src -> src.copyTo(out) }
-            } ?: return false
+            try {
+                context.contentResolver.openOutputStream(uri)?.use { out ->
+                    FileInputStream(file).use { src ->
+                        VaultCrypto.decryptStream(src, out)
+                    }
+                } ?: return false
+            } catch (_: Exception) {
+                // আধা লেখা restore মুছে দাও
+                try { context.contentResolver.delete(uri, null, null) } catch (_: Exception) {}
+                return false
+            }
             file.delete()
             true
         } catch (_: Exception) { false }
@@ -393,8 +449,15 @@ object VaultManager {
             }
             val destDir = File(publicDir, "CalNyx").also { it.mkdirs() }
             val dest = File(destDir, file.name)
-            FileInputStream(file).use { src ->
-                FileOutputStream(dest).use { dst -> src.copyTo(dst) }
+            try {
+                FileInputStream(file).use { src ->
+                    FileOutputStream(dest).use { dst ->
+                        VaultCrypto.decryptStream(src, dst)
+                    }
+                }
+            } catch (_: Exception) {
+                try { dest.delete() } catch (_: Exception) {}
+                return false
             }
             suspendCancellableCoroutine { cont ->
                 MediaScannerConnection.scanFile(
@@ -423,10 +486,36 @@ object VaultManager {
 
     fun deleteFile(file: File): Boolean = try { file.delete() } catch (_: Exception) { false }
 
+    fun clearPreviewCache(context: Context) {
+        try {
+            File(context.cacheDir, "vault_preview").deleteRecursively()
+        } catch (_: Exception) {}
+    }
+
+    // ── ENCRYPTED OPEN (video / audio / document) ─────────────────
+    // Encrypted ফাইল সরাসরি FileProvider দিয়ে খোলা যাবে না, তাই
+    // cache-এ ডিক্রিপ্ট করে সেটা খোলা হয়। Cache ফোনের internal
+    // জায়গা, gallery / Files-এ দেখা যাবে না। পরের বার খুললে
+    // আগের preview মুছে যাবে।
     fun openWithExternalViewer(context: Context, file: File): Boolean {
         return try {
+            val previewDir = File(context.cacheDir, "vault_preview").also { it.mkdirs() }
+            previewDir.listFiles()?.forEach { try { it.delete() } catch (_: Exception) {} }
+            val preview = File(previewDir, file.name)
+            try {
+                FileInputStream(file).use { src ->
+                    FileOutputStream(preview).use { dst ->
+                        VaultCrypto.decryptStream(src, dst)
+                    }
+                }
+            } catch (_: Exception) {
+                // পুরনো plain ফাইলের fallback
+                FileInputStream(file).use { src ->
+                    FileOutputStream(preview).use { dst -> src.copyTo(dst) }
+                }
+            }
             val uri = FileProvider.getUriForFile(
-                context, "${context.packageName}.fileprovider", file
+                context, "${context.packageName}.fileprovider", preview
             )
             val intent = Intent(Intent.ACTION_VIEW).apply {
                 setDataAndType(uri, mimeFor(file))

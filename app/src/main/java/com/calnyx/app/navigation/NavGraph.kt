@@ -1,6 +1,12 @@
 // FILE: app/src/main/java/com/calnyx/app/navigation/NavGraph.kt
-// MODERN version: top bar আগের মতোই (শুধু 3-dot), menu sheet + tiles black/white, new update icon.
-// Navigation logic, routes, vault hiding — all unchanged from user's version.
+// UPDATED FULL VERSION - replace your old NavGraph.kt with this file.
+// Changes vs your old file (everything else is unchanged):
+// 1. Screen.AppLock route added, hidden from menuScreens like Vault.
+// 2. VaultScreen now gets onOpenAppLock -> navigates to AppLock.
+// 3. AppLockScreen composable added.
+// 4. Top bar hidden on AppLock route too, like Vault / VaultSetup.
+// 5. PRIVACY: ON_STOP-e Vault / VaultSetup / AppLock theke Normal-e
+//    fire jaoa — app chere onno app-e gele fire asle ar Black Hole dekhabe na.
 package com.calnyx.app.navigation
 
 import androidx.compose.animation.AnimatedVisibility
@@ -38,6 +44,7 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -50,7 +57,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import android.app.Activity
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -61,8 +72,10 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.calnyx.app.applock.AppLockManager
 import com.calnyx.app.data.NavStateDatabase
 import com.calnyx.app.data.NavStateEntity
+import com.calnyx.app.ui.screens.AppLockScreen
 import com.calnyx.app.ui.screens.CalTapeCalculatorScreen
 import com.calnyx.app.ui.screens.ConverterCalculatorScreen
 import com.calnyx.app.ui.screens.HistoryScreen
@@ -123,6 +136,11 @@ sealed class Screen(
     // chaile purono secret dite hobe।
     object VaultSetup :
             Screen("vault_setup", "Vault Setup", "Set hidden space code", Icons.Default.Lock)
+
+    // Hidden app lock — menuScreens-এ যোগ করা হয়নি, তাই মেনুতে
+    // দেখাবে না। শুধু Vault-এর App Lock কার্ড থেকে যাওয়া যাবে।
+    object AppLock :
+            Screen("app_lock", "App Lock", "Locked apps", Icons.Default.Lock)
 }
 
 val menuScreens =
@@ -154,6 +172,58 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
+
+    // PRIVACY: Vault / VaultSetup / AppLock khola rekhe app theke
+    // ber hole (onno app, recents, screen lock — jekono ON_STOP),
+    // fire asle ar sei private screen dekhabe na. ON_STOP-ei
+    // backstack Normal calculator-e firiye deoa hoy, tai fire
+    // asar somoy Vault-er ek jholok-o dekhabe na. Normal
+    // calculator theke locked app unlock korle eta kichu kore na,
+    // karon tokhon route Normal-i thake.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, navController) {
+        val observer = LifecycleEventObserver { _, event ->
+            // UNLOCK FIX: service CalNyx-er event ignore kore, tai
+            // CalNyx-e fire asa service bujhbe na. CalNyx nijei
+            // resume-e session sesh korbe — kintu decoy hisebe
+            // khola hole (pending ache) tokhon noy, karon tokhon
+            // user ekhono unlock koreni. Eta chara CalNyx-e fire
+            // ese abar locked app khulle secret charai khulto.
+            if (event == Lifecycle.Event.ON_RESUME) {
+                try {
+                    if (AppLockManager.getPending(context) == null &&
+                        AppLockManager.getUnlockedSession(context) != null
+                    ) {
+                        AppLockManager.endUnlockedSession(context)
+                        AppLockManager.setCalNyxIntervened(context, true)
+                    }
+                } catch (_: Exception) {
+                }
+            }
+            // Rotation-e activity recreate hoy, seta ber hoye jaoa na —
+            // tai rotation-e Vault bondho hobe na, sudhu sotti ber holei hobe.
+            if (event == Lifecycle.Event.ON_STOP &&
+                (context as? Activity)?.isChangingConfigurations != true
+            ) {
+                val route = navController.currentBackStackEntry?.destination?.route
+                if (route == Screen.Vault.route ||
+                    route == Screen.VaultSetup.route ||
+                    route == Screen.AppLock.route
+                ) {
+                    if (!navController.popBackStack(Screen.Normal.route, false)) {
+                        navController.navigate(Screen.Normal.route) {
+                            popUpTo(navController.graph.findStartDestination().id) {
+                                inclusive = true
+                            }
+                            launchSingleTop = true
+                        }
+                    }
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
     var normalHistoryOpen by remember { mutableStateOf(false) }
 
     var showMenu by remember { mutableStateOf(false) }
@@ -259,7 +329,13 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
                     HistoryScreen(onBack = { navController.popBackStack() })
                 }
                 composable(Screen.Vault.route) {
-                    VaultScreen(onBack = { navController.popBackStack() })
+                    VaultScreen(
+                            onBack = { navController.popBackStack() },
+                            onOpenAppLock = { navController.navigate(Screen.AppLock.route) }
+                    )
+                }
+                composable(Screen.AppLock.route) {
+                    AppLockScreen(onBack = { navController.popBackStack() })
                 }
                 composable(Screen.VaultSetup.route) {
                     VaultSetupScreen(
@@ -280,7 +356,8 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
                     visible =
                             !(currentRoute == Screen.Normal.route && normalHistoryOpen) &&
                                     currentRoute != Screen.Vault.route &&
-                                    currentRoute != Screen.VaultSetup.route,
+                                    currentRoute != Screen.VaultSetup.route &&
+                                    currentRoute != Screen.AppLock.route,
                     enter = fadeIn(animationSpec = tween(250)),
                     exit = fadeOut(animationSpec = tween(250))
             ) {

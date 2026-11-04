@@ -1,3 +1,26 @@
+// FILE: app/src/main/java/com/calnyx/app/ui/screens/VaultScreen.kt
+// MODERN3 VERSION - replace your old VaultScreen.kt with this file.
+// Same as BACKFIX (system back from a folder goes to the overview
+// first), plus the Settings dialog is now modern black/white:
+// no theme pink on the Save button or the text field border,
+// no extra 'Default secret still active' row, English only.
+// Fixes system back from inside a folder: previously it popped
+// the whole Vault route to the calculator. Now the first back
+// returns to the Black Hole overview, the second back to the
+// calculator. Top-bar back already did this; system back now
+// does the same.
+// Logic is unchanged (encryption, import, restore, rename, delete,
+// App Lock navigation). Only the design changed:
+//  - No emojis anywhere on this screen. Folder / lock / play
+//    icons are Material icons in monochrome circles.
+//  - No duplicate "Black Hole" banner title, no PRIVATE pill,
+//    no dot bullets, no heavy gradient, no heavy shadows.
+//  - Overview is a clean summary card + folder cards + App Lock
+//    card, all in off-white / off-black only, same corner and
+//    shadow everywhere, so nothing overlaps or sticks out.
+//  - All visible text is English only. No Banglish strings.
+// You still need: VaultCrypto.kt (new) + VaultManager-ENCRYPTED.kt
+// (as VaultManager.kt) + cache-path line in file_paths.xml.
 package com.calnyx.app.ui.screens
 
 import android.app.Activity
@@ -5,6 +28,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -19,19 +43,26 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -47,6 +78,7 @@ import com.calnyx.app.vault.DeleteStatus
 import com.calnyx.app.vault.VaultCategory
 import com.calnyx.app.vault.VaultManager
 import com.calnyx.app.vault.VaultPrefs
+import com.calnyx.app.applock.AppLockManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -54,7 +86,7 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
 
-private val themeIcons = listOf("⚫", "🌑", "🕳️", "💀", "🔒", "🛡️", "👁️", "🌌")
+// The old emoji theme-icon picker is removed with the picker below.
 
 // MODERN palette: only off-white / off-black / grey. No purple, pink,
 // teal or orange accents anywhere on this screen.
@@ -68,10 +100,10 @@ private val ThumbBgLight = Color(0xFFEFEDE8)
 private val ThumbBgDark = Color(0xFF262626)
 
 private val categoryInfo = mapOf(
-    VaultCategory.PHOTOS    to Pair("🖼️", OffBlack),
-    VaultCategory.VIDEOS    to Pair("🎬", OffBlack),
-    VaultCategory.DOCUMENTS to Pair("📄", OffBlack),
-    VaultCategory.AUDIO     to Pair("🎵", OffBlack),
+    VaultCategory.PHOTOS    to Icons.Filled.Image,
+    VaultCategory.VIDEOS    to Icons.Filled.Videocam,
+    VaultCategory.DOCUMENTS to Icons.Filled.Description,
+    VaultCategory.AUDIO     to Icons.Filled.MusicNote,
 )
 
 // Import এর পরে delete confirm এর জন্য state
@@ -84,7 +116,7 @@ private data class PendingDelete(
 )
 
 @Composable
-fun VaultScreen(onBack: () -> Unit) {
+fun VaultScreen(onBack: () -> Unit, onOpenAppLock: () -> Unit = {}) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     // MODERN theme: page and cards follow dark/light, but only in
@@ -117,9 +149,32 @@ fun VaultScreen(onBack: () -> Unit) {
 
     var settingsSaveKey by remember { mutableStateOf(0) }
 
+    // BACK FIX: folder-er vitore thakle system back (back button /
+    // back gesture) age folder theke overview-e firbe, Vault
+    // route pop kore calculator-e jabe na. Overview-e thakle
+    // BackHandler off, tai tokhon normal back-e calculator-e jabe.
+    // Kono dialog khola thakle BackHandler off, tai dialog-i
+    // age bondho hobe, folder na.
+    BackHandler(
+        enabled = selectedCategory != null &&
+            actionFile == null &&
+            photoViewerFile == null &&
+            renamingFile == null &&
+            deletingFile == null &&
+            !showSettingsDialog &&
+            pendingDelete == null
+    ) {
+        selectedCategory = null
+    }
+
     LaunchedEffect(Unit) {
         selectedIcon = VaultPrefs.getThemeIcon(context) ?: "⚫"
         secretText = VaultPrefs.getSecret(context) ?: ""
+        // ENCRYPTED UPDATE: পুরনো plain ফাইল একবার encrypt করো।
+        // Already encrypted ফাইল ছোঁয়া হবে না। LaunchedEffect(Unit)
+        // শুধু একবার চলে, তাই refreshKey বাড়লেও এটা আবার চলবে না।
+        val migrated = VaultManager.migratePlainFilesToEncrypted(context)
+        if (migrated > 0) refreshKey++
     }
     LaunchedEffect(settingsSaveKey) {
         if (settingsSaveKey > 0) selectedIcon = VaultPrefs.getThemeIcon(context) ?: "⚫"
@@ -151,7 +206,7 @@ fun VaultScreen(onBack: () -> Unit) {
             } else false
             Toast.makeText(
                 context,
-                if (ok) "Gallery theke muche gece ✓" else "Delete hoyni — gallery theke nije koro",
+                if (ok) "Deleted from gallery" else "Could not delete — please delete it from the gallery yourself",
                 Toast.LENGTH_LONG
             ).show()
         }
@@ -167,7 +222,7 @@ fun VaultScreen(onBack: () -> Unit) {
         scope.launch {
             val result = VaultManager.importUri(context, uri, cat)
             if (result.vaultFile == null) {
-                Toast.makeText(context, result.error ?: "Import hoyni", Toast.LENGTH_LONG).show()
+                Toast.makeText(context, result.error ?: "Import failed", Toast.LENGTH_LONG).show()
                 return@launch
             }
             // Import successful — now ask user about deleting original
@@ -176,18 +231,7 @@ fun VaultScreen(onBack: () -> Unit) {
             if (status != null) {
                 pendingDelete = PendingDelete(uri, fileName, status, result.mediaUri ?: uri)
             }
-            // FIX2 DEBUG (অস্থায়ী): Failed হলে URI দুটো টোস্টে দেখাবে,
-            // যাতে পরের স্ক্রিনশট থেকে বোঝা যায় resolve ঠিক হয়েছে কিনা।
-            // Delete ঠিক হয়ে গেলে এই 3 লাইন মুছে দিলেই হবে।
-            if (status is DeleteStatus.Failed) {
-                // FIX3: আগের DEBUG টোস্টে picker URI এত লম্বা ছিল যে
-                // media URI-টা ... দিয়ে কাটা যেত। এখন শুধু ছোট media URI দেখাবে।
-                Toast.makeText(
-                    context,
-                    "DEBUG media=${result.mediaUri}",
-                    Toast.LENGTH_LONG
-                ).show()
-            }
+            // ENCRYPTED UPDATE: DEBUG toast মুছে দেওয়া হয়েছে।
             refreshKey++
         }
     }
@@ -239,70 +283,57 @@ fun VaultScreen(onBack: () -> Unit) {
                         .padding(horizontal = 16.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
-                    // Hero Banner — MODERN: pure black gradient, white
-                    // text, soft shadow, no colour accents.
-                    Box(
+                    // Summary card — modern: same card style as
+                    // everything else, no gradient, no emoji, no pill,
+                    // and no duplicate "Black Hole" title (the top bar
+                    // already says it). Just the count + a lock icon.
+                    Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .shadow(18.dp, RoundedCornerShape(28.dp))
-                            .height(168.dp)
-                            .clip(RoundedCornerShape(28.dp))
-                            .background(
-                                Brush.linearGradient(
-                                    colors = listOf(
-                                        Color(0xFF0E0E0E),
-                                        Color(0xFF333333)
-                                    )
-                                )
-                            )
-                            .border(1.dp, Color.White.copy(alpha = 0.10f), RoundedCornerShape(28.dp))
+                            .shadow(6.dp, RoundedCornerShape(20.dp))
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(cardBg)
+                            .border(1.dp, cardBorderColor, RoundedCornerShape(20.dp))
+                            .padding(20.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(
+                        Box(
                             modifier = Modifier
-                                .fillMaxSize()
-                                .padding(horizontal = 24.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                                .size(56.dp)
+                                .clip(CircleShape)
+                                .background(thumbBg),
+                            contentAlignment = Alignment.Center
                         ) {
-                            Text(selectedIcon, fontSize = 56.sp)
-                            Spacer(Modifier.width(20.dp))
-                            Column {
-                                Text(
-                                    "Black Hole",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 24.sp,
-                                    color = Color.White
-                                )
-                                Spacer(Modifier.height(4.dp))
-                                Text(
-                                    if (totalFiles == 0) "Nothing hidden yet"
-                                    else "$totalFiles files secured",
-                                    fontSize = 13.sp,
-                                    color = Color.White.copy(alpha = 0.8f)
-                                )
-                                Spacer(Modifier.height(10.dp))
-                                Box(
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(50))
-                                        .background(Color.White.copy(alpha = 0.16f))
-                                        .padding(horizontal = 10.dp, vertical = 5.dp)
-                                ) {
-                                    Text(
-                                        "PRIVATE  •  HIDDEN",
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Color.White,
-                                        letterSpacing = 1.2.sp
-                                    )
-                                }
-                            }
+                            Icon(
+                                Icons.Filled.Lock,
+                                contentDescription = null,
+                                tint = onPageColor,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                        Spacer(Modifier.width(16.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                if (totalFiles == 0) "Nothing hidden yet"
+                                else "$totalFiles files secured",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 20.sp,
+                                color = onPageColor
+                            )
+                            Spacer(Modifier.height(2.dp))
+                            Text(
+                                "Private storage",
+                                fontSize = 13.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
                     }
 
                     Text(
-                        "FOLDERS",
+                        "Folders",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        letterSpacing = 1.5.sp
+                        letterSpacing = 0.5.sp
                     )
 
                     VaultCategory.entries.chunked(2).forEach { rowItems ->
@@ -312,24 +343,24 @@ fun VaultScreen(onBack: () -> Unit) {
                         ) {
                             rowItems.forEach { cat ->
                                 val count = folderCounts[cat] ?: 0
-                                val (emoji, accentColor) = categoryInfo[cat]!!
+                                val categoryIcon = categoryInfo[cat]!!
                                 val firstPhoto = if (cat == VaultCategory.PHOTOS)
                                     VaultManager.listFiles(context, cat).firstOrNull() else null
 
                                 Column(
                                     modifier = Modifier
                                         .weight(1f)
-                                        .shadow(10.dp, RoundedCornerShape(24.dp))
-                                        .clip(RoundedCornerShape(24.dp))
+                                        .shadow(6.dp, RoundedCornerShape(20.dp))
+                                        .clip(RoundedCornerShape(20.dp))
                                         .background(cardBg)
-                                        .border(1.dp, cardBorderColor, RoundedCornerShape(24.dp))
+                                        .border(1.dp, cardBorderColor, RoundedCornerShape(20.dp))
                                         .clickable { selectedCategory = cat }
                                 ) {
                                     Box(
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .height(90.dp)
-                                            .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
+                                            .height(84.dp)
+                                            .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
                                             .background(thumbBg),
                                         contentAlignment = Alignment.Center
                                     ) {
@@ -339,27 +370,32 @@ fun VaultScreen(onBack: () -> Unit) {
                                                 modifier = Modifier.fillMaxSize()
                                             )
                                         } else {
-                                            Text(emoji, fontSize = 38.sp)
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(52.dp)
+                                                    .clip(CircleShape)
+                                                    .background(cardBg)
+                                                    .border(1.dp, cardBorderColor, CircleShape),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(
+                                                    categoryIcon,
+                                                    contentDescription = null,
+                                                    tint = onPageColor,
+                                                    modifier = Modifier.size(24.dp)
+                                                )
+                                            }
                                         }
                                     }
                                     Column(
                                         modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)
                                     ) {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(8.dp)
-                                                    .clip(RoundedCornerShape(4.dp))
-                                                    .background(if (isDark) OffWhite else OffBlack)
-                                            )
-                                            Spacer(Modifier.width(6.dp))
-                                            Text(
-                                                cat.title,
-                                                fontWeight = FontWeight.SemiBold,
-                                                style = MaterialTheme.typography.bodyLarge,
-                                                color = onPageColor
-                                            )
-                                        }
+                                        Text(
+                                            cat.title,
+                                            fontWeight = FontWeight.SemiBold,
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            color = onPageColor
+                                        )
                                         Spacer(Modifier.height(2.dp))
                                         Text(
                                             if (count == 0) "Empty" else "$count files",
@@ -372,6 +408,66 @@ fun VaultScreen(onBack: () -> Unit) {
                             if (rowItems.size == 1) Spacer(Modifier.weight(1f))
                         }
                     }
+                    Text(
+                        "Security",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        letterSpacing = 0.5.sp
+                    )
+
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .shadow(6.dp, RoundedCornerShape(20.dp))
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(cardBg)
+                            .border(1.dp, cardBorderColor, RoundedCornerShape(20.dp))
+                            .clickable { onOpenAppLock() }
+                            .padding(16.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .clip(CircleShape)
+                                    .background(thumbBg),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    Icons.Filled.Lock,
+                                    contentDescription = null,
+                                    tint = onPageColor,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+                            Spacer(Modifier.width(14.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    "App Lock",
+                                    fontWeight = FontWeight.SemiBold,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = onPageColor
+                                )
+                                Spacer(Modifier.height(2.dp))
+                                val appLockOn = AppLockManager.isEnabled(context)
+                                val appLockCount = AppLockManager.getLockedPackages(context).size
+                                Text(
+                                    if (!appLockOn) "Off"
+                                    else if (appLockCount == 0) "On • No apps locked yet"
+                                    else if (appLockCount == 1) "On • 1 app locked"
+                                    else "On • $appLockCount apps locked",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Icon(
+                                Icons.Filled.KeyboardArrowRight,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                    }
                     Spacer(Modifier.height(8.dp))
                 }
 
@@ -379,7 +475,7 @@ fun VaultScreen(onBack: () -> Unit) {
                 // ══════════════════════════════════════
                 //  INSIDE FOLDER
                 // ══════════════════════════════════════
-                val (emoji, accentColor) = categoryInfo[category]!!
+                val categoryIcon = categoryInfo[category]!!
 
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -423,9 +519,9 @@ fun VaultScreen(onBack: () -> Unit) {
                         },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .shadow(10.dp, RoundedCornerShape(20.dp))
+                            .shadow(6.dp, RoundedCornerShape(16.dp))
                             .height(56.dp),
-                        shape = RoundedCornerShape(20.dp),
+                        shape = RoundedCornerShape(16.dp),
                         colors = ButtonDefaults.buttonColors(
                             // MODERN: light mode-এ কালো বাটন, dark mode-এ সাদা বাটন
                             containerColor = if (isDark) OffWhite else OffBlack,
@@ -445,7 +541,21 @@ fun VaultScreen(onBack: () -> Unit) {
                                 horizontalAlignment = Alignment.CenterHorizontally,
                                 verticalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
-                                Text(emoji, fontSize = 56.sp)
+                                Box(
+                                    modifier = Modifier
+                                        .size(72.dp)
+                                        .clip(CircleShape)
+                                        .background(cardBg)
+                                        .border(1.dp, cardBorderColor, CircleShape),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        categoryIcon,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(30.dp)
+                                    )
+                                }
                                 Text(
                                     "Nothing here yet",
                                     fontWeight = FontWeight.SemiBold,
@@ -484,7 +594,7 @@ fun VaultScreen(onBack: () -> Unit) {
                                         Box(
                                             modifier = Modifier
                                                 .fillMaxSize()
-                                                .background(Color(0xFF0D0D1A)),
+                                                .background(OffBlack),
                                             contentAlignment = Alignment.Center
                                         ) {
                                             Box(
@@ -494,7 +604,12 @@ fun VaultScreen(onBack: () -> Unit) {
                                                     .background(Color.White.copy(alpha = 0.18f)),
                                                 contentAlignment = Alignment.Center
                                             ) {
-                                                Text("▶", fontSize = 14.sp, color = Color.White)
+                                                Icon(
+                                                    Icons.Filled.PlayArrow,
+                                                    contentDescription = null,
+                                                    tint = Color.White,
+                                                    modifier = Modifier.size(18.dp)
+                                                )
                                             }
                                         }
                                     }
@@ -525,7 +640,12 @@ fun VaultScreen(onBack: () -> Unit) {
                                             .background(thumbBg),
                                         contentAlignment = Alignment.Center
                                     ) {
-                                        Text(emoji, fontSize = 24.sp)
+                                        Icon(
+                                            categoryIcon,
+                                            contentDescription = null,
+                                            tint = onPageColor,
+                                            modifier = Modifier.size(24.dp)
+                                        )
                                     }
                                     Spacer(Modifier.width(14.dp))
                                     Column(Modifier.weight(1f)) {
@@ -564,18 +684,18 @@ fun VaultScreen(onBack: () -> Unit) {
             onDismissRequest = { pendingDelete = null },
             shape = RoundedCornerShape(24.dp),
             title = {
-                Text("Original file delete korbo?", fontWeight = FontWeight.Bold)
+                Text("Delete original file?", fontWeight = FontWeight.Bold)
             },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        "\"${pd.fileName}\" vault-e save hoyeche ✓",
+                        "\"${pd.fileName}\" saved to vault",
                         fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.primary
                     )
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        "Gallery/Files theke original ta delete korte chao?",
+                        "Delete the original from Gallery / Files as well?",
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
@@ -608,7 +728,7 @@ fun VaultScreen(onBack: () -> Unit) {
                                     Toast.makeText(
                                         context,
                                         if (ok) "Deleted ✓"
-                                        else "Delete hoyni — gallery theke nije delete koro",
+                                        else "Could not delete — please delete it from the gallery yourself",
                                         Toast.LENGTH_LONG
                                     ).show()
                                 }
@@ -633,7 +753,7 @@ fun VaultScreen(onBack: () -> Unit) {
     val file = actionFile
     if (file != null && selectedCategory != null) {
         val cat = selectedCategory!!
-        val (_, accentColor) = categoryInfo[cat]!!
+        // categoryIcon is not needed in the action sheet
         AlertDialog(
             onDismissRequest = { actionFile = null },
             shape = RoundedCornerShape(24.dp),
@@ -816,116 +936,85 @@ fun VaultScreen(onBack: () -> Unit) {
         )
     }
 
-    // ── Settings ──
+    // ── Settings ── MODERN: black/white only. The default
+    // AlertDialog/Button colours come from the app theme
+    // (pink), so every colour here is set explicitly.
     if (showSettingsDialog) {
         AlertDialog(
             onDismissRequest = { showSettingsDialog = false },
-            shape = RoundedCornerShape(28.dp),
+            containerColor = cardBg,
+            shape = RoundedCornerShape(20.dp),
             title = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(selectedIcon, fontSize = 24.sp)
+                    Box(
+                        modifier = Modifier.size(36.dp)
+                            .clip(CircleShape)
+                            .background(thumbBg),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Filled.Lock,
+                            contentDescription = null,
+                            tint = onPageColor,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
                     Spacer(Modifier.width(10.dp))
-                    Text("Settings", fontWeight = FontWeight.Bold)
+                    Text("Settings", fontWeight = FontWeight.Bold, color = onPageColor)
                 }
             },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(
-                            "SECRET CODE",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            letterSpacing = 1.sp
-                        )
-                        OutlinedTextField(
-                            value = secretText,
-                            onValueChange = { secretText = it },
-                            singleLine = true,
-                            placeholder = { Text("Enter secret") },
-                            shape = RoundedCornerShape(14.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        if (VaultPrefs.isDefault(context)) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(MaterialTheme.colorScheme.errorContainer)
-                                    .padding(10.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text("⚠️", fontSize = 14.sp)
-                                Spacer(Modifier.width(8.dp))
-                                Text(
-                                    "Default secret still active",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onErrorContainer
-                                )
-                            }
-                        }
-                    }
-
-                    HorizontalDivider()
-
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text(
-                            "THEME ICON",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            letterSpacing = 1.sp
-                        )
-                        themeIcons.chunked(4).forEach { rowIcons ->
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                rowIcons.forEach { icon ->
-                                    val isSelected = icon == selectedIcon
-                                    Box(
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .aspectRatio(1f)
-                                            .clip(RoundedCornerShape(14.dp))
-                                            .background(
-                                                if (isSelected) MaterialTheme.colorScheme.primaryContainer
-                                                else MaterialTheme.colorScheme.surfaceVariant
-                                            )
-                                            .then(
-                                                if (isSelected) Modifier.border(
-                                                    2.dp,
-                                                    MaterialTheme.colorScheme.primary,
-                                                    RoundedCornerShape(14.dp)
-                                                ) else Modifier
-                                            )
-                                            .clickable { selectedIcon = icon },
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Text(icon, fontSize = 24.sp)
-                                    }
-                                }
-                            }
-                        }
-                    }
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        "Secret code",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = onPageColor.copy(alpha = 0.6f),
+                        letterSpacing = 1.sp
+                    )
+                    OutlinedTextField(
+                        value = secretText,
+                        onValueChange = { secretText = it },
+                        singleLine = true,
+                        placeholder = { Text("Enter secret") },
+                        shape = RoundedCornerShape(16.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = onPageColor,
+                            unfocusedBorderColor = cardBorderColor,
+                            focusedTextColor = onPageColor,
+                            unfocusedTextColor = onPageColor,
+                            cursorColor = onPageColor,
+                            focusedPlaceholderColor = onPageColor.copy(alpha = 0.4f),
+                            unfocusedPlaceholderColor = onPageColor.copy(alpha = 0.4f)
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 }
             },
             confirmButton = {
                 Button(
                     onClick = {
                         if (secretText.isBlank()) {
-                            Toast.makeText(context, "Secret khali rakhা jabe na", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Secret cannot be empty", Toast.LENGTH_SHORT).show()
                         } else {
                             VaultPrefs.setSecret(context, secretText)
                             VaultPrefs.setThemeIcon(context, selectedIcon)
                             settingsSaveKey++
                             showSettingsDialog = false
-                            Toast.makeText(context, "Saved ✓", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Saved", Toast.LENGTH_SHORT).show()
                         }
                     },
-                    shape = RoundedCornerShape(12.dp)
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = onPageColor,
+                        contentColor = pageBg
+                    ),
+                    shape = RoundedCornerShape(16.dp)
                 ) { Text("Save") }
             },
             dismissButton = {
-                TextButton(onClick = { showSettingsDialog = false }) { Text("Cancel") }
+                TextButton(
+                    onClick = { showSettingsDialog = false },
+                    colors = ButtonDefaults.textButtonColors(contentColor = onPageColor)
+                ) { Text("Cancel") }
             }
         )
     }
@@ -949,7 +1038,14 @@ private fun VaultPhotoThumbnail(file: File, modifier: Modifier = Modifier) {
         Box(
             modifier = modifier.background(MaterialTheme.colorScheme.surfaceVariant),
             contentAlignment = Alignment.Center
-        ) { Text("🖼️", fontSize = 24.sp) }
+        ) {
+            Icon(
+                Icons.Filled.Image,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(24.dp)
+            )
+        }
     }
 }
 
@@ -974,15 +1070,9 @@ private fun VaultPhotoImage(file: File, modifier: Modifier = Modifier) {
     }
 }
 
+// ENCRYPTED UPDATE: আগের BitmapFactory.decodeFile() এখানে আর নেই।
+// Encrypted ফাইল সরাসরি decode করলে ছবি আসত না, তাই এখন
+// VaultManager মেমোরিতে ডিক্রিপ্ট করে Bitmap বানায়।
 private fun decodeSampled(file: File, reqSize: Int): Bitmap? {
-    return try {
-        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeFile(file.absolutePath, bounds)
-        var sample = 1
-        while (bounds.outWidth / sample > reqSize || bounds.outHeight / sample > reqSize) sample *= 2
-        BitmapFactory.decodeFile(
-            file.absolutePath,
-            BitmapFactory.Options().apply { inSampleSize = sample }
-        )
-    } catch (_: Exception) { null }
+    return VaultManager.decodeSampledBitmap(file, reqSize)
 }
