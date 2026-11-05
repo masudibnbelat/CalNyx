@@ -1,7 +1,13 @@
 // FILE: app/src/main/java/com/calnyx/app/ui/screens/AppLockScreen.kt
-// SMOOTH VERSION - replace your old AppLockScreen.kt with this file.
-// Scroll fix + unlock time setting + black/white design polish.
-// (The crash fix from the FIXED version — distinctBy key — is still here.)
+// FIXED2 VERSION - replace your old AppLockScreen.kt with this file.
+// Based on SMOOTH, only these changes:
+// 1. Restricted Settings help (Android 13+ sideloaded apps only):
+//    when Accessibility is off and needsRestrictedSetting() is true,
+//    show the exact steps App info > 3 dots > Allow restricted
+//    settings, with a button that opens App info directly.
+//    Code cannot bypass this - the user must tap Allow once.
+// 2. Battery optimisation note for Realme/Oppo (service gets killed).
+// No design change: same black/white, English only, title only.
 // Crash fix: in the earlier version all app icons were
 // decoded to bitmaps together on IO. One bad icon / label
 // crashed the whole list load, at the same place every time.
@@ -17,6 +23,7 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.drawable.Drawable
+import android.net.Uri
 import android.provider.Settings
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -28,11 +35,9 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -208,7 +213,6 @@ fun AppLockScreen(onBack: () -> Unit) {
                     Text(
                         if (!isEnabled) "Off"
                         else if (lockedSet.isEmpty()) "On • No apps locked"
-                        else if (lockedSet.size == 1) "On • 1 app locked"
                         else "On • ${lockedSet.size} apps locked",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -218,34 +222,56 @@ fun AppLockScreen(onBack: () -> Unit) {
 
             Column(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // COMPACT: one row only. No "App Lock" text (the
-                // header already says it) and no "Auto-lock after"
-                // title. Left: time input box, right: App Lock switch.
                 Row(
                     modifier = Modifier.fillMaxWidth()
-                        .shadow(4.dp, RoundedCornerShape(16.dp))
-                        .clip(RoundedCornerShape(16.dp))
+                        .shadow(10.dp, RoundedCornerShape(24.dp))
+                        .clip(RoundedCornerShape(24.dp))
                         .background(cardBg)
-                        .border(1.dp, cardBorderColor, RoundedCornerShape(16.dp))
-                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                        .border(1.dp, cardBorderColor, RoundedCornerShape(24.dp))
+                        .padding(16.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Box(
-                        modifier = Modifier.size(40.dp)
-                            .clip(CircleShape)
+                        modifier = Modifier.size(52.dp)
+                            .clip(RoundedCornerShape(14.dp))
                             .background(thumbBg),
                         contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            Icons.Filled.Lock,
-                            contentDescription = null,
-                            tint = onPageColor,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                    Spacer(Modifier.width(10.dp))
+                    ) { Text("🔒", fontSize = 24.sp) }
+                    Spacer(Modifier.width(14.dp))
+                    Text(
+                        "App Lock",
+                        fontWeight = FontWeight.SemiBold,
+                        style = MaterialTheme.typography.bodyLarge,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Switch(
+                        checked = isEnabled,
+                        onCheckedChange = {
+                            isEnabled = it
+                            AppLockManager.setEnabled(context, it)
+                        }
+                    )
+                }
+
+                // AUTO-LOCK TIME — title only, no description.
+                // Small input box: tap it for suggestions, then Custom time.
+                Row(
+                    modifier = Modifier.fillMaxWidth()
+                        .shadow(8.dp, RoundedCornerShape(24.dp))
+                        .clip(RoundedCornerShape(24.dp))
+                        .background(cardBg)
+                        .border(1.dp, cardBorderColor, RoundedCornerShape(24.dp))
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "Auto-lock after",
+                        fontWeight = FontWeight.SemiBold,
+                        style = MaterialTheme.typography.bodyLarge,
+                        modifier = Modifier.weight(1f)
+                    )
                     ExposedDropdownMenuBox(
                         expanded = durationMenuExpanded,
                         onExpandedChange = { durationMenuExpanded = it }
@@ -259,7 +285,7 @@ fun AppLockScreen(onBack: () -> Unit) {
                             },
                             shape = RoundedCornerShape(12.dp),
                             singleLine = true,
-                            modifier = Modifier.width(130.dp).menuAnchor()
+                            modifier = Modifier.width(150.dp).menuAnchor()
                         )
                         ExposedDropdownMenu(
                             expanded = durationMenuExpanded,
@@ -291,22 +317,6 @@ fun AppLockScreen(onBack: () -> Unit) {
                             )
                         }
                     }
-                    Spacer(Modifier.weight(1f))
-                    Switch(
-                        checked = isEnabled,
-                        onCheckedChange = {
-                            isEnabled = it
-                            AppLockManager.setEnabled(context, it)
-                        },
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = pageBg,
-                            checkedTrackColor = onPageColor,
-                            checkedBorderColor = onPageColor,
-                            uncheckedThumbColor = onPageColor.copy(alpha = 0.6f),
-                            uncheckedTrackColor = thumbBg,
-                            uncheckedBorderColor = cardBorderColor
-                        )
-                    )
                 }
 
                 if (showCustomDialog) {
@@ -369,13 +379,18 @@ fun AppLockScreen(onBack: () -> Unit) {
                 }
 
                 if (isEnabled && !accessibilityOn) {
+                    // FIXED2: Android 13+ Restricted Settings.
+                    // If the app was installed from an APK (not Play Store),
+                    // Android blocks Accessibility until the user allows it
+                    // once in App info. Show the steps only then.
+                    val needsRestricted = remember { AppLockManager.needsRestrictedSetting(context) }
                     Column(
                         modifier = Modifier.fillMaxWidth()
-                            .shadow(4.dp, RoundedCornerShape(16.dp))
-                            .clip(RoundedCornerShape(16.dp))
+                            .shadow(10.dp, RoundedCornerShape(24.dp))
+                            .clip(RoundedCornerShape(24.dp))
                             .background(cardBg)
-                            .border(1.dp, cardBorderColor, RoundedCornerShape(16.dp))
-                            .padding(12.dp),
+                            .border(1.dp, cardBorderColor, RoundedCornerShape(24.dp))
+                            .padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Text(
@@ -383,6 +398,27 @@ fun AppLockScreen(onBack: () -> Unit) {
                             fontWeight = FontWeight.SemiBold,
                             color = onPageColor
                         )
+                        if (needsRestricted) {
+                            Text(
+                                "Android 13+ blocks this for apps installed from APK. Do this once:\n1. Open App info below\n2. Tap 3 dots > Allow restricted settings\n3. Back, then open Accessibility below and turn on CalNyx",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Button(
+                                onClick = {
+                                    try {
+                                        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                            data = Uri.fromParts("package", context.packageName, null)
+                                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                        }
+                                        context.startActivity(intent)
+                                    } catch (_: Exception) {
+                                    }
+                                },
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = onPageColor, contentColor = pageBg)
+                            ) { Text("Open App Info") }
+                        }
                         Button(
                             onClick = {
                                 val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
@@ -392,12 +428,17 @@ fun AppLockScreen(onBack: () -> Unit) {
                             shape = RoundedCornerShape(12.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = onPageColor, contentColor = pageBg)
                         ) { Text("Open Accessibility Settings") }
+                        Text(
+                            "On Realme / Oppo also allow Autostart and turn off Battery optimisation for CalNyx, otherwise the service is killed.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
 
             }
 
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(12.dp))
 
             OutlinedTextField(
                 value = search,
@@ -409,7 +450,7 @@ fun AppLockScreen(onBack: () -> Unit) {
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
             )
 
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(12.dp))
 
                 if (loading) {
                     Box(Modifier.weight(1f).fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
@@ -429,21 +470,21 @@ fun AppLockScreen(onBack: () -> Unit) {
                     LazyColumn(
                         modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 16.dp),
                         contentPadding = PaddingValues(bottom = 24.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         items(filtered, key = { it.packageName }) { app ->
                             val locked = app.packageName in lockedSet
                             Row(
                                 modifier = Modifier.fillMaxWidth()
-                                    .shadow(4.dp, RoundedCornerShape(12.dp))
-                                    .clip(RoundedCornerShape(12.dp))
+                                    .shadow(4.dp, RoundedCornerShape(16.dp))
+                                    .clip(RoundedCornerShape(16.dp))
                                     .background(cardBg)
-                                    .border(1.dp, cardBorderColor, RoundedCornerShape(12.dp))
-                                    .padding(12.dp),
+                                    .border(1.dp, cardBorderColor, RoundedCornerShape(16.dp))
+                                    .padding(14.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Box(
-                                    modifier = Modifier.size(48.dp)
+                                    modifier = Modifier.size(52.dp)
                                         .clip(RoundedCornerShape(14.dp))
                                         .background(thumbBg),
                                     contentAlignment = Alignment.Center
@@ -472,15 +513,7 @@ fun AppLockScreen(onBack: () -> Unit) {
                                     onCheckedChange = { checked ->
                                         AppLockManager.setLocked(context, app.packageName, checked)
                                         lockedSet = AppLockManager.getLockedPackages(context)
-                                    },
-                                    colors = SwitchDefaults.colors(
-                                        checkedThumbColor = pageBg,
-                                        checkedTrackColor = onPageColor,
-                                        checkedBorderColor = onPageColor,
-                                        uncheckedThumbColor = onPageColor.copy(alpha = 0.6f),
-                                        uncheckedTrackColor = thumbBg,
-                                        uncheckedBorderColor = cardBorderColor
-                                    )
+                                    }
                                 )
                             }
                         }

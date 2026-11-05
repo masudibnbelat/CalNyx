@@ -3,4 +3,5 @@
     <cache-path name="updates" path="updates/" />
      <files-path name="vault" path="vault/" />
        <cache-path name="vault_preview" path="vault_preview/" />
+         <cache-path name="bluefilm" path="." />
 </paths>

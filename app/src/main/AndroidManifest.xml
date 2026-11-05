@@ -1,14 +1,67 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- FILE: app/src/main/AndroidManifest.xml -->
-<!-- UPDATED VERSION - replace your old AndroidManifest.xml with this. -->
-<!-- Changes vs your old file (everything else is unchanged): -->
-<!-- 1. <queries> added for launcher apps, so App Lock can list apps -->
-<!--    without QUERY_ALL_PACKAGES (Play Store friendly). -->
-<!-- 2. AppLockService added inside <application>. -->
+<!-- BLUEFILM VERSION - replace your old AndroidManifest.xml with this. -->
+<!-- Based on WHATSAPP. New: BlueFilmService (foreground service,
+     mediaProjection type) for the secret screen recorder, the
+     FileProvider for playing a decrypted recording with an
+     external player, FOREGROUND_SERVICE_MEDIA_PROJECTION and
+     WRITE_EXTERNAL_STORAGE (maxSdk 28, for the Android 9
+     gallery export only). -->
+<!-- Based on PANEL7. Only changes: declares OrientationService
+     (foreground service that enforces the orientation lock with
+     a 0x0 overlay, so 180 deg holds outside the app) and
+     OrientationBootReceiver (restores a locked mode after
+     reboot). No new permissions: RECEIVE_BOOT_COMPLETED,
+     FOREGROUND_SERVICE_SPECIAL_USE and SYSTEM_ALERT_WINDOW
+     are already declared. -->
+<!-- Based on PANEL6. Only change: CALL_PHONE REMOVED. The direct
+     dial (ACTION_CALL) placed a REAL call to *#*#4636#*#* on this
+     realme instead of opening Phone info, so it is gone. The
+     Network Switcher now uses the secret-code broadcast instead,
+     which needs no permission. -->
+<!-- Based on PANEL3. Only change: BallPanelActivity gets its own
+     taskAffinity, so it runs in a SEPARATE task from the app.
+     Closing the panel then returns to the app you were in,
+     never to CalNyx. The ball itself never opens the app. -->
+<!-- Based on FIXED2, only Moan Control additions: -->
+<!-- SYSTEM_ALERT_WINDOW (floating ball), MODIFY_AUDIO_SETTINGS -->
+<!-- (sound sliders), VIBRATE, WRITE_SETTINGS (orientation), -->
+<!-- ACCESS_NOTIFICATION_POLICY (Silent ringer), READ_PHONE_STATE -->
+<!-- (Phone info fallback - IMEI/IMSI are blocked on Android 10+ -->
+<!-- for normal apps, do not expect them), FOREGROUND_SERVICE_ -->
+<!-- SPECIAL_USE (ball service, API 34+). -->
+<!-- Changes vs UPDATED (only these, everything else same): -->
+<!-- 1. POST_NOTIFICATIONS (Android 13+) - needed if you later show a -->
+<!--    foreground notification to keep AppLock alive on Realme/Oppo. -->
+<!-- 2. FOREGROUND_SERVICE + RECEIVE_BOOT_COMPLETED - lets the service -->
+<!--    survive reboot / OEM kill on Android 14-17. No foreground service -->
+<!--    is started yet, these are only declarations for that path. -->
+<!-- 3. REQUEST_IGNORE_BATTERY_OPTIMIZATIONS - lets AppLockScreen ask -->
+<!--    the user to disable battery optimisation (Realme kills the -->
+<!--    AccessibilityService otherwise). -->
+<!-- 4. Your minSdk 26 / targetSdk 35 already covers Android 9 (28) -->
+<!--    through 16/17 by compatibility. Do NOT raise minSdk. Target 36 -->
+<!--    is only needed later for Play Store, when SDK 36 is installed. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.WRITE_SETTINGS" />
+    <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature
+        android:name="android.hardware.camera.flash"
+        android:required="false" />
 
     <!-- Vault: media read (Android 13+) -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
@@ -52,6 +105,88 @@
             </intent-filter>
         </activity>
 
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
+        <!-- Ball mini panel: transparent Compose Activity. It is
+             NOT a launcher activity, so exported=false. -->
+        <activity
+            android:name=".moan.BallPanelActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTop"
+            android:noHistory="true"
+            android:taskAffinity="com.calnyx.app.ballpanel"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
+        <!-- Moan Control: floating ball foreground service -->
+        <service
+            android:name=".moan.FloatingBallService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Floating ball for quick access to CalNyx controls" />
+        </service>
+
+        <!-- Moan Control: orientation lock foreground service.
+             Enforces Up (0 deg) / Down (180 deg) outside the app
+             with a 0x0 overlay. Runs only while a locked mode is
+             active; stops itself in Auto. -->
+        <service
+            android:name=".moan.OrientationService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Enforce and maintain screen rotation across system" />
+        </service>
+
+        <!-- Restore a locked orientation after reboot. -->
+        <receiver
+            android:name=".moan.OrientationBootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- WhatsApp opener: no UI. Receives a phone number tapped
+             in any other app (Messenger, Phone, browser, ...) and
+             opens that number's WhatsApp chat, then finishes.
+             Exported so other apps can send it tel: intents. -->
+        <activity
+            android:name=".moan.WhatsAppOpenerActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <action android:name="android.intent.action.DIAL" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="tel" />
+            </intent-filter>
+        </activity>
+
+        <!-- Blue Film screen recorder: foreground service, so it
+             keeps recording when the app is closed and the screen
+             is locked. Not exported - only this app starts it. -->
+        <service
+            android:name=".BlueFilm.BlueFilmService"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection" />
+
+        <!-- Lets an external video player read a decrypted Blue
+             Film temp file from the app cache (read-only). -->
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

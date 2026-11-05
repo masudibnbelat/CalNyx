@@ -1,17 +1,41 @@
 // FILE: app/src/main/java/com/calnyx/app/navigation/NavGraph.kt
-// MIDUSEFIX VERSION - replace your old NavGraph.kt with this file.
-// Logic is the same as UNLOCKFIX: ON_RESUME ends the session
-// when CalNyx itself comes back (user left the locked app for
-// CalNyx), so the service's session-allow cannot be bypassed
-// by returning from CalNyx. Apply together with
-// AppLockService-MIDUSEFIX.kt + AppLockManager-MIDUSEFIX.kt.
-// Changes vs your old file (everything else is unchanged):
-// 1. Screen.AppLock route added, hidden from menuScreens like Vault.
-// 2. VaultScreen now gets onOpenAppLock -> navigates to AppLock.
-// 3. AppLockScreen composable added.
-// 4. Top bar hidden on AppLock route too, like Vault / VaultSetup.
-// 5. PRIVACY: ON_STOP-e Vault / VaultSetup / AppLock theke Normal-e
-//    fire jaoa — app chere onno app-e gele fire asle ar Black Hole dekhabe na.
+// SPLIT VERSION - replace your old NavGraph.kt with this file.
+// Based on MOAN (DRAWER + FIXED2). Only changes:
+// 1. NO TABS. MoanControl is split into two drawer sections:
+//    Hardcore (Power + Network + Ball) and Moan (Sound only).
+// 2. History drawer entry REMOVED. History route still exists
+//    for the Normal calculator, only the drawer entry is gone.
+// 3. Drawer is 2/3 of screen width, not full screen. Remaining
+//    1/3 is dimmed by a stronger scrim (0.55 black).
+// 4. Colours: white and black only. Red (NavRed) is used in
+//    exactly one place - a small red dot as the badge on a
+//    selected Moan / Hardcore item, to mark it as special.
+//    No other colour anywhere. Theme toggle at the bottom stays.
+// 5. REOPEN RULE: only the three calculator screens (Normal,
+//    Scientific, CalTape) are remembered across close/reopen.
+//    Any other menu screen (Converter, Number System, ICT,
+//    Hardcore, Moan) saves Normal instead, so reopening the
+//    app always lands on the Normal calculator.
+// Based on FIXED2 (ON_RESUME session kill stays removed, AppLock
+// Service still owns the session). Only the menu changes:
+// 1. Top-right 3-dot button REMOVED. Top-LEFT hamburger (3-bar)
+//    button now, same 36dp translucent circle style as before.
+// 2. Bottom sheet REMOVED. Left ModalNavigationDrawer opens from
+//    the left on hamburger tap (and left-edge swipe). The hamburger
+//    button itself sits at the TOP-RIGHT, not top-left: CalTape
+//    has its own top-left 3-dot button, and the two bars mixed
+//    together. Top-right is the better spot - it is the standard
+//    menu corner, it never clashes with a screen's own top-left
+//    controls, and the hamburger icon stays (it opens a drawer).
+//    History keeps its Back button on the top-left.
+// 3. Drawer header (top): logo circle, CalNyx, version, Update icon.
+//    Below: tools as a vertical list - icon + title per row.
+//    History is in the list too. Vault / VaultSetup / AppLock are
+//    NOT in the drawer - they stay hidden, no menu trace.
+// 4. To add a feature later: add its Screen to menuScreens below,
+//    or add a NavigationDrawerItem in the drawer list section.
+// Design: off-white / off-black only, no colour accents.
+
 package com.calnyx.app.navigation
 
 import androidx.compose.animation.AnimatedVisibility
@@ -35,7 +59,10 @@ import androidx.compose.material.icons.filled.Functions
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.PowerSettingsNew
+import androidx.compose.material.icons.filled.Videocam
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.filled.NoteAlt
 import androidx.compose.material.icons.filled.Numbers
 import androidx.compose.material.icons.filled.ReceiptLong
@@ -45,9 +72,14 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.NavigationDrawerItem
+import androidx.compose.material3.NavigationDrawerItemDefaults
+import androidx.compose.material3.rememberDrawerState
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -63,6 +95,9 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import android.app.Activity
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.lifecycle.Lifecycle
@@ -80,7 +115,10 @@ import androidx.navigation.compose.rememberNavController
 import com.calnyx.app.applock.AppLockManager
 import com.calnyx.app.data.NavStateDatabase
 import com.calnyx.app.data.NavStateEntity
+import com.calnyx.app.ui.screens.BlueFilmScreen
 import com.calnyx.app.ui.screens.AppLockScreen
+import com.calnyx.app.ui.screens.HardcoreScreen
+import com.calnyx.app.ui.screens.MoanScreen
 import com.calnyx.app.ui.screens.CalTapeCalculatorScreen
 import com.calnyx.app.ui.screens.ConverterCalculatorScreen
 import com.calnyx.app.ui.screens.HistoryScreen
@@ -129,6 +167,12 @@ sealed class Screen(
                     Icons.Default.Computer
             )
     object History : Screen("history", "History", "Past calculations", Icons.Default.History)
+    object Hardcore :
+            Screen("hardcore", "Hardcore", "Power, network & ball", Icons.Default.PowerSettingsNew)
+    object Moan :
+            Screen("moan", "Moan", "Sound", Icons.Default.VolumeUp)
+    object BlueFilm :
+            Screen("blue_film", "Blue Film", "Secret screen recorder", Icons.Default.Videocam)
 
     // Hidden vault — menuScreens-এ যোগ করা হয়নি, তাই মেনুতে
     // দেখাবে না। শুধু Normal calculator-এ সিক্রেট হিসাব
@@ -156,6 +200,9 @@ val menuScreens =
                 Screen.Converter,
                 Screen.NumberSystem,
                 Screen.Ict,
+                Screen.Hardcore,
+                Screen.Moan,
+                Screen.BlueFilm,
         )
 
 // MODERN palette: only off-white / off-black / grey. No purple, no colour accents.
@@ -167,6 +214,8 @@ private val NavBorderLight = Color(0xFFE9E6DF)
 private val NavBorderDark = Color(0xFF2B2B2B)
 private val NavThumbLight = Color(0xFFEFEDE8)
 private val NavThumbDark = Color(0xFF262626)
+// Red is the ONLY extra colour, for specialty only. See header.
+private val NavRed = Color(0xFFC62828)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -188,20 +237,16 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner, navController) {
         val observer = LifecycleEventObserver { _, event ->
-            // UNLOCK FIX: service CalNyx-er event ignore kore, tai
-            // CalNyx-e fire asa service bujhbe na. CalNyx nijei
-            // resume-e session sesh korbe — kintu decoy hisebe
-            // khola hole (pending ache) tokhon noy, karon tokhon
-            // user ekhono unlock koreni. Eta chara CalNyx-e fire
-            // ese abar locked app khulle secret charai khulto.
+            // FIXED2: NO ON_RESUME session handling here any more.
+            // AppLockService-FIXED2.kt handles CalNyx foreground:
+            // decoy launch (pending != null) is not an exit,
+            // manual CalNyx open (pending == null, session != null)
+            // is an exit. Doing it in NavGraph fired during the
+            // unlock handoff and killed a live session mid-use.
+            // This observer now only does the PRIVACY ON_STOP below.
             if (event == Lifecycle.Event.ON_RESUME) {
                 try {
-                    if (AppLockManager.getPending(context) == null &&
-                        AppLockManager.getUnlockedSession(context) != null
-                    ) {
-                        AppLockManager.endUnlockedSession(context)
-                        AppLockManager.setCalNyxIntervened(context, true)
-                    }
+                    AppLockManager.clearDecoyLaunch(context)
                 } catch (_: Exception) {
                 }
             }
@@ -231,23 +276,52 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
     }
     var normalHistoryOpen by remember { mutableStateOf(false) }
 
-    var showMenu by remember { mutableStateOf(false) }
     var showUpdate by remember { mutableStateOf(false) }
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
+
+    // App version from PackageManager (BuildConfig is not enabled
+    // in build.gradle.kts, so do not use BuildConfig.VERSION_NAME).
+    val appVersion = remember {
+        try {
+            val info = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                context.packageManager.getPackageInfo(
+                    context.packageName,
+                    PackageManager.PackageInfoFlags.of(0)
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                context.packageManager.getPackageInfo(context.packageName, 0)
+            }
+            info.versionName ?: ""
+        } catch (_: Exception) {
+            ""
+        }
+    }
 
     // MODERN colours, derived from darkTheme only.
     val pageBg = if (darkTheme) NavOffBlack else NavOffWhite
     val cardBg = if (darkTheme) NavCardBlack else NavCardWhite
     val onPageColor = if (darkTheme) NavOffWhite else NavOffBlack
 
+    // All menu routes (for detecting a tool screen below).
     val persistRoutes = remember { menuScreens.map { it.route }.toSet() }
+    // Only these three calculator screens are remembered across
+    // close / reopen. A tool screen must NOT be remembered:
+    // reopening must land on the Normal calculator.
+    val calculatorRoutes = remember {
+        setOf(
+            Screen.Normal.route,
+            Screen.Scientific.route,
+            Screen.CalTape.route
+        )
+    }
 
     var startRoute by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(Unit) {
         val saved = navStateDao.observe().first()?.route
         startRoute =
-                if (saved != null && saved in persistRoutes) {
+                if (saved != null && saved in calculatorRoutes) {
                     saved
                 } else {
                     Screen.Normal.route
@@ -256,14 +330,23 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
 
     LaunchedEffect(currentRoute) {
         val route = currentRoute ?: return@LaunchedEffect
-        if (route in persistRoutes) {
+        if (route in calculatorRoutes) {
+            // Normal / Scientific / CalTape: remember it, so
+            // reopen restores this calculator.
             navStateDao.save(NavStateEntity(route = route))
+        } else if (route in persistRoutes) {
+            // Converter / Number System / ICT / Hardcore / Moan:
+            // remember Normal instead, so reopen lands on the
+            // Normal calculator, not on the tool.
+            navStateDao.save(NavStateEntity(route = Screen.Normal.route))
         }
+        // History / Vault / VaultSetup / AppLock: do not touch
+        // the saved route. Vault is already popped to Normal
+        // on ON_STOP by the privacy observer above.
     }
 
-    fun closeMenuAndGo(route: String?, after: () -> Unit = {}) {
-        scope.launch { sheetState.hide() }.invokeOnCompletion {
-            showMenu = false
+    fun closeDrawerAndGo(route: String?, after: () -> Unit = {}) {
+        scope.launch { drawerState.close() }.invokeOnCompletion {
             after()
             if (route != null && route != currentRoute) {
                 navController.navigate(route) {
@@ -275,6 +358,161 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
         }
     }
 
+    // Left drawer - header + list. Vault / AppLock are NOT listed here.
+    val drawerVisible = currentRoute != Screen.Vault.route &&
+        currentRoute != Screen.VaultSetup.route &&
+        currentRoute != Screen.AppLock.route
+    // Drawer is 2/3 of the screen, not full screen. The remaining
+    // 1/3 stays visible behind the scrim, dimmed.
+    val drawerWidth = (LocalConfiguration.current.screenWidthDp * 2 / 3).dp
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        gesturesEnabled = drawerVisible,
+        scrimColor = Color.Black.copy(alpha = 0.55f),
+        drawerContent = {
+            ModalDrawerSheet(
+                drawerContainerColor = cardBg,
+                drawerContentColor = onPageColor,
+                modifier = Modifier.width(drawerWidth).fillMaxHeight()
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxSize()
+                        .statusBarsPadding()
+                        .padding(horizontal = 16.dp, vertical = 12.dp)
+                ) {
+                    // Header: logo + CalNyx + version + Update icon.
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier.size(52.dp)
+                                .shadow(6.dp, CircleShape)
+                                .clip(CircleShape)
+                                .background(if (darkTheme) NavOffWhite else NavOffBlack),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                Icons.Default.Calculate,
+                                contentDescription = "CalNyx",
+                                tint = if (darkTheme) NavOffBlack else NavOffWhite,
+                                modifier = Modifier.size(28.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "CalNyx",
+                                fontSize = 22.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = onPageColor
+                            )
+                            if (appVersion.isNotEmpty()) {
+                                Text(
+                                    text = "Version $appVersion",
+                                    fontSize = 12.sp,
+                                    color = Color.Gray
+                                )
+                            }
+                        }
+                        IconButton(onClick = { closeDrawerAndGo(null) { showUpdate = true } }) {
+                            Icon(
+                                Icons.Default.Update,
+                                contentDescription = "App update",
+                                tint = onPageColor,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
+                    HorizontalDivider(color = if (darkTheme) NavBorderDark else NavBorderLight)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    // Tools list: icon + title, one row per tool.
+                    // To add a feature later, add its Screen to
+                    // menuScreens, or add another NavigationDrawerItem
+                    // here in the same pattern.
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        menuScreens.forEach { screen ->
+                            NavigationDrawerItem(
+                                label = {
+                                    // Single line, never wrap: "Number System"
+                                    // broke into two lines before. If a title
+                                    // is ever too long it ellipsizes instead.
+                                    Text(
+                                        screen.title,
+                                        fontSize = 15.sp,
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        overflow = TextOverflow.Ellipsis,
+                                        fontWeight = if (currentRoute == screen.route) FontWeight.SemiBold else FontWeight.Medium
+                                    )
+                                },
+                                icon = {
+                                    Icon(
+                                        screen.icon,
+                                        contentDescription = screen.title,
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                },
+                                selected = currentRoute == screen.route,
+                                onClick = { closeDrawerAndGo(screen.route) },
+                                badge = {
+                                    // Red dot only for the two special
+                                    // sections, only when selected.
+                                    if (currentRoute == screen.route &&
+                                        (screen.route == Screen.Moan.route ||
+                                            screen.route == Screen.Hardcore.route)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier.size(8.dp)
+                                                .clip(CircleShape)
+                                                .background(NavRed)
+                                        )
+                                    }
+                                },
+                                colors = NavigationDrawerItemDefaults.colors(
+                                    selectedContainerColor = if (darkTheme) NavOffWhite else NavOffBlack,
+                                    selectedIconColor = if (darkTheme) NavOffBlack else NavOffWhite,
+                                    selectedTextColor = if (darkTheme) NavOffBlack else NavOffWhite,
+                                    unselectedContainerColor = Color.Transparent,
+                                    unselectedIconColor = onPageColor,
+                                    unselectedTextColor = onPageColor
+                                ),
+                                shape = RoundedCornerShape(16.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.weight(1f))
+                    HorizontalDivider(color = if (darkTheme) NavBorderDark else NavBorderLight)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    // Theme toggle at the bottom - kept from the old
+                    // bottom sheet header so the function is not lost.
+                    NavigationDrawerItem(
+                        label = { Text(if (darkTheme) "Light mode" else "Dark mode", fontSize = 16.sp, fontWeight = FontWeight.Medium) },
+                        icon = {
+                            Icon(
+                                if (darkTheme) Icons.Default.LightMode else Icons.Default.DarkMode,
+                                contentDescription = "Toggle theme",
+                                modifier = Modifier.size(24.dp)
+                            )
+                        },
+                        selected = false,
+                        onClick = { scope.launch { drawerState.close() }; onToggleTheme() },
+                        colors = NavigationDrawerItemDefaults.colors(
+                            selectedContainerColor = Color.Transparent,
+                            unselectedContainerColor = Color.Transparent,
+                            unselectedIconColor = onPageColor,
+                            unselectedTextColor = onPageColor
+                        ),
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+            }
+        }
+    ) {
     Box(modifier = Modifier.fillMaxSize().background(pageBg)) {
         val start = startRoute
         if (start != null) {
@@ -330,6 +568,15 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
                 composable(Screen.Ict.route) {
                     IctCalculatorScreen(darkTheme = darkTheme, onToggleTheme = onToggleTheme)
                 }
+                composable(Screen.Hardcore.route) {
+                    HardcoreScreen(darkTheme = darkTheme)
+                }
+                composable(Screen.Moan.route) {
+                    MoanScreen(darkTheme = darkTheme)
+                }
+                composable(Screen.BlueFilm.route) {
+                    BlueFilmScreen(darkTheme = darkTheme)
+                }
                 composable(Screen.History.route) {
                     HistoryScreen(onBack = { navController.popBackStack() })
                 }
@@ -353,10 +600,12 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
                 }
             }
 
-            // Top bar — আগের মতোই: কোনো বড় বার নেই, কোনো app name নেই,
-            // শুধু উপরে ডান কোণে ভাসমান 3-dot মেনু বাটন। History-তে বামে Back।
-            // Vault আর VaultSetup-এ এটা লুকানো থাকে, কারণ ওদের
-            // নিজের back বার আছে।
+            // Top bar — no big bar, no app name on top.
+            // Only a floating hamburger (3-bar) on the top-RIGHT
+            // (top-left clashed with CalTape's own 3-dot button).
+            // History shows Back on the left instead.
+            // Vault / VaultSetup / AppLock hide it, they have
+            // their own back bar.
             AnimatedVisibility(
                     visible =
                             !(currentRoute == Screen.Normal.route && normalHistoryOpen) &&
@@ -376,6 +625,7 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
                 ) {
                     when (currentRoute) {
                         Screen.History.route -> {
+                            // Back stays on the top-LEFT (standard).
                             TopBarCircleButton(onClick = { navController.popBackStack() }) {
                                 Icon(
                                         Icons.AutoMirrored.Filled.ArrowBack,
@@ -384,116 +634,24 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
                                         modifier = Modifier.size(22.dp)
                                 )
                             }
-                        }
-                        else -> {
                             Spacer(modifier = Modifier.size(36.dp))
                         }
-                    }
-
-                    TopBarCircleButton(onClick = { showMenu = true }) {
-                        Icon(
-                                Icons.Default.MoreVert,
-                                contentDescription = "Menu",
-                                tint = MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.size(22.dp)
-                        )
-                    }
-                }
-            }
-
-            // MODERN menu sheet — off-white / off-black, কোনো বেগুনি
-            // রঙ নেই। Header-এ CalNyx + ছোট সাবটাইটেল, ডানদিকে
-            // আপডেট আর থিম বাটন।
-            if (showMenu) {
-                ModalBottomSheet(
-                        onDismissRequest = { showMenu = false },
-                        sheetState = sheetState,
-                        shape = RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp),
-                        containerColor = cardBg,
-                        contentColor = onPageColor,
-                        dragHandle = {
-                            Box(
-                                    modifier =
-                                            Modifier.padding(vertical = 10.dp)
-                                                    .width(40.dp)
-                                                    .height(5.dp)
-                                                    .clip(RoundedCornerShape(3.dp))
-                                                    .background(Color.Gray.copy(alpha = 0.4f))
-                            )
-                        }
-                ) {
-                    Column(
-                            modifier =
-                                    Modifier.fillMaxWidth()
-                                            .navigationBarsPadding()
-                                            .padding(horizontal = 20.dp)
-                                            .padding(bottom = 20.dp)
-                    ) {
-                        Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column {
-                                Text(text = "CalNyx", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = onPageColor)
-                                Text(text = "Calculator & tools", fontSize = 12.sp, color = Color.Gray)
-                            }
-                            Spacer(modifier = Modifier.weight(1f))
-                            MenuCircleButton(
-                                    onClick = { closeMenuAndGo(null) { showUpdate = true } },
-                                    darkTheme = darkTheme
-                            ) {
+                        else -> {
+                            // DRAWER: hamburger (3-bar) on the top-RIGHT.
+                            // Same 36dp translucent circle as before.
+                            // Top-left is left empty on purpose: CalTape
+                            // has its own top-left 3-dot button, and the
+                            // two bars mixed together when both were left.
+                            Spacer(modifier = Modifier.size(36.dp))
+                            TopBarCircleButton(onClick = { scope.launch { drawerState.open() } }) {
                                 Icon(
-                                        // MODERN update icon: আগের Download-এর বদলে
-                                        // ঘড়ি-তির (Update) আইকন — আপডেট বোঝাতে এটাই পরিষ্কার।
-                                        Icons.Default.Update,
-                                        contentDescription = "App update",
-                                        tint = if (darkTheme) NavOffBlack else NavOffWhite,
-                                        modifier = Modifier.size(22.dp)
-                                )
-                            }
-                            Spacer(modifier = Modifier.width(10.dp))
-                            MenuCircleButton(
-                                    onClick = onToggleTheme,
-                                    darkTheme = darkTheme
-                            ) {
-                                Icon(
-                                        if (darkTheme) Icons.Default.DarkMode
-                                        else Icons.Default.LightMode,
-                                        contentDescription = "Toggle theme",
-                                        tint = if (darkTheme) NavOffBlack else NavOffWhite,
+                                        Icons.Default.Menu,
+                                        contentDescription = "Menu",
+                                        tint = MaterialTheme.colorScheme.onSurface,
                                         modifier = Modifier.size(22.dp)
                                 )
                             }
                         }
-
-                        Spacer(modifier = Modifier.height(18.dp))
-
-                        // Big simple tiles — 2 column, শুধু icon + title
-                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                            menuScreens.chunked(2).forEach { rowItems ->
-                                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                    rowItems.forEach { screen ->
-                                        BigMenuTile(
-                                                title = screen.title,
-                                                icon = screen.icon,
-                                                active = currentRoute == screen.route,
-                                                darkTheme = darkTheme,
-                                                onClick = { closeMenuAndGo(screen.route) },
-                                                modifier = Modifier.weight(1f)
-                                        )
-                                    }
-                                    if (rowItems.size == 1) {
-                                        Spacer(modifier = Modifier.weight(1f))
-                                    }
-                                }
-                            }
-                        }
-
-                        // NOTE: vault setup-এর কোনো বোতাম মেনুতে
-                        // রাখা হয়নি, ইচ্ছা করে। মেনুতে দেখালেই
-                        // বোঝা যাবে এখানে লুকানো কিছু আছে।
-                        // Setup শুধু Normal calculator-e "="
-                        // long-press করলে খুলবে।
                     }
                 }
             }
@@ -502,6 +660,7 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
                 UpdateDialog(onDismiss = { showUpdate = false })
             }
         }
+    }
     }
 }
 
@@ -522,97 +681,4 @@ private fun TopBarCircleButton(
                             ),
             contentAlignment = Alignment.Center
     ) { IconButton(onClick = onClick, modifier = Modifier.size(buttonSize)) { content() } }
-}
-
-// Menu header circle button — মেনু শিটের ভেতরে মডার্ন লুক:
-// লাইট মোডে কালো বাটন সাদা আইকন, ডার্ক মোডে সাদা বাটন কালো আইকন।
-@Composable
-private fun MenuCircleButton(
-        onClick: () -> Unit,
-        buttonSize: Dp = 44.dp,
-        darkTheme: Boolean = false,
-        content: @Composable () -> Unit
-) {
-    Box(
-            modifier =
-                    Modifier.size(buttonSize)
-                            .shadow(6.dp, CircleShape)
-                            .clip(CircleShape)
-                            .background(if (darkTheme) NavOffWhite else NavOffBlack)
-                            .border(
-                                    1.dp,
-                                    if (darkTheme) Color.White.copy(alpha = 0.18f)
-                                    else Color.Black.copy(alpha = 0.08f),
-                                    CircleShape
-                            ),
-            contentAlignment = Alignment.Center
-    ) { IconButton(onClick = onClick, modifier = Modifier.size(buttonSize)) { content() } }
-}
-
-// একটা big simple tile: মাঝখানে বড় icon circle, নিচে শুধু title —
-// কোনো subtitle / description / check mark নেই।
-// Active tile: লাইটে কালো, ডার্কে সাদা — উল্টো রঙের লেখা/আইকন।
-// Inactive tile: সাদা/কালো কার্ড, শ্যাডো + বর্ডার।
-@Composable
-private fun BigMenuTile(
-        title: String,
-        icon: ImageVector,
-        active: Boolean,
-        darkTheme: Boolean,
-        onClick: () -> Unit,
-        modifier: Modifier = Modifier
-) {
-    val tileBg = when {
-        active && darkTheme -> NavOffWhite
-        active -> NavOffBlack
-        darkTheme -> NavCardBlack
-        else -> NavCardWhite
-    }
-    val tileBorder = if (darkTheme) NavBorderDark else NavBorderLight
-    val tileText = when {
-        active && darkTheme -> NavOffBlack
-        active -> NavOffWhite
-        darkTheme -> NavOffWhite
-        else -> NavOffBlack
-    }
-    val iconBg = when {
-        active && darkTheme -> NavOffBlack.copy(alpha = 0.12f)
-        active -> NavOffWhite.copy(alpha = 0.18f)
-        darkTheme -> NavThumbDark
-        else -> NavThumbLight
-    }
-    Column(
-            modifier =
-                    modifier.shadow(8.dp, RoundedCornerShape(24.dp))
-                            .clip(RoundedCornerShape(24.dp))
-                            .background(tileBg)
-                            .border(1.dp, tileBorder, RoundedCornerShape(24.dp))
-                            .clickable(onClick = onClick)
-                            .padding(vertical = 20.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Box(
-                modifier =
-                        Modifier.size(58.dp)
-                                .clip(CircleShape)
-                                .background(iconBg),
-                contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                    icon,
-                    contentDescription = title,
-                    modifier = Modifier.size(28.dp),
-                    tint = tileText
-            )
-        }
-        Spacer(modifier = Modifier.height(10.dp))
-        Text(
-                title,
-                fontSize = 15.sp,
-                fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium,
-                color = tileText,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-        )
-    }
 }

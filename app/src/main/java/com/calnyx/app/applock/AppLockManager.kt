@@ -1,11 +1,26 @@
 // FILE: app/src/main/java/com/calnyx/app/applock/AppLockManager.kt
-// MIDUSEFIX VERSION - based on UNLOCKFIX, plus one thing:
-// last foreground package is now PERSISTED, not only in memory,
-// so a service restart cannot forget which app was in front.
-// VaultPrefs এর মতোই SharedPreferences, কোনো সার্ভার নেই, অফলাইন।
+// FIXED2 VERSION - replace your old AppLockManager.kt with this file.
+// Apply TOGETHER with AppLockService-FIXED2.kt and NavGraph-FIXED2.kt.
+// NormalCalculatorScreen (UNLOCK / LIFTED) that sets the session stays as-is.
+//
+// Changes vs MIDUSEFIX (only these lines changed, everything else same):
+// 1. setUnlockedSession() now also stores session start time and clears
+//    the old intervened flag + grace. So a resume that happens during
+//    the unlock handoff can never kill a just-created session.
+// 2. NEW: decoy flag. Service sets it before launching CalNyx as decoy.
+//    NavGraph / Service can tell "CalNyx was launched to block" apart
+//    from "user manually opened CalNyx". Only the manual open is an exit.
+// 3. NEW: needsRestrictedSetting() + isSideloaded(). Android 13+ blocks
+//    Accessibility for sideloaded apps until the user does
+//    App info > 3 dots > Allow restricted settings. This helper lets
+//    AppLockScreen show that exact help only when it applies.
+// 4. endUnlockedSession() also clears session start time.
+// Old intervened helpers are kept (for migration) but FIXED2 Service
+// no longer depends on them - session allow is unconditional now.
 package com.calnyx.app.applock
 
 import android.content.Context
+import android.os.Build
 import android.provider.Settings
 import android.text.TextUtils
 
@@ -19,8 +34,10 @@ object AppLockManager {
     private const val KEY_ALLOWED_UNTIL = "allowed_until"
     private const val KEY_UNLOCK_DURATION_MS = "unlock_duration_ms"
     private const val KEY_SESSION_PKG = "unlocked_session_package"
+    private const val KEY_SESSION_STARTED_AT = "unlocked_session_started_at"
     private const val KEY_CALNYX_INTERVENED = "calnyx_intervened"
     private const val KEY_LAST_FOREGROUND = "last_foreground_package"
+    private const val KEY_DECOY_LAUNCH = "calnyx_decoy_launch"
 
     private fun prefs(context: Context) =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -31,21 +48,17 @@ object AppLockManager {
     fun setEnabled(context: Context, enabled: Boolean) {
         val edit = prefs(context).edit().putBoolean(KEY_ENABLED, enabled)
         if (!enabled) {
-            // Lock off korle purono session / grace-o muche jabe,
-            // pore on korle abar secret lagbe.
             edit.remove(KEY_SESSION_PKG)
+            edit.remove(KEY_SESSION_STARTED_AT)
             edit.remove(KEY_CALNYX_INTERVENED)
             edit.remove(KEY_ALLOWED_PKG)
             edit.remove(KEY_ALLOWED_UNTIL)
             edit.remove(KEY_LAST_FOREGROUND)
+            edit.remove(KEY_DECOY_LAUNCH)
         }
         edit.apply()
     }
 
-    // Last launchable app in front, PERSISTED. The service used
-    // to keep this only in memory, so a restart forgot it and
-    // treated the next screen inside the same app as a fresh
-    // open. Now it survives a restart.
     fun getLastForegroundPkg(context: Context): String? =
         prefs(context).getString(KEY_LAST_FOREGROUND, null)
 
@@ -54,6 +67,18 @@ object AppLockManager {
         if (packageName == null) edit.remove(KEY_LAST_FOREGROUND)
         else edit.putString(KEY_LAST_FOREGROUND, packageName)
         edit.apply()
+    }
+
+    // FIXED2: decoy flag - true only when Service launched CalNyx to block.
+    fun setDecoyLaunch(context: Context, value: Boolean) {
+        prefs(context).edit().putBoolean(KEY_DECOY_LAUNCH, value).apply()
+    }
+
+    fun isDecoyLaunch(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_DECOY_LAUNCH, false)
+
+    fun clearDecoyLaunch(context: Context) {
+        prefs(context).edit().remove(KEY_DECOY_LAUNCH).apply()
     }
 
     fun getLockedPackages(context: Context): Set<String> =
@@ -65,6 +90,7 @@ object AppLockManager {
         val edit = prefs(context).edit().putStringSet(KEY_LOCKED, set)
         if (!locked && getUnlockedSession(context) == packageName) {
             edit.remove(KEY_SESSION_PKG)
+            edit.remove(KEY_SESSION_STARTED_AT)
         }
         edit.apply()
     }
@@ -72,8 +98,6 @@ object AppLockManager {
     fun isLocked(context: Context, packageName: String): Boolean =
         packageName in getLockedPackages(context)
 
-    // Service লক করা অ্যাপ ধরলে এটা বসায়, যাতে ক্যালকুলেটরে
-    // সিক্রেট দিলে কোন অ্যাপটা খুলতে হবে সেটা বোঝা যায়।
     fun setPending(context: Context, packageName: String?) {
         val edit = prefs(context).edit()
         if (packageName == null) edit.remove(KEY_PENDING) else edit.putString(KEY_PENDING, packageName)
@@ -85,26 +109,31 @@ object AppLockManager {
 
     fun clearPending(context: Context) = setPending(context, null)
 
-    // SESSION — ei-tai asol fix: secret diye unlock korle ei
-    // package-ta session-e thakbe, ar jotokhon user ei app-er
-    // moddhei thakbe totokhon kokhono lock hobe na, somoy
-    // jotoi jak na keno. App theke ber holei session sesh hobe.
+    // FIXED2: session start time is stored, so a CalNyx resume that
+    // happens within 2 seconds of unlock can be ignored as handoff.
     fun setUnlockedSession(context: Context, packageName: String) {
-        prefs(context).edit().putString(KEY_SESSION_PKG, packageName).apply()
+        prefs(context).edit()
+            .putString(KEY_SESSION_PKG, packageName)
+            .putLong(KEY_SESSION_STARTED_AT, System.currentTimeMillis())
+            .remove(KEY_CALNYX_INTERVENED)
+            .remove(KEY_ALLOWED_PKG)
+            .remove(KEY_ALLOWED_UNTIL)
+            .apply()
     }
 
     fun getUnlockedSession(context: Context): String? =
         prefs(context).getString(KEY_SESSION_PKG, null)
 
+    fun getSessionStartedAt(context: Context): Long =
+        prefs(context).getLong(KEY_SESSION_STARTED_AT, 0L)
+
     fun clearUnlockedSession(context: Context) {
-        prefs(context).edit().remove(KEY_SESSION_PKG).apply()
+        prefs(context).edit()
+            .remove(KEY_SESSION_PKG)
+            .remove(KEY_SESSION_STARTED_AT)
+            .apply()
     }
 
-    // CalNyx nije resume hole (user locked app theke CalNyx-e
-    // fire ele) service CalNyx-er event ignore kore, tai ei flag
-    // diye service-ke janano hoy je majhkhane CalNyx esechilo.
-    // Service porer locked-app event-e ei flag dekhe abar
-    // switch hisebe check korbe, continuation hisebe na.
     fun isCalNyxIntervened(context: Context): Boolean =
         prefs(context).getBoolean(KEY_CALNYX_INTERVENED, false)
 
@@ -116,18 +145,12 @@ object AppLockManager {
         setCalNyxIntervened(context, false)
     }
 
-    // Session sesh hole (app theke ber hole) grace timer suru hoy:
-    // ei somoyer moddhe fire asle secret lagbe na, pore asle lagbe.
-    // Service-ei eta call kore, jokhon user onno app-e chole jay.
     fun endUnlockedSession(context: Context) {
         val session = getUnlockedSession(context) ?: return
         clearUnlockedSession(context)
         setAllowed(context, session, getUnlockDurationMs(context))
     }
 
-    // Grace window — app theke ber howar POR kotokhon fire asle
-    // secret lagbe na. Eta unlock-er somoy theke gona hoy na,
-    // tai app-er moddhe thakle eta kokhono lock korabe na.
     fun setAllowed(context: Context, packageName: String, durationMs: Long = 30_000L) {
         prefs(context).edit()
             .putString(KEY_ALLOWED_PKG, packageName)
@@ -144,11 +167,6 @@ object AppLockManager {
         return true
     }
 
-    // Ber howar por kotokhon grace thakbe — App Lock settings
-    // theke bodlano jay. Default 30 second: privacy-first.
-    // App-er moddhe thakle ei timer chole na, tai majhkhane
-    // kokhono lock hobe na; ber howar por ei somoy perolei
-    // porer bar abar secret lagbe.
     fun getUnlockDurationMs(context: Context): Long =
         prefs(context).getLong(KEY_UNLOCK_DURATION_MS, 30_000L)
 
@@ -163,7 +181,6 @@ object AppLockManager {
             .apply()
     }
 
-    // Settings-এ Accessibility সার্ভিসটা অন আছে কিনা।
     fun isAccessibilityEnabled(context: Context): Boolean {
         if (Settings.Secure.getInt(
                 context.contentResolver,
@@ -184,4 +201,31 @@ object AppLockManager {
         }
         return false
     }
+
+    // FIXED2: Android 13+ Restricted Settings.
+    // True only when the app was NOT installed from Play Store.
+    // Play Store installs never need this step.
+    fun isSideloaded(context: Context): Boolean {
+        return try {
+            val pm = context.packageManager
+            val installer: String? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                try {
+                    @Suppress("DEPRECATION")
+                    pm.getInstallSourceInfo(context.packageName).installingPackageName
+                } catch (_: Exception) {
+                    @Suppress("DEPRECATION")
+                    pm.getInstallerPackageName(context.packageName)
+                }
+            } else {
+                @Suppress("DEPRECATION")
+                pm.getInstallerPackageName(context.packageName)
+            }
+            installer == null || installer != "com.android.vending"
+        } catch (_: Exception) {
+            true
+        }
+    }
+
+    fun needsRestrictedSetting(context: Context): Boolean =
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && isSideloaded(context)
 }

@@ -1,68 +1,151 @@
 // FILE: app/src/main/java/com/calnyx/app/applock/AppLockService.kt
-// MIDUSEFIX VERSION - replace your old AppLockService.kt with this file.
-// Apply TOGETHER with AppLockManager-MIDUSEFIX.kt and
-// NavGraph-MIDUSEFIX.kt (which ends the session when CalNyx
-// itself resumes). The calculator file that sets the session
-// on unlock (NormalCalculatorScreen-UNLOCK / LIFTED) must
-// already be in place.
-// Rule, exactly as the user stated: while the user is INSIDE
-// a locked app, it NEVER locks, no matter how long. The
-// timer starts ONLY when the user really leaves that app,
-// and only then does the grace time count.
-// Two holes in UNLOCKFIX that could still lock mid-use:
-//  1. onServiceConnected() called endUnlockedSession(), so a
-//     service restart (Oppo kills background services, an
-//     app update, a reboot of the service) turned a live
-//     session into a short grace window. After that grace
-//     expired, the next screen inside the SAME app blocked.
-//     Now a restart NEVER ends a session. The session ends
-//     only on a real switch away (below) or on CalNyx resume
-//     (NavGraph). After a reboot the first foreground app is
-//     not the locked app, so that switch ends it then —
-//     privacy after reboot is kept, without breaking mid-use.
-//  2. lastForegroundPkg lived only in memory, so a restart
-//     forgot it and the next screen inside the same app
-//     looked like a fresh open. Now it is persisted in
-//     AppLockManager, and restored on connect. On top of
-//     that, a session app is allowed by its session alone,
-//     even if lastForeground was lost — a session app is
-//     only ended by leaving it, never by a restart.
-// Root cause of the unlock loop in the video:
-// The service blocked on EVERY window change of a locked app.
-// After unlock, the app's own next window change (new screen,
-// dialog, splash -> main, and CalNyx's own background event)
-// was treated as a fresh open, so it blocked again within
-// seconds, launched the calculator again, and looped.
-// Fix - block ONLY on an app switch, never while using:
-//  1. lastForegroundPkg remembers which app was last in front.
-//     If the same app is still in front, it is a continuation
-//     and is NEVER blocked, even if its session / timer expired.
-//  2. CalNyx's own events are ignored completely. CalNyx
-//     itself ends the session on resume (see NavGraph), and
-//     sets the intervened flag, so a return to the locked app
-//     after CalNyx is checked as a switch, not a continuation.
-//  3. System overlays (notification shade, keyboard, share
-//     sheet) have no launcher intent, so they do not change
-//     lastForeground and do not end a session.
-//  4. A real switch to another app / home ends the session
-//     and starts the grace timer. A return within grace
-//     restarts the session; after grace it blocks again.
-// Debug: filter logcat with tag CalNyxAppLock to see every
-// decision if it still fails.
+// PANEL6 VERSION (based on PANEL3 + OrientationGuard hook) - replace your old AppLockService.kt with this file.
+// Based on PANEL2 (FIXED2 session logic unchanged). Only change:
+// screenshot now uses the phone's OFFICIAL screenshot via
+// GLOBAL_ACTION_TAKE_SCREENSHOT (Android 9+). The system shows
+// its own screenshot preview, so the user can see it, share it
+// and edit it. The old custom takeScreenshot() + save-to-file
+// path is removed - it only showed a toast and the user could
+// not tell if a screenshot was taken.
+// Based on MOAN (FIXED2 + power/lock). Only addition: screenshot
+// for the floating-ball mini panel. All FIXED2 session logic
+// unchanged. Screenshot uses takeScreenshot() (Android 11+ only)
+// and saves to Pictures/CalNyx. Needs canTakeScreenshot=true in
+// app_lock_service_config.xml and Accessibility on. On Android
+// 9/10 it returns false and the panel shows a note.
+// Apply TOGETHER with AppLockManager-FIXED2.kt and NavGraph-FIXED2.kt.
+// NormalCalculatorScreen (UNLOCK / LIFTED) stays as-is.
+//
+// WHY MIDUSEFIX STILL LOCKED MID-USE - the 3 holes found in your pasted code:
+// 1. hasLauncher() was the only filter. Keyboard (Gboard / Samsung /
+//    SwiftKey), permission dialog, share sheet, file picker, Play
+//    Services dialog ALL have a launch intent, so the service thought
+//    "user left WhatsApp for another app" when the keyboard just opened.
+//    It ended the session and started the 30s grace. After 30s the next
+//    window change inside the SAME app blocked. That is exactly your
+//    "kichukkhon por lock hoye jay".
+// 2. NavGraph ON_RESUME ended the session on EVERY CalNyx resume. That
+//    fires during the unlock handoff too, and the intervened flag it set
+//    stayed stuck if the next event was CalNyx itself (ignored by the
+//    service, so never consumed). Next session-allow then failed.
+// 3. A transient package overwrote lastForegroundPkg, so the "previous
+//    == session" check broke on return.
+//
+// FIXED2 - single source of truth is this Service, not NavGraph:
+// 1. Transient packages are ignored BEFORE any session logic: system,
+//    permission controller, chooser, documents picker, GMS, and the
+//    CURRENT keyboard (read from Settings, not a hard-coded list).
+//    They never change lastForeground and never end a session.
+// 2. Session allow is UNCONDITIONAL: if pkg == session, allow.
+//    No intervened check, no lastForeground check. A session ends
+//    only on a real switch to another REAL app, or on a manual
+//    CalNyx open - both handled here.
+// 3. CalNyx foreground is handled HERE, not in NavGraph:
+//    - pending != null (decoy launch to block) -> ignore, do not end.
+//    - pending == null + session != null (user manually opened CalNyx)
+//      -> real exit, end session, grace starts.
+// 4. Dialog / popup window events (className contains Dialog/Popup)
+//    are ignored - they are not an app switch.
+// Debug: adb logcat -s CalNyxAppLock  (filter by pid for clean log)
 package com.calnyx.app.applock
+
+import com.calnyx.app.moan.OrientationGuard
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.Intent
+import android.os.Build
+import android.provider.Settings
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 
 class AppLockService : AccessibilityService() {
 
+    companion object {
+        private var instance: AppLockService? = null
+
+        // Moan Control calls these. False = Accessibility not on /
+        // service not running. True = action was sent.
+        fun requestPowerDialog(): Boolean {
+            return try {
+                instance?.performGlobalAction(
+                    AccessibilityService.GLOBAL_ACTION_POWER_DIALOG
+                ) == true
+            } catch (_: Exception) {
+                false
+            }
+        }
+
+        fun requestLockScreen(): Boolean {
+            return try {
+                instance?.performGlobalAction(
+                    AccessibilityService.GLOBAL_ACTION_LOCK_SCREEN
+                ) == true
+            } catch (_: Exception) {
+                false
+            }
+        }
+
+        // Ball panel calls this. Uses the phone's OFFICIAL
+        // screenshot (Android 9+). False = Accessibility off
+        // or Android 8 and below.
+        fun requestOfficialScreenshot(): Boolean {
+            return try {
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return false
+                instance?.performGlobalAction(
+                    AccessibilityService.GLOBAL_ACTION_TAKE_SCREENSHOT
+                ) == true
+            } catch (_: Exception) {
+                false
+            }
+        }
+    }
+
     private var lastForegroundPkg: String? = null
+
+    // Packages that are never a real app switch, even though
+    // getLaunchIntentForPackage() returns non-null for some of them.
+    private val systemIgnore = setOf(
+        "android",
+        "com.android.systemui",
+        "com.android.permissioncontroller",
+        "com.google.android.permissioncontroller",
+        "com.android.intentresolver",
+        "com.google.android.intentresolver",
+        "com.google.android.gms",
+        "com.google.android.gsf",
+        "com.android.documentsui",
+        "com.google.android.documentsui",
+        "com.android.providers.media",
+        "com.android.providers.downloads",
+        "com.google.android.apps.docs"
+    )
+
+    // Known keyboards - fallback only. The current IME is read
+    // from Settings below, so any keyboard the user uses is covered.
+    private val knownKeyboards = setOf(
+        "com.google.android.inputmethod.latin",
+        "com.samsung.android.honeyboard",
+        "com.touchtype.swiftkey",
+        "com.swiftkey.swiftkey",
+        "com.realme.inputmethod",
+        "com.coloros.inputmethod",
+        "com.oppo.inputmethod",
+        "com.xiaomi.inputmethod",
+        "com.sohu.inputmethod.sogou",
+        "com.baidu.input"
+    )
 
     override fun onServiceConnected() {
         super.onServiceConnected()
+        instance = this
+        // Orientation guard: re-apply the saved rotation mode
+        // (up / down) if the system reset it, and keep watching
+        // while a locked mode is saved. No-op in Auto mode.
+        try {
+            OrientationGuard.refresh(this)
+        } catch (_: Exception) {
+        }
         val info = AccessibilityServiceInfo().apply {
             eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
             feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
@@ -70,22 +153,26 @@ class AppLockService : AccessibilityService() {
             notificationTimeout = 100
         }
         serviceInfo = info
-        // MIDUSEFIX: restore, do NOT end the session here.
-        // A restart while the user is inside a locked app must
-        // not start any timer and must not lock that app.
         lastForegroundPkg = try {
             AppLockManager.getLastForegroundPkg(this)
         } catch (_: Exception) {
             null
         }
-        Log.d("CalNyxAppLock", "service connected, restored last=$lastForegroundPkg session=" + try {
-            AppLockManager.getUnlockedSession(this)
+        // FIXED2: a stale intervened flag from the old version must
+        // never block a live session after a restart / update.
+        try {
+            AppLockManager.clearCalNyxIntervened(this)
+            AppLockManager.clearDecoyLaunch(this)
         } catch (_: Exception) {
-            null
-        })
-        // NOTE: intervened is deliberately NOT cleared here.
-        // It is consumed on the next locked-app event, so a
-        // return after CalNyx is still checked as a switch.
+        }
+        Log.d(
+            "CalNyxAppLock",
+            "service connected, restored last=$lastForegroundPkg session=" + try {
+                AppLockManager.getUnlockedSession(this)
+            } catch (_: Exception) {
+                null
+            }
+        )
     }
 
     private fun setLastForeground(packageName: String?) {
@@ -104,88 +191,115 @@ class AppLockService : AccessibilityService() {
         }
     }
 
+    private fun currentImePkg(): String? {
+        return try {
+            val ime = Settings.Secure.getString(
+                contentResolver,
+                Settings.Secure.DEFAULT_INPUT_METHOD
+            ) ?: return null
+            ime.substringBefore("/").takeIf { it.isNotEmpty() }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun isTransient(pkg: String, event: AccessibilityEvent): Boolean {
+        if (pkg in systemIgnore) return true
+        if (pkg in knownKeyboards) return true
+        val ime = currentImePkg()
+        if (ime != null && pkg == ime) return true
+        val cls = event.className?.toString() ?: return false
+        // Dialog / popup / keyboard window - not an app switch.
+        if (cls.contains("Dialog", ignoreCase = true)) return true
+        if (cls.contains("Popup", ignoreCase = true)) return true
+        if (cls.contains("Toast", ignoreCase = true)) return true
+        if (cls.contains("InputMethod", ignoreCase = true)) return true
+        if (cls.contains("Keyboard", ignoreCase = true)) return true
+        if (cls.contains("ChooserActivity", ignoreCase = true)) return true
+        if (cls.contains("Permission", ignoreCase = true)) return true
+        return false
+    }
+
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event?.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
         val pkg = event.packageName?.toString() ?: return
 
-        // CalNyx itself: ignored completely. Its background /
-        // foreground events must NOT kill an unlocked session,
-        // otherwise unlock -> WhatsApp -> CalNyx background event
-        // would end the session and re-block WhatsApp.
-        // Exit to CalNyx is handled by CalNyx itself on resume
-        // (NavGraph), which ends the session and sets intervened.
-        if (pkg == packageName) return
-
         if (!AppLockManager.isEnabled(this)) {
-            setLastForeground(null)
+            if (pkg != packageName) setLastForeground(null)
             return
         }
 
-        // System overlay: do not change lastForeground, do not
-        // end a session, do not block.
+        val session = try {
+            AppLockManager.getUnlockedSession(this)
+        } catch (_: Exception) {
+            null
+        }
+        val pending = try {
+            AppLockManager.getPending(this)
+        } catch (_: Exception) {
+            null
+        }
+
+        // FIXED2: CalNyx foreground is handled here, not in NavGraph.
+        // Decoy launch (Service just blocked something, pending is set)
+        // is NOT an exit. Manual open (no pending, session exists) IS.
+        if (pkg == packageName) {
+            if (pending != null) {
+                Log.d("CalNyxAppLock", "decoy CalNyx ignored pending=$pending")
+                setLastForeground(pkg)
+                return
+            }
+            if (session != null) {
+                Log.d("CalNyxAppLock", "manual CalNyx open, ending session $session")
+                try {
+                    AppLockManager.endUnlockedSession(this)
+                } catch (_: Exception) {
+                }
+            }
+            setLastForeground(pkg)
+            return
+        }
+
+        // FIXED2: transient overlay - keyboard, permission dialog,
+        // share sheet, picker, GMS dialog. Never change lastForeground,
+        // never end a session, never block. This was hole #1.
+        if (isTransient(pkg, event)) {
+            Log.d("CalNyxAppLock", "transient ignored pkg=$pkg cls=${event.className} last=$lastForegroundPkg session=$session")
+            return
+        }
+
+        // Not a launchable app (SystemUI etc. without launcher) - ignore.
         if (!hasLauncher(pkg)) {
             Log.d("CalNyxAppLock", "overlay ignored pkg=$pkg last=$lastForegroundPkg")
             return
         }
 
-        val intervened = try {
-            AppLockManager.isCalNyxIntervened(this)
-        } catch (_: Exception) {
-            false
-        }
-        if (intervened) {
-            try {
-                AppLockManager.clearCalNyxIntervened(this)
-            } catch (_: Exception) {
-            }
-        }
-
-        var session = try {
-            AppLockManager.getUnlockedSession(this)
-        } catch (_: Exception) {
-            null
-        }
-
-        // MIDUSEFIX, session first: if this IS the session app
-        // and CalNyx did not intervene in between, it is still
-        // the same use, no matter how long, and no matter
-        // whether the service restarted in between and lost
-        // its in-memory lastForeground. NEVER block here.
-        if (session != null && pkg == session && !intervened) {
+        // FIXED2: session allow is UNCONDITIONAL. If this IS the session
+        // app, it is still the same use, no matter how long, no matter
+        // if the service restarted, no matter what lastForeground says.
+        // NEVER block here. This is the whole mid-use rule.
+        if (session != null && pkg == session) {
             Log.d("CalNyxAppLock", "session allow pkg=$pkg")
             setLastForeground(pkg)
             return
         }
 
         // Continuation of an UNLOCKED app: harmless, allow.
-        // A locked app without a session is NOT allowed here
-        // on continuation alone — it must go through the
-        // grace/block check below, otherwise re-locking an
-        // app while it is still in front would be bypassed.
-        if (pkg == lastForegroundPkg && !intervened && !AppLockManager.isLocked(this, pkg)) {
+        if (pkg == lastForegroundPkg && !AppLockManager.isLocked(this, pkg)) {
             Log.d("CalNyxAppLock", "continuation allow unlocked pkg=$pkg")
             return
         }
 
-        // App switch. This is the ONLY place a session ends
-        // in this service, and this is where the timer starts:
-        // the user really left the session app for another
-        // real app. Staying inside the same app, opening a
-        // new screen/chat/dialog inside it, the keyboard, or
-        // the notification shade never reaches here as a
-        // switch away from the session app.
+        // Real app switch. This is the ONLY place a session ends here.
         val previous = lastForegroundPkg
         setLastForeground(pkg)
 
-        // The previous app was the unlocked session app and the
-        // user left it for a real app: session ends, grace starts.
         if (previous != null && previous == session && previous != pkg) {
-            Log.d("CalNyxAppLock", "switch away, ending session pkg=$previous")
+            Log.d("CalNyxAppLock", "switch away, ending session pkg=$previous to=$pkg")
             try {
                 AppLockManager.endUnlockedSession(this)
             } catch (_: Exception) {
             }
-            session = null
         }
 
         if (!AppLockManager.isLocked(this, pkg)) {
@@ -193,7 +307,7 @@ class AppLockService : AccessibilityService() {
             return
         }
 
-        // Grace return: within the auto-lock time after exit.
+        // Grace return: within auto-lock time after a real exit.
         if (AppLockManager.isAllowed(this, pkg)) {
             Log.d("CalNyxAppLock", "grace allow, restarting session pkg=$pkg")
             try {
@@ -207,9 +321,10 @@ class AppLockService : AccessibilityService() {
         // Locked, no session, no grace: block.
         Log.d("CalNyxAppLock", "BLOCK pkg=$pkg previous=$previous session=$session")
         AppLockManager.setPending(this, pkg)
-        // CalNyx becomes foreground next, but its events are
-        // ignored, so record it here: the next locked-app event
-        // must be a switch, not a continuation.
+        try {
+            AppLockManager.setDecoyLaunch(this, true)
+        } catch (_: Exception) {
+        }
         setLastForeground(packageName)
         val intent = packageManager.getLaunchIntentForPackage(packageName) ?: return
         intent.addFlags(
@@ -221,6 +336,11 @@ class AppLockService : AccessibilityService() {
             startActivity(intent)
         } catch (_: Exception) {
         }
+    }
+
+    override fun onDestroy() {
+        if (instance == this) instance = null
+        super.onDestroy()
     }
 
     override fun onInterrupt() {}
