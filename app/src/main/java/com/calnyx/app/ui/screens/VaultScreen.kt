@@ -1,5 +1,8 @@
 // FILE: app/src/main/java/com/calnyx/app/ui/screens/VaultScreen.kt
-// MODERN3 VERSION - replace your old VaultScreen.kt with this file.
+// OPENFIX VERSION - replace your old VaultScreen.kt with this file.
+// Based on MODERN3 (B/W). Only the open flow changed:
+// 1 tap = open externally (was: tap -> sheet -> in-app viewer),
+// long-press = action sheet, "Opening..." dialog while loading.
 // Same as BACKFIX (system back from a folder goes to the overview
 // first), plus the Settings dialog is now modern black/white:
 // no theme pink on the Save button or the text field border,
@@ -21,6 +24,23 @@
 //  - All visible text is English only. No Banglish strings.
 // You still need: VaultCrypto.kt (new) + VaultManager-ENCRYPTED.kt
 // (as VaultManager.kt) + cache-path line in file_paths.xml.
+// B/W AUDIT (2026-11-06): app-theme fix — this screen now takes
+// darkTheme: Boolean = isSystemInDarkTheme() and uses it instead
+// of reading the system theme, so the app's own theme toggle
+// controls it. The three Banglish strings are now English
+// ("Restored to gallery" / "Restore failed" / the delete-dialog
+// text). The one theme-primary text ("saved to vault") is now
+// onPageColor. The Delete buttons KEEP colors.error /
+// errorContainer red — red marks a delete action, which is
+// special. Everything else was already OffWhite / OffBlack /
+// CardWhite / CardBlack / Border / ThumbBg or onPageColor /
+// onSurfaceVariant; the photo viewer's black background with
+// white text is fine. The stored selectedIcon string "⚫" is
+// never displayed anywhere, left as-is.
+// NO DRAWER SWIPE on this screen: it is a hidden screen —
+// NavGraph deliberately hides the drawer and top bar on the
+// Vault route, and the vault must stay hidden with no menu
+// trace. Do NOT add any onOpenDrawer param or swipe detector here.
 package com.calnyx.app.ui.screens
 
 import android.app.Activity
@@ -35,7 +55,9 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -115,13 +137,18 @@ private data class PendingDelete(
     val mediaUri: Uri
 )
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun VaultScreen(onBack: () -> Unit, onOpenAppLock: () -> Unit = {}) {
+fun VaultScreen(
+    onBack: () -> Unit,
+    onOpenAppLock: () -> Unit = {},
+    darkTheme: Boolean = isSystemInDarkTheme()
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     // MODERN theme: page and cards follow dark/light, but only in
     // off-white / off-black / grey.
-    val isDark = isSystemInDarkTheme()
+    val isDark = darkTheme
     val pageBg = if (isDark) OffBlack else OffWhite
     val cardBg = if (isDark) CardBlack else CardWhite
     val cardBorderColor = if (isDark) BorderDark else BorderLight
@@ -134,7 +161,23 @@ fun VaultScreen(onBack: () -> Unit, onOpenAppLock: () -> Unit = {}) {
     var pendingImportCategory by remember { mutableStateOf<VaultCategory?>(null) }
 
     var actionFile by remember { mutableStateOf<File?>(null) }
-    var photoViewerFile by remember { mutableStateOf<File?>(null) }
+    // OPENFIX: which file is being opened right now (for the
+    // "Opening..." dialog). The old photoViewerFile (in-app viewer)
+    // is gone — photos open externally like everything else.
+    var openingFile by remember { mutableStateOf<File?>(null) }
+    // OPENFIX: one-tap open. scope.launch returns instantly, so the
+    // tap never freezes; the suspend open runs on Dispatchers.IO
+    // inside VaultOpener. Boolean false = NoViewer or Failed.
+    val openFile: (File) -> Unit = { f ->
+        scope.launch {
+            openingFile = f
+            val ok = VaultManager.openWithExternalViewer(context, f)
+            openingFile = null
+            if (!ok) {
+                Toast.makeText(context, "Could not open file", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
     var renamingFile by remember { mutableStateOf<File?>(null) }
     var renameText by remember { mutableStateOf("") }
     var deletingFile by remember { mutableStateOf<File?>(null) }
@@ -158,7 +201,7 @@ fun VaultScreen(onBack: () -> Unit, onOpenAppLock: () -> Unit = {}) {
     BackHandler(
         enabled = selectedCategory != null &&
             actionFile == null &&
-            photoViewerFile == null &&
+            openingFile == null &&
             renamingFile == null &&
             deletingFile == null &&
             !showSettingsDialog &&
@@ -585,7 +628,10 @@ fun VaultScreen(onBack: () -> Unit, onOpenAppLock: () -> Unit = {}) {
                                         .clip(RoundedCornerShape(16.dp))
                                         .background(cardBg)
                                         .border(1.dp, cardBorderColor, RoundedCornerShape(16.dp))
-                                        .clickable { actionFile = f },
+                                        .combinedClickable(
+                                            onClick = { openFile(f) },
+                                            onLongClick = { actionFile = f }
+                                        ),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     if (category == VaultCategory.PHOTOS) {
@@ -629,7 +675,10 @@ fun VaultScreen(onBack: () -> Unit, onOpenAppLock: () -> Unit = {}) {
                                         .clip(RoundedCornerShape(16.dp))
                                         .background(cardBg)
                                         .border(1.dp, cardBorderColor, RoundedCornerShape(16.dp))
-                                        .clickable { actionFile = f }
+                                        .combinedClickable(
+                                            onClick = { openFile(f) },
+                                            onLongClick = { actionFile = f }
+                                        )
                                         .padding(14.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
@@ -691,7 +740,7 @@ fun VaultScreen(onBack: () -> Unit, onOpenAppLock: () -> Unit = {}) {
                     Text(
                         "\"${pd.fileName}\" saved to vault",
                         fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.primary
+                        color = onPageColor
                     )
                     Spacer(Modifier.height(4.dp))
                     Text(
@@ -785,11 +834,7 @@ fun VaultScreen(onBack: () -> Unit, onOpenAppLock: () -> Unit = {}) {
                         FilledTonalButton(
                             onClick = {
                                 actionFile = null
-                                if (cat == VaultCategory.PHOTOS) {
-                                    photoViewerFile = file
-                                } else if (!VaultManager.openWithExternalViewer(context, file)) {
-                                    Toast.makeText(context, "No viewer app found", Toast.LENGTH_SHORT).show()
-                                }
+                                openFile(file)
                             },
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(12.dp)
@@ -812,7 +857,7 @@ fun VaultScreen(onBack: () -> Unit, onOpenAppLock: () -> Unit = {}) {
                                     val ok = VaultManager.restoreFile(context, file, cat)
                                     Toast.makeText(
                                         context,
-                                        if (ok) "Gallery-te restore hoyeche ✓" else "Restore hoyni",
+                                        if (ok) "Restored to gallery" else "Restore failed",
                                         Toast.LENGTH_LONG
                                     ).show()
                                     refreshKey++
@@ -839,42 +884,34 @@ fun VaultScreen(onBack: () -> Unit, onOpenAppLock: () -> Unit = {}) {
         )
     }
 
-    // ── Full photo viewer ──
-    val viewer = photoViewerFile
-    if (viewer != null) {
-        Dialog(
-            onDismissRequest = { photoViewerFile = null },
-            properties = DialogProperties(usePlatformDefaultWidth = false)
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black)
-            ) {
-                VaultPhotoImage(
-                    file = viewer,
-                    modifier = Modifier.fillMaxSize().align(Alignment.Center)
-                )
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .statusBarsPadding()
-                        .padding(horizontal = 4.dp)
-                        .align(Alignment.TopStart),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    IconButton(onClick = { photoViewerFile = null }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Color.White)
-                    }
+    // ── OPENFIX: "Opening..." — shows INSTANTLY on tap, while the
+    // decrypt/copy runs on a background thread. No progress = the
+    // user thinks the tap did nothing. No dismiss: it closes itself
+    // when openFile finishes.
+    val opening = openingFile
+    if (opening != null) {
+        AlertDialog(
+            onDismissRequest = {},
+            shape = RoundedCornerShape(24.dp),
+            title = { Text("Opening...") },
+            text = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(
+                        color = onPageColor,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(Modifier.width(14.dp))
                     Text(
-                        viewer.name, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f),
-                        color = Color.White.copy(alpha = 0.9f),
-                        style = MaterialTheme.typography.bodyMedium
+                        opening.name,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
                     )
                 }
-            }
-        }
+            },
+            confirmButton = {},
+            dismissButton = {}
+        )
     }
 
     // ── Rename ──
@@ -917,7 +954,7 @@ fun VaultScreen(onBack: () -> Unit, onOpenAppLock: () -> Unit = {}) {
             title = { Text("Delete permanently?") },
             text = {
                 Text(
-                    "\"${toDelete.name}\" vault theke chirotore muche jabe.",
+                    "\"${toDelete.name}\" will be permanently deleted from the vault.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             },

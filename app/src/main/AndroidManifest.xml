@@ -1,5 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- FILE: app/src/main/AndroidManifest.xml -->
+<!-- CLIPBOARD VERSION - replace your old AndroidManifest.xml with this. -->
+<!-- Based on BLUEFILM-CAMERA (the full manifest you pasted 2026-11-06). -->
+<!-- ONLY Clipboard changes, everything else byte-identical: -->
+<!-- 1. NEW permission FOREGROUND_SERVICE_DATA_SYNC (Android 14+): -->
+<!--    ClipboardService runs as foregroundServiceType="dataSync", -->
+<!--    Android 14+ requires this permission for that type. -->
+<!--    FOREGROUND_SERVICE / POST_NOTIFICATIONS / RECEIVE_BOOT_COMPLETED -->
+<!--    were already declared, so they are NOT added again. -->
+<!-- 2. NEW service .clipboard.ClipboardService (exported=false, -->
+<!--    foregroundServiceType="dataSync") - listens for copies. -->
+<!-- 3. NEW receiver .clipboard.ClipboardBootReceiver (exported=true, -->
+<!--    BOOT_COMPLETED) - restarts the listener after reboot. -->
+<!-- BlueFilm camera, ball, orientation, WhatsApp, AppLock - all kept. -->
 <!-- BLUEFILM-CAMERA VERSION - replace your old AndroidManifest.xml with this. -->
 <!-- Based on WHATSAPP. New vs BLUEFILM (screen recorder): -->
 <!-- BlueFilmService is now a CAMERA video recorder (front / back -->
@@ -56,6 +69,8 @@
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <!-- CLIPBOARD (NEW): Android 14+ needs this for dataSync type. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
@@ -199,6 +214,25 @@
             android:name=".BlueFilm.BlueFilmService"
             android:exported="false"
             android:foregroundServiceType="camera" />
+
+        <!-- Clipboard (NEW): foreground service that listens for
+             copies and saves them into Room. Not exported - only
+             this app starts it. -->
+        <service
+            android:name=".clipboard.ClipboardService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
+        <!-- Clipboard (NEW): restart the clipboard listener after
+             a reboot, so auto-save resumes without opening the app. -->
+        <receiver
+            android:name=".clipboard.ClipboardBootReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
 
         <!-- App Lock: AccessibilityService, must be enabled by user in Settings -->
         <service

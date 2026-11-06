@@ -1,4 +1,31 @@
 // FILE: app/src/main/java/com/calnyx/app/ui/screens/ScientificCalculatorScreen.kt
+// B/W VERSION - replace your old ScientificCalculatorScreen.kt with this file.
+// Based on the user's pasted ScientificCalculatorScreen.kt. Logic is UNCHANGED
+// (onKeyPress SHIFT/HYP handling, ViewModel calls, history sheet, animations,
+// dayLabel/format helpers). Only these changes:
+//  1. BLACK / WHITE ONLY, both themes: every chromatic colour is gone — the
+//     green LCD, dark-green text, gold / brown, yellow and orange, and every
+//     theme accent colour are replaced with MaterialTheme neutrals only
+//     (background, onBackground, surface, onSurface, surfaceVariant,
+//     onSurfaceVariant, outline). SciKeyStyle enum names
+//     (ORANGE/YELLOW/PURPLE) are kept as legacy names, but remapped to B/W
+//     in SciKeyCell: FUNCTION/DIGIT = surfaceVariant bg + onSurface text,
+//     ORANGE (backspace/AC) and EQUAL (=) = inverted, YELLOW (SHIFT) =
+//     surfaceVariant normally and inverted while shiftMode is on so the
+//     active state is visible, PURPLE (Deg/Rad) = surfaceVariant.
+//     LCD panel = surfaceVariant bg, expression + final result = onSurface
+//     (final bold), preview result = onSurfaceVariant, DEG/RAD indicator =
+//     onSurfaceVariant, SHIFT/HYP indicators = onSurface, shift labels
+//     above keys = onSurfaceVariant, History Clear = onSurface.
+//  2. DESIGN BUGS: keypad gaps 3.dp -> 6.dp (rows were cramped); FUNCTION
+//     keys use 13.sp so long labels (sin⁻¹, cos⁻¹, tan⁻¹, RanInt) fit on
+//     one line; the toolbar now has the same 56.dp top clearance as the
+//     other screens, so it never collides with the NavGraph 3-dot menu.
+//  3. DRAWER SWIPE (universal rule): new onOpenDrawer param (NavGraph
+//     passes it). A leftward drag on the toolbar or the keypad opens the
+//     app drawer; rightward drags are not consumed. The LCD panel is NOT
+//     covered — its expression/result rows scroll horizontally and must
+//     keep working.
 package com.calnyx.app.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
@@ -12,6 +39,7 @@ import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.fadeIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -32,6 +60,7 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -64,6 +93,7 @@ private data class SciKey(
 fun ScientificCalculatorScreen(
     darkTheme: Boolean,
     onToggleTheme: () -> Unit,
+    onOpenDrawer: () -> Unit = {},
     viewModel: CalculatorViewModel = viewModel(),
     historyViewModel: HistoryViewModel = viewModel()
 ) {
@@ -196,6 +226,30 @@ fun ScientificCalculatorScreen(
         }
     }
 
+    // DRAWER SWIPE (universal rule): a LEFTWARD drag on the toolbar or
+    // the keypad opens the app drawer. Rightward drags are NOT consumed
+    // here. The LCD panel is deliberately excluded — its expression /
+    // result rows scroll horizontally and must keep working.
+    val drawerSwipe = Modifier.pointerInput(Unit) {
+        val thresholdPx = 24.dp.toPx()
+        var totalDx = 0f
+        var done = false
+        detectHorizontalDragGestures(
+            onDragStart = { totalDx = 0f; done = false },
+            onDragEnd = { totalDx = 0f; done = false },
+            onDragCancel = { totalDx = 0f; done = false },
+            onHorizontalDrag = { change, dragAmount ->
+                if (done) return@detectHorizontalDragGestures
+                totalDx += dragAmount
+                if (totalDx < -thresholdPx) {
+                    done = true
+                    onOpenDrawer()
+                    change.consume()
+                }
+            }
+        )
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -204,10 +258,11 @@ fun ScientificCalculatorScreen(
             .navigationBarsPadding()
             .padding(horizontal = 6.dp)
     ) {
-        // Toolbar sits level with the floating 3-dot menu — no big spacer
-        Spacer(modifier = Modifier.height(4.dp))
+        // 56.dp top clearance, like the other screens — the toolbar
+        // must never collide with the floating 3-dot menu.
+        Spacer(modifier = Modifier.height(56.dp))
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().then(drawerSwipe),
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = { showHistorySheet = true }) {
@@ -231,7 +286,7 @@ fun ScientificCalculatorScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(16.dp))
-                .background(Color(0xFFDCE9E2))
+                .background(MaterialTheme.colorScheme.surfaceVariant)
                 .graphicsLayer {
                     alpha = displayAnim.value
                     translationY = (1f - displayAnim.value) * -16f
@@ -250,7 +305,7 @@ fun ScientificCalculatorScreen(
                     text = if (isDegrees) "DEG" else "RAD",
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFF14201A).copy(alpha = 0.55f)
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 AnimatedVisibility(
                     visible = shiftMode,
@@ -260,7 +315,7 @@ fun ScientificCalculatorScreen(
                         text = "  SHIFT",
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color(0xFF9C6B1E)
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                 }
                 AnimatedVisibility(
@@ -271,7 +326,7 @@ fun ScientificCalculatorScreen(
                         text = "  HYP",
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color(0xFF9C6B1E)
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                 }
             }
@@ -307,7 +362,7 @@ fun ScientificCalculatorScreen(
                     Text(
                         text = formatScientificDisplay(shownExpression, expressionFontSize.sp),
                         fontSize = expressionFontSize.sp,
-                        color = Color(0xFF14201A),
+                        color = MaterialTheme.colorScheme.onSurface,
                         textAlign = TextAlign.End,
                         maxLines = 1,
                         softWrap = false
@@ -355,7 +410,7 @@ fun ScientificCalculatorScreen(
                         text = shownResultDisplay,
                         fontSize = resultFontSize.sp,
                         fontWeight = if (finalResult != null) FontWeight.Bold else FontWeight.Normal,
-                        color = if (finalResult != null) Color(0xFF14201A) else Color(0xFF9C6B1E),
+                        color = if (finalResult != null) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.End,
                         maxLines = 1,
                         softWrap = false,
@@ -371,9 +426,9 @@ fun ScientificCalculatorScreen(
 
         Spacer(modifier = Modifier.height(6.dp))
 
-        // Keypad — rows share the remaining height, almost no gaps,
+        // Keypad — rows share the remaining height, 6.dp gaps now,
         // rows animate in one after another
-        Column(modifier = Modifier.weight(1f)) {
+        Column(modifier = Modifier.weight(1f).then(drawerSwipe)) {
             (functionRows + digitRows).forEachIndexed { rowIndex, row ->
                 val rowAnim = remember { Animatable(0f) }
                 LaunchedEffect(Unit) {
@@ -388,7 +443,7 @@ fun ScientificCalculatorScreen(
                             alpha = rowAnim.value
                             translationY = (1f - rowAnim.value) * 30f
                         },
-                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     row.forEach { key ->
                         SciKeyCell(
@@ -402,7 +457,7 @@ fun ScientificCalculatorScreen(
                         )
                     }
                 }
-                Spacer(modifier = Modifier.height(3.dp))
+                Spacer(modifier = Modifier.height(6.dp))
             }
         }
 
@@ -436,7 +491,7 @@ fun ScientificCalculatorScreen(
                     TextButton(onClick = { historyViewModel.clearAll() }) {
                         Text(
                             text = "Clear",
-                            color = MaterialTheme.colorScheme.primary
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                     }
                 }
@@ -504,12 +559,18 @@ private fun SciKeyCell(
     modifier: Modifier = Modifier,
     onPress: (SciKey) -> Unit
 ) {
+    // B/W remap (enum names ORANGE / YELLOW / PURPLE are legacy only):
+    // FUNCTION / DIGIT = surfaceVariant bg + onSurface text,
+    // ORANGE (backspace / AC) and EQUAL (=) = inverted,
+    // YELLOW (SHIFT) = surfaceVariant normally, inverted while
+    // shiftMode is on so the active state is visible,
+    // PURPLE (Deg/Rad) = surfaceVariant bg + onSurface text.
     val containerColor: Color
     val contentColor: Color
     when (key.style) {
         SciKeyStyle.FUNCTION -> {
-            containerColor = MaterialTheme.colorScheme.secondaryContainer
-            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+            contentColor = MaterialTheme.colorScheme.onSurface
         }
 
         SciKeyStyle.DIGIT -> {
@@ -518,23 +579,23 @@ private fun SciKeyCell(
         }
 
         SciKeyStyle.ORANGE -> {
-            containerColor = Color(0xFFF0A35E)
-            contentColor = Color(0xFF26160A)
+            containerColor = MaterialTheme.colorScheme.onBackground
+            contentColor = MaterialTheme.colorScheme.background
         }
 
         SciKeyStyle.YELLOW -> {
-            containerColor = if (shiftMode) Color(0xFFFFD93D) else Color(0xFFE9C46A)
-            contentColor = Color(0xFF2A2000)
+            containerColor = if (shiftMode) MaterialTheme.colorScheme.onBackground else MaterialTheme.colorScheme.surfaceVariant
+            contentColor = if (shiftMode) MaterialTheme.colorScheme.background else MaterialTheme.colorScheme.onSurface
         }
 
         SciKeyStyle.PURPLE -> {
-            containerColor = MaterialTheme.colorScheme.primaryContainer
-            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+            contentColor = MaterialTheme.colorScheme.onSurface
         }
 
         SciKeyStyle.EQUAL -> {
-            containerColor = MaterialTheme.colorScheme.primary
-            contentColor = MaterialTheme.colorScheme.onPrimary
+            containerColor = MaterialTheme.colorScheme.onBackground
+            contentColor = MaterialTheme.colorScheme.background
         }
     }
 
@@ -556,7 +617,7 @@ private fun SciKeyCell(
     )
 
     Column(modifier = modifier) {
-        // Small yellow shift label above the key (Casio style) —
+        // Small shift label above the key (Casio style) —
         // bottom-aligned in a fixed box so it is never clipped
         Box(
             modifier = Modifier
@@ -568,7 +629,7 @@ private fun SciKeyCell(
                 text = key.shiftDisplay ?: "",
                 fontSize = 9.sp,
                 lineHeight = 10.sp,
-                color = Color(0xFFE9C46A),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
                 maxLines = 1
             )
@@ -604,9 +665,17 @@ private fun SciKeyCell(
                         hypMode && key.action in listOf("sin", "cos", "tan") -> key.action + "h"
                         else -> key.display
                     },
-                    fontSize = if (key.style == SciKeyStyle.DIGIT) 24.sp else 15.sp,
+                    // FUNCTION keys are 13.sp so long labels (sin⁻¹,
+                    // cos⁻¹, tan⁻¹, RanInt) fit on one line; digits
+                    // stay 24.sp, the rest 15.sp.
+                    fontSize = when (key.style) {
+                        SciKeyStyle.DIGIT -> 24.sp
+                        SciKeyStyle.FUNCTION -> 13.sp
+                        else -> 15.sp
+                    },
                     fontWeight = FontWeight.Medium,
-                    maxLines = 1
+                    maxLines = 1,
+                    softWrap = false
                 )
             }
         }

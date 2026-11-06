@@ -1,4 +1,10 @@
 // FILE: app/src/main/java/com/calnyx/app/BlueFilm/BlueFilmStore.kt
+// FOLDERS VERSION - replace your old BlueFilmStore.kt with this file.
+// Based on V8.2. Only addition: deleteFolder() + renameFolder()
+// (see below, after createFolder). Everything else is byte-identical.
+// The DEFAULT folder ("My Blue Film") can never be deleted or
+// renamed - it is where new recordings go, and listFolders()
+// always recreates it.
 // REPLACE the V6 version. V7 changes - Play gave ZERO
 // feedback on tap (user's video: tap on Play, ripple only,
 // no note, no Toast, no player, even 1.5s later):
@@ -123,6 +129,50 @@ object BlueFilmStore {
         if (f.exists()) return f.isDirectory
         return try {
             f.mkdirs()
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    // Delete a whole folder with every video inside it. The
+    // DEFAULT folder can never be deleted - it is where new
+    // recordings go, and listFolders always recreates it.
+    // Cached decrypted temps + thumbnails of its videos are
+    // dropped too, so no stale preview survives the folder.
+    fun deleteFolder(context: Context, folder: String): Boolean {
+        val name = sanitizeName(folder) ?: return false
+        if (name == DEFAULT_FOLDER) return false
+        val f = File(dir(context), name)
+        if (!f.exists()) return false
+        if (!f.isDirectory) return false
+        return try {
+            listVideosInFolder(context, name).forEach { dropCache(context, it) }
+            f.deleteRecursively()
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    // Rename a folder. Reuses sanitizeName, so the same rules
+    // apply as createFolder. The DEFAULT folder can never be
+    // renamed. False when the new name is blank, already taken,
+    // or the rename fails. Renaming to the same name is a no-op
+    // success, like renameVideo.
+    fun renameFolder(context: Context, oldName: String, rawNewName: String): Boolean {
+        val old = sanitizeName(oldName) ?: return false
+        if (old == DEFAULT_FOLDER) return false
+        val clean = sanitizeName(rawNewName) ?: return false
+        if (clean == old) return true
+        val src = File(dir(context), old)
+        if (!src.exists() || !src.isDirectory) return false
+        val dest = File(dir(context), clean)
+        if (dest.exists()) return false
+        return try {
+            if (src.renameTo(dest)) true
+            else {
+                src.copyRecursively(dest, overwrite = false)
+                src.deleteRecursively()
+            }
         } catch (_: Exception) {
             false
         }

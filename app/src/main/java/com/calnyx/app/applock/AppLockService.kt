@@ -1,51 +1,19 @@
 // FILE: app/src/main/java/com/calnyx/app/applock/AppLockService.kt
-// PANEL6 VERSION (based on PANEL3 + OrientationGuard hook) - replace your old AppLockService.kt with this file.
-// Based on PANEL2 (FIXED2 session logic unchanged). Only change:
-// screenshot now uses the phone's OFFICIAL screenshot via
-// GLOBAL_ACTION_TAKE_SCREENSHOT (Android 9+). The system shows
-// its own screenshot preview, so the user can see it, share it
-// and edit it. The old custom takeScreenshot() + save-to-file
-// path is removed - it only showed a toast and the user could
-// not tell if a screenshot was taken.
-// Based on MOAN (FIXED2 + power/lock). Only addition: screenshot
-// for the floating-ball mini panel. All FIXED2 session logic
-// unchanged. Screenshot uses takeScreenshot() (Android 11+ only)
-// and saves to Pictures/CalNyx. Needs canTakeScreenshot=true in
-// app_lock_service_config.xml and Accessibility on. On Android
-// 9/10 it returns false and the panel shows a note.
-// Apply TOGETHER with AppLockManager-FIXED2.kt and NavGraph-FIXED2.kt.
-// NormalCalculatorScreen (UNLOCK / LIFTED) stays as-is.
-//
-// WHY MIDUSEFIX STILL LOCKED MID-USE - the 3 holes found in your pasted code:
-// 1. hasLauncher() was the only filter. Keyboard (Gboard / Samsung /
-//    SwiftKey), permission dialog, share sheet, file picker, Play
-//    Services dialog ALL have a launch intent, so the service thought
-//    "user left WhatsApp for another app" when the keyboard just opened.
-//    It ended the session and started the 30s grace. After 30s the next
-//    window change inside the SAME app blocked. That is exactly your
-//    "kichukkhon por lock hoye jay".
-// 2. NavGraph ON_RESUME ended the session on EVERY CalNyx resume. That
-//    fires during the unlock handoff too, and the intervened flag it set
-//    stayed stuck if the next event was CalNyx itself (ignored by the
-//    service, so never consumed). Next session-allow then failed.
-// 3. A transient package overwrote lastForegroundPkg, so the "previous
-//    == session" check broke on return.
-//
-// FIXED2 - single source of truth is this Service, not NavGraph:
-// 1. Transient packages are ignored BEFORE any session logic: system,
-//    permission controller, chooser, documents picker, GMS, and the
-//    CURRENT keyboard (read from Settings, not a hard-coded list).
-//    They never change lastForeground and never end a session.
-// 2. Session allow is UNCONDITIONAL: if pkg == session, allow.
-//    No intervened check, no lastForeground check. A session ends
-//    only on a real switch to another REAL app, or on a manual
-//    CalNyx open - both handled here.
-// 3. CalNyx foreground is handled HERE, not in NavGraph:
-//    - pending != null (decoy launch to block) -> ignore, do not end.
-//    - pending == null + session != null (user manually opened CalNyx)
-//      -> real exit, end session, grace starts.
-// 4. Dialog / popup window events (className contains Dialog/Popup)
-//    are ignored - they are not an app switch.
+// FIXED2 + PANEL VERSION - replace your old AppLockService.kt with this file.
+// WHY THE BUILD FAILED: BallPanelActivity.kt and MoanControlScreen.kt
+// call AppLockService.requestOfficialScreenshot(), requestLockScreen()
+// and requestPowerDialog(), but the AppLockService.kt in the project
+// is the plain FIXED2 version, which does NOT have those three
+// companion methods — hence "Unresolved reference" x5. This file is
+// FIXED2 session logic UNCHANGED, plus a companion object holding
+// the service instance and those three request methods:
+//   requestPowerDialog() -> GLOBAL_ACTION_POWER_DIALOG
+//   requestLockScreen()  -> GLOBAL_ACTION_LOCK_SCREEN
+//   requestOfficialScreenshot() -> GLOBAL_ACTION_TAKE_SCREENSHOT (API 28+)
+// Each returns false when Accessibility is off / service not running,
+// and the callers already show "Turn on Accessibility" then.
+// Also: onServiceConnected sets instance + OrientationGuard.refresh,
+// onDestroy clears instance. Nothing else changed vs FIXED2.
 // Debug: adb logcat -s CalNyxAppLock  (filter by pid for clean log)
 package com.calnyx.app.applock
 

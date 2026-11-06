@@ -1,4 +1,28 @@
 // FILE: app/src/main/java/com/calnyx/app/ui/screens/IctCalculatorScreen.kt
+// B/W VERSION - replace your old IctCalculatorScreen.kt with this file.
+// Based on the user's pasted IctCalculatorScreen.kt. LOGIC UNCHANGED:
+// base switching, IctFraction math, parser, rendering, grouping,
+// key enable/disable rules and animations are all exactly as pasted.
+// Only these changes:
+//  1. BLACK & WHITE ONLY, both dark and light mode: only
+//     MaterialTheme.colorScheme neutrals (background, onBackground,
+//     surface, onSurface, surfaceVariant, onSurfaceVariant, outline).
+//     No primary / primaryContainer / onPrimary / onPrimaryContainer /
+//     secondaryContainer / onSecondaryContainer anywhere. Base chip
+//     selected = inverted (onBackground bg, background text); "=" key
+//     = inverted; AC key = surfaceVariant bg with onSurface text;
+//     operator / function / letter keys = surfaceVariant 75%;
+//     digit keys = surfaceVariant; caret and result text = onSurface;
+//     copy icon = onSurfaceVariant. All Color.White borders replaced
+//     with onSurface at 0.12 alpha; the glass-card gradient stays a
+//     vertical gradient between surfaceVariant alphas only.
+//     EXCEPTION: the divide-by-zero message keeps colors.error —
+//     red marks a genuine error state, not decoration.
+//  2. DRAWER SWIPE (universal rule): new onOpenDrawer param. A
+//     leftward drag past 24dp on the base-chips row or on the keypad
+//     opens the app drawer (rightward drags are NOT consumed). It is
+//     NOT on the display panel — its expression/result rows scroll
+//     horizontally and must keep working.
 package com.calnyx.app.ui.screens
 
 import androidx.compose.animation.AnimatedContent
@@ -19,6 +43,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -46,9 +71,9 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.AnnotatedString
@@ -374,11 +399,37 @@ private data class IctKeySpec(
 @Composable
 fun IctCalculatorScreen(
     darkTheme: Boolean,
-    onToggleTheme: () -> Unit
+    onToggleTheme: () -> Unit,
+    onOpenDrawer: () -> Unit = {}
 ) {
     val colors = MaterialTheme.colorScheme
     val clipboardManager = LocalClipboardManager.current
     val haptics = LocalHapticFeedback.current
+
+    // DRAWER SWIPE (universal rule): a leftward drag past 24dp opens
+    // the app drawer, once per gesture. Rightward drags are NOT
+    // consumed here. Applied to the base-chips row and the keypad
+    // only — never to the display panel, whose rows scroll
+    // horizontally and must keep working.
+    val drawerSwipe = Modifier.pointerInput(Unit) {
+        val thresholdPx = 24.dp.toPx()
+        var totalDx = 0f
+        var done = false
+        detectHorizontalDragGestures(
+            onDragStart = { totalDx = 0f; done = false },
+            onDragEnd = { totalDx = 0f; done = false },
+            onDragCancel = { totalDx = 0f; done = false },
+            onHorizontalDrag = { change, dragAmount ->
+                if (done) return@detectHorizontalDragGestures
+                totalDx += dragAmount
+                if (totalDx < -thresholdPx) {
+                    done = true
+                    onOpenDrawer()
+                    change.consume()
+                }
+            }
+        )
+    }
 
     var base by remember { mutableStateOf(IctBase.BINARY) }
     // Internal expression is plain ASCII: digits, A-F, . + - * / ( )
@@ -613,8 +664,8 @@ fun IctCalculatorScreen(
                                 width = 1.dp,
                                 brush = Brush.verticalGradient(
                                     listOf(
-                                        Color.White.copy(alpha = 0.22f),
-                                        Color.White.copy(alpha = 0.05f)
+                                        colors.onSurface.copy(alpha = 0.22f),
+                                        colors.onSurface.copy(alpha = 0.05f)
                                     )
                                 ),
                                 shape = RoundedCornerShape(28.dp)
@@ -631,7 +682,8 @@ fun IctCalculatorScreen(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(44.dp),
+                                .height(44.dp)
+                                .then(drawerSwipe),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             ictBases.forEach { ictBase ->
@@ -657,7 +709,7 @@ fun IctCalculatorScreen(
                                 .background(colors.background.copy(alpha = 0.28f))
                                 .border(
                                     width = 1.dp,
-                                    color = Color.White.copy(alpha = 0.06f),
+                                    color = colors.onSurface.copy(alpha = 0.12f),
                                     shape = RoundedCornerShape(20.dp)
                                 )
                                 .padding(start = 14.dp, end = 14.dp, top = 16.dp, bottom = 12.dp),
@@ -704,7 +756,7 @@ fun IctCalculatorScreen(
                                             text = "▌",
                                             fontSize = 40.sp,
                                             lineHeight = 50.sp,
-                                            color = colors.primary,
+                                            color = colors.onSurface,
                                             modifier = Modifier.alpha(if (caretOn) 0.9f else 0f)
                                         )
                                     }
@@ -761,7 +813,7 @@ fun IctCalculatorScreen(
                                                 color = if (eval is IctEval.DivZero) {
                                                     colors.error
                                                 } else {
-                                                    colors.primary
+                                                    colors.onSurface
                                                 },
                                                 textAlign = TextAlign.End,
                                                 maxLines = 1,
@@ -797,7 +849,10 @@ fun IctCalculatorScreen(
                 // digits outside the base, operators with nowhere
                 // legal to go, and "=" for an impossible or
                 // incomplete expression all stay dim and dead.
-                IctAnimatedIn(modifier = Modifier.weight(0.56f), delayMs = 180) {
+                IctAnimatedIn(
+                    modifier = Modifier.weight(0.56f).then(drawerSwipe),
+                    delayMs = 180
+                ) {
                     Column(
                         modifier = Modifier.fillMaxSize(),
                         verticalArrangement = Arrangement.spacedBy(9.dp)
@@ -840,12 +895,12 @@ private fun IctBaseChip(
 ) {
     val colors = MaterialTheme.colorScheme
     val background by animateColorAsState(
-        targetValue = if (selected) colors.primary else colors.surfaceVariant.copy(alpha = 0.45f),
+        targetValue = if (selected) colors.onBackground else colors.surfaceVariant.copy(alpha = 0.45f),
         animationSpec = tween(280),
         label = "ictChipBackground"
     )
     val content by animateColorAsState(
-        targetValue = if (selected) colors.onPrimary else colors.onSurfaceVariant,
+        targetValue = if (selected) colors.background else colors.onSurfaceVariant,
         animationSpec = tween(280),
         label = "ictChipContent"
     )
@@ -886,19 +941,19 @@ private fun IctKey(
 ) {
     val colors = MaterialTheme.colorScheme
     val containerColor = when (spec.kind) {
-        IctKeyKind.EQUALS -> colors.primary
-        IctKeyKind.CLEAR -> colors.primaryContainer
+        IctKeyKind.EQUALS -> colors.onBackground
+        IctKeyKind.CLEAR -> colors.surfaceVariant
         IctKeyKind.OPERATOR, IctKeyKind.FUNCTION ->
-            colors.secondaryContainer.copy(alpha = 0.75f)
+            colors.surfaceVariant.copy(alpha = 0.75f)
 
-        IctKeyKind.LETTER -> colors.secondaryContainer.copy(alpha = 0.75f)
-        IctKeyKind.DIGIT -> colors.surfaceVariant.copy(alpha = 0.55f)
+        IctKeyKind.LETTER -> colors.surfaceVariant.copy(alpha = 0.75f)
+        IctKeyKind.DIGIT -> colors.surfaceVariant
     }
     val contentColor = when (spec.kind) {
-        IctKeyKind.EQUALS -> colors.onPrimary
-        IctKeyKind.CLEAR -> colors.onPrimaryContainer
+        IctKeyKind.EQUALS -> colors.background
+        IctKeyKind.CLEAR -> colors.onSurface
         IctKeyKind.OPERATOR, IctKeyKind.FUNCTION, IctKeyKind.LETTER ->
-            colors.onSecondaryContainer
+            colors.onSurface
 
         IctKeyKind.DIGIT -> colors.onSurface
     }
@@ -918,7 +973,7 @@ private fun IctKey(
             .background(containerColor)
             .border(
                 width = 1.dp,
-                color = Color.White.copy(alpha = 0.10f),
+                color = colors.onSurface.copy(alpha = 0.12f),
                 shape = RoundedCornerShape(16.dp)
             )
             .combinedClickable(

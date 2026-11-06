@@ -1,5 +1,8 @@
 // FILE: app/src/main/java/com/calnyx/app/vault/VaultManager.kt
-// ENCRYPTED VERSION - replace your old VaultManager.kt with this file.
+// OPENFIX VERSION - replace your old VaultManager.kt with this file.
+// Based on ENCRYPTED. Only 2 functions changed (see VaultOpener.kt):
+// decodeSampledBitmap now streams via VaultOpener (no RAM load),
+// openWithExternalViewer is now SUSPEND and delegates to VaultOpener.
 // Keep the file name VaultManager.kt, do not keep both files,
 // otherwise you will get a duplicate class error.
 // Also add the new file VaultCrypto.kt in the same folder.
@@ -334,23 +337,12 @@ object VaultManager {
     // VaultScreen-এর পুরনো decodeSampled() এর বদলে এটা ব্যবহার করবে।
     // ফাইলটা ডিক্রিপ্ট করে memory-তে Bitmap বানায়, ফোনে কোনো
     // plain ফাইল তৈরি করে না।
+    // OPENFIX: streaming thumbnail — decrypts to a temp FILE and
+    // decodes sampled FROM the file. RAM is only the final bitmap.
+    // The old version loaded the WHOLE file into RAM twice
+    // (decryptToBytes + readBytes) — OOM on large photos / low RAM.
     fun decodeSampledBitmap(file: File, reqSize: Int): Bitmap? {
-        return try {
-            val bytes = try {
-                VaultCrypto.decryptToBytes(file)
-            } catch (_: Exception) {
-                // পুরনো plain ফাইল (migration-এর আগে) হলে plain পড়ো
-                file.readBytes()
-            }
-            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
-            var sample = 1
-            while (bounds.outWidth / sample > reqSize || bounds.outHeight / sample > reqSize) sample *= 2
-            BitmapFactory.decodeByteArray(
-                bytes, 0, bytes.size,
-                BitmapFactory.Options().apply { inSampleSize = sample }
-            )
-        } catch (_: Exception) { null }
+        return VaultOpener.decodeSampledBitmap(file, reqSize)
     }
 
     // ── ONE-TIME MIGRATION: পুরনো plain -> encrypted ─────────────
@@ -497,32 +489,12 @@ object VaultManager {
     // cache-এ ডিক্রিপ্ট করে সেটা খোলা হয়। Cache ফোনের internal
     // জায়গা, gallery / Files-এ দেখা যাবে না। পরের বার খুললে
     // আগের preview মুছে যাবে।
-    fun openWithExternalViewer(context: Context, file: File): Boolean {
-        return try {
-            val previewDir = File(context.cacheDir, "vault_preview").also { it.mkdirs() }
-            previewDir.listFiles()?.forEach { try { it.delete() } catch (_: Exception) {} }
-            val preview = File(previewDir, file.name)
-            try {
-                FileInputStream(file).use { src ->
-                    FileOutputStream(preview).use { dst ->
-                        VaultCrypto.decryptStream(src, dst)
-                    }
-                }
-            } catch (_: Exception) {
-                // পুরনো plain ফাইলের fallback
-                FileInputStream(file).use { src ->
-                    FileOutputStream(preview).use { dst -> src.copyTo(dst) }
-                }
-            }
-            val uri = FileProvider.getUriForFile(
-                context, "${context.packageName}.fileprovider", preview
-            )
-            val intent = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(uri, mimeFor(file))
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            }
-            context.startActivity(Intent.createChooser(intent, "Open with"))
-            true
-        } catch (_: Exception) { false }
+    // OPENFIX: SUSPEND now — decrypt/copy runs on Dispatchers.IO
+    // inside VaultOpener, NEVER on the main thread. The old version
+    // ran here synchronously: a large video blocked the main thread
+    // for 10-60s = ANR = Android killed the app. It also deleted ALL
+    // previews first, breaking a player still reading one.
+    suspend fun openWithExternalViewer(context: Context, file: File): Boolean {
+        return VaultOpener.openExternal(context, file) is VaultOpenResult.Opened
     }
 }

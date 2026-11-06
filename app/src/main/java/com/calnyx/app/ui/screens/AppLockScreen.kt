@@ -17,6 +17,20 @@
 // 2. Icons are no longer loaded together, each row loads its
 //    own icon, and a bad one shows only a letter in that row.
 // 3. Icons are scaled to 96x96, so they use less memory.
+// B/W AUDIT (2026-11-06): app-theme fix — this screen now takes
+// darkTheme: Boolean = isSystemInDarkTheme() and uses it instead
+// of reading the system theme, so the app's own theme toggle
+// controls it. The "🔒" emoji in the App Lock card is now a
+// Material Lock icon. Both Switches get B/W SwitchDefaults.colors
+// and every OutlinedTextField (search, duration, custom time) gets
+// explicit B/W OutlinedTextFieldDefaults.colors, because the theme
+// defaults would paint the focused border / checked track in the
+// theme's primary colour. CircularProgressIndicator is onPageColor.
+// No primary / error colour remains anywhere on this screen.
+// NO DRAWER SWIPE on this screen: it is a hidden screen —
+// NavGraph deliberately hides the drawer and top bar on the
+// AppLock route, and the vault must stay hidden with no menu
+// trace. Do NOT add any onOpenDrawer param or swipe detector here.
 package com.calnyx.app.ui.screens
 
 import android.content.Intent
@@ -38,6 +52,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -127,14 +142,40 @@ private fun formatDurationMs(ms: Long): String = when {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AppLockScreen(onBack: () -> Unit) {
+fun AppLockScreen(
+    onBack: () -> Unit,
+    darkTheme: Boolean = isSystemInDarkTheme()
+) {
     val context = LocalContext.current
-    val isDark = isSystemInDarkTheme()
+    val isDark = darkTheme
     val pageBg = if (isDark) Color(0xFF0E0E0E) else Color(0xFFF6F4EF)
     val cardBg = if (isDark) Color(0xFF1B1B1B) else Color(0xFFFFFFFF)
     val cardBorderColor = if (isDark) Color(0xFF2B2B2B) else Color(0xFFE9E6DF)
     val onPageColor = if (isDark) Color(0xFFF6F4EF) else Color(0xFF0E0E0E)
     val thumbBg = if (isDark) Color(0xFF262626) else Color(0xFFEFEDE8)
+
+    // B/W colours for every OutlinedTextField on this screen
+    // (search, duration, custom time): the theme defaults would
+    // paint the focused border in the theme's primary colour.
+    val fieldColors = OutlinedTextFieldDefaults.colors(
+        focusedBorderColor = onPageColor,
+        unfocusedBorderColor = cardBorderColor,
+        focusedTextColor = onPageColor,
+        unfocusedTextColor = onPageColor,
+        cursorColor = onPageColor,
+        focusedPlaceholderColor = onPageColor.copy(alpha = 0.4f),
+        unfocusedPlaceholderColor = onPageColor.copy(alpha = 0.4f),
+        focusedLabelColor = onPageColor.copy(alpha = 0.6f),
+        unfocusedLabelColor = onPageColor.copy(alpha = 0.6f)
+    )
+    // B/W colours for both Switches: the theme default checked
+    // track is the primary colour.
+    val switchColors = SwitchDefaults.colors(
+        checkedTrackColor = onPageColor,
+        checkedThumbColor = pageBg,
+        uncheckedTrackColor = cardBorderColor,
+        uncheckedThumbColor = onPageColor
+    )
 
     var isEnabled by remember { mutableStateOf(AppLockManager.isEnabled(context)) }
     var lockedSet by remember { mutableStateOf(AppLockManager.getLockedPackages(context)) }
@@ -238,7 +279,14 @@ fun AppLockScreen(onBack: () -> Unit) {
                             .clip(RoundedCornerShape(14.dp))
                             .background(thumbBg),
                         contentAlignment = Alignment.Center
-                    ) { Text("🔒", fontSize = 24.sp) }
+                    ) {
+                        Icon(
+                            Icons.Filled.Lock,
+                            contentDescription = null,
+                            tint = onPageColor,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
                     Spacer(Modifier.width(14.dp))
                     Text(
                         "App Lock",
@@ -251,7 +299,8 @@ fun AppLockScreen(onBack: () -> Unit) {
                         onCheckedChange = {
                             isEnabled = it
                             AppLockManager.setEnabled(context, it)
-                        }
+                        },
+                        colors = switchColors
                     )
                 }
 
@@ -285,6 +334,7 @@ fun AppLockScreen(onBack: () -> Unit) {
                             },
                             shape = RoundedCornerShape(12.dp),
                             singleLine = true,
+                            colors = fieldColors,
                             modifier = Modifier.width(150.dp).menuAnchor()
                         )
                         ExposedDropdownMenu(
@@ -335,6 +385,7 @@ fun AppLockScreen(onBack: () -> Unit) {
                                     label = { Text("Time") },
                                     singleLine = true,
                                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                    colors = fieldColors,
                                     modifier = Modifier.fillMaxWidth()
                                 )
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -447,6 +498,7 @@ fun AppLockScreen(onBack: () -> Unit) {
                 placeholder = { Text("Search app") },
                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                 shape = RoundedCornerShape(14.dp),
+                colors = fieldColors,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
             )
 
@@ -454,7 +506,7 @@ fun AppLockScreen(onBack: () -> Unit) {
 
                 if (loading) {
                     Box(Modifier.weight(1f).fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator()
+                        CircularProgressIndicator(color = onPageColor)
                     }
                 } else if (filtered.isEmpty()) {
                     Box(Modifier.weight(1f).fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
@@ -513,7 +565,8 @@ fun AppLockScreen(onBack: () -> Unit) {
                                     onCheckedChange = { checked ->
                                         AppLockManager.setLocked(context, app.packageName, checked)
                                         lockedSet = AppLockManager.getLockedPackages(context)
-                                    }
+                                    },
+                                    colors = switchColors
                                 )
                             }
                         }

@@ -1,7 +1,15 @@
 // FILE: app/src/main/java/com/calnyx/app/ui/screens/NormalCalculatorScreen.kt
 // REPLACE the whole file. SWIPE + REAL-ANS version, based on the
 // ANS + RIGHTDRAWER file.
-//  1. SWIPE, FROM ANYWHERE ON THIS SCREEN (the user tested it and
+//  1. SWIPE, FROM ANYWHERE ON THIS SCREEN (ANIMATION FIX 2026-11-06:
+//     the old build animated History in from the RIGHT even on a
+//     rightward drag, because page 0 was the keypad and page 1 was
+//     History, so animateScrollToPage(1) always slid LEFT. Pages are
+//     now swapped — page 0 = History, page 1 = keypad, initialPage = 1
+//     — so a rightward drag animates to page 0 and History slides in
+//     from the LEFT, following the finger; a leftward drag on History
+//     animates back to page 1 and the keypad slides in from the RIGHT.
+//     The user tested it and
 //     the old way failed: the pager ate the swipe over the
 //     keypad, so the drawer only opened from the display):
 //       swipe RIGHT (finger starts left, moves right) -> History
@@ -149,7 +157,7 @@ fun NormalCalculatorScreen(
         // keypad, page 1 is the history. Swiping left/right over the
         // buttons swaps them in place — the display panel and the strip
         // above never move. There is NO swipe-down history any more.
-        val pagerState = rememberPagerState(pageCount = { 2 })
+        val pagerState = rememberPagerState(initialPage = 1, pageCount = { 2 })
         val scope = rememberCoroutineScope()
 
         // STATUS BAR + NAVIGATION BAR match the page background: the
@@ -333,9 +341,9 @@ fun NormalCalculatorScreen(
                                                                 } else if (totalDx > 0) {
                                                                         // RIGHTWARD (finger starts
                                                                         // left, moves right) -> History.
-                                                                        if (pagerState.currentPage == 0) {
+                                                                        if (pagerState.currentPage == 1) {
                                                                                 scope.launch {
-                                                                                        pagerState.animateScrollToPage(1)
+                                                                                        pagerState.animateScrollToPage(0)
                                                                                 }
                                                                         }
                                                                 } else {
@@ -344,11 +352,11 @@ fun NormalCalculatorScreen(
                                                                         // or back to the keypad when
                                                                         // History is showing (so History
                                                                         // always has a swipe way back).
-                                                                        if (pagerState.currentPage == 0) {
+                                                                        if (pagerState.currentPage == 1) {
                                                                                 onOpenDrawer()
                                                                         } else {
                                                                                 scope.launch {
-                                                                                        pagerState.animateScrollToPage(0)
+                                                                                        pagerState.animateScrollToPage(1)
                                                                                 }
                                                                         }
                                                                 }
@@ -1371,7 +1379,7 @@ fun NormalCalculatorScreen(
                                 }
 
                                 // Scientific strip — ONE long pill under the panel
-                                // (√, π, xⁿ, E) plus a SEPARATE round ANS button
+                                // (√, π, ^, E) plus a SEPARATE round ANS button
                                 // beside it. Ans inserts the last answer at the
                                 // cursor. The scientific keys are no longer behind
                                 // a tap: PULL the keypad DOWN to reveal them (see
@@ -1405,7 +1413,7 @@ fun NormalCalculatorScreen(
                                                 listOf(
                                                                 "√" to "√",
                                                                 "π" to "π",
-                                                                "xⁿ" to "^",
+                                                                "^" to "^",
                                                                 "E" to "E"
                                                         )
                                                         .forEach { (displayText, label) ->
@@ -1473,7 +1481,8 @@ fun NormalCalculatorScreen(
 
                                 // SWAP AREA — keypad ⇄ history. The keypad slides away
                                 // and the history shows RIGHT HERE, in this same area,
-                                // at full height. Page 0 = keypad, page 1 = history.
+                                // at full height. Page 0 = history, page 1 = keypad
+                                // (swapped so the slide follows the finger — see header).
                                 // The swipe itself is NOT the pager's any more: the
                                 // root Box detector drives it (rightward -> History,
                                 // leftward -> drawer / back to keypad).
@@ -1482,7 +1491,7 @@ fun NormalCalculatorScreen(
                                         userScrollEnabled = false,
                                         modifier = Modifier.fillMaxWidth().weight(1f)
                                 ) { page ->
-                                        if (page == 0) {
+                                        if (page == 1) {
 
                                                 // Keypad — 4 columns x 5 rows, two modes.
                                                 // NUMBER mode: round keys like the reference.
@@ -2138,7 +2147,7 @@ fun NormalCalculatorScreen(
                                                                                                                                         .launch {
                                                                                                                                                 pagerState
                                                                                                                                                         .scrollToPage(
-                                                                                                                                                                0
+                                                                                                                                                                1
                                                                                                                                                         )
                                                                                                                                         }
                                                                                                                         }

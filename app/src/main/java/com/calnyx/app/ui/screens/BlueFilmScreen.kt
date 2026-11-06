@@ -1,4 +1,12 @@
 // FILE: app/src/main/java/com/calnyx/app/ui/screens/BlueFilmScreen.kt
+// FOLDERS VERSION - replace your old BlueFilmScreen.kt with this file.
+// Based on V8.2. Only change: folder Rename + folder Delete.
+// Long-press a folder card -> small options card (Rename / Delete).
+// Single tap still opens the folder. Video long-press (Move),
+// Rename video, Delete video, Play, thumbnails - all unchanged.
+// The DEFAULT folder cannot be renamed or deleted (the options
+// card says so instead of showing the buttons). B/W only, red
+// only for the Delete button, English only.
 // REPLACE the V8.1 file. V8.2 - title colour only:
 //  The user does not like the red title after all:
 //  "blue film title-eo lal color deoa ache, oi lal color
@@ -224,6 +232,11 @@ fun BlueFilmScreen(darkTheme: Boolean) {
     var moveFile by remember { mutableStateOf<File?>(null) }
     var renameFile by remember { mutableStateOf<File?>(null) }
     var renameText by remember { mutableStateOf("") }
+    // FOLDERS: long-press a folder card opens the options card.
+    var folderOptions by remember { mutableStateOf<String?>(null) }
+    var folderToRename by remember { mutableStateOf<String?>(null) }
+    var renameFolderText by remember { mutableStateOf("") }
+    var folderToDelete by remember { mutableStateOf<String?>(null) }
     val thumbBitmaps = remember { mutableStateMapOf<String, ImageBitmap>() }
     // Videos whose decrypt failed in the background prep -
     // shown as "Damaged - cannot play" on their card.
@@ -245,6 +258,9 @@ fun BlueFilmScreen(darkTheme: Boolean) {
         moveFile = null
         renameFile = null
         deleteFile = null
+        folderOptions = null
+        folderToRename = null
+        folderToDelete = null
         videos = BlueFilmStore.listVideosInFolder(context, folder)
     }
 
@@ -693,6 +709,139 @@ fun BlueFilmScreen(darkTheme: Boolean) {
                 }
             }
 
+            // FOLDER OPTIONS CARD - opened by long-pressing a folder card.
+            // Same small-card style as the Move card. Rename and Delete
+            // are hidden for the DEFAULT folder (it cannot be renamed
+            // or deleted) - a note says so instead.
+            if (folderOptions != null) {
+                val folder = folderOptions!!
+                val isDefault = folder == BlueFilmStore.DEFAULT_FOLDER
+                Column(
+                    modifier = Modifier.fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(cardBg)
+                        .border(1.dp, cardBorder, RoundedCornerShape(16.dp))
+                        .padding(cardPad),
+                    verticalArrangement = Arrangement.spacedBy(gap)
+                ) {
+                    Text(folder, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    if (isDefault) {
+                        Text(
+                            "The default folder cannot be renamed or deleted.",
+                            fontSize = 13.sp, color = secondary
+                        )
+                    } else {
+                        Box(
+                            modifier = Modifier.fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(buttonBg)
+                                .clickable {
+                                    folderToRename = folder
+                                    renameFolderText = folder
+                                    folderOptions = null
+                                }
+                                .padding(vertical = padY),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("Rename", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = buttonText)
+                        }
+                        Box(
+                            modifier = Modifier.fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(cardBg)
+                                .border(1.dp, red, RoundedCornerShape(12.dp))
+                                .clickable { folderToDelete = folder; folderOptions = null }
+                                .padding(vertical = padY),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("Delete", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = red)
+                        }
+                    }
+                    Box(
+                        modifier = Modifier.fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(cardBg)
+                            .border(1.dp, cardBorder, RoundedCornerShape(12.dp))
+                            .clickable { folderOptions = null }
+                            .padding(vertical = padY),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("Cancel", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = primary)
+                    }
+                }
+            }
+
+            // RENAME FOLDER CARD - opened from the folder options card.
+            // Same style as the "Rename video" card, same Save/Cancel.
+            if (folderToRename != null) {
+                Column(
+                    modifier = Modifier.fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(cardBg)
+                        .border(1.dp, cardBorder, RoundedCornerShape(16.dp))
+                        .padding(cardPad),
+                    verticalArrangement = Arrangement.spacedBy(gap)
+                ) {
+                    Text("Rename folder", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = primary)
+                    BasicTextField(
+                        value = renameFolderText,
+                        onValueChange = { renameFolderText = it },
+                        singleLine = true,
+                        textStyle = TextStyle(color = primary, fontSize = 14.sp),
+                        decorationBox = { inner ->
+                            if (renameFolderText.isEmpty()) {
+                                Text("Folder name", fontSize = 14.sp, color = secondary)
+                            }
+                            inner()
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(thumbBg)
+                            .padding(horizontal = screenW * 0.03f, vertical = padY)
+                    )
+                    Row(modifier = Modifier.fillMaxWidth()) {
+                        Box(
+                            modifier = Modifier.weight(1f)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(buttonBg)
+                                .clickable {
+                                    val oldName = folderToRename!!
+                                    scope.launch(Dispatchers.IO) {
+                                        val ok = BlueFilmStore.renameFolder(context, oldName, renameFolderText)
+                                        withContext(Dispatchers.Main) {
+                                            if (ok) {
+                                                if (currentFolder == oldName) currentFolder = null
+                                                folderToRename = null
+                                                renameFolderText = ""
+                                                refreshAll()
+                                                note = "Folder renamed."
+                                            } else {
+                                                note = "Could not rename folder."
+                                            }
+                                        }
+                                    }
+                                }
+                                .padding(vertical = padY),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("Save", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = buttonText)
+                        }
+                        Spacer(modifier = Modifier.width(screenW * 0.02f))
+                        Box(
+                            modifier = Modifier.weight(1f)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(cardBg)
+                                .border(1.dp, cardBorder, RoundedCornerShape(12.dp))
+                                .clickable { folderToRename = null; renameFolderText = "" }
+                                .padding(vertical = padY),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("Cancel", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = primary)
+                        }
+                    }
+                }
+            }
+
             if (currentFolder == null) {
                 // FOLDERS GRID VIEW
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -782,7 +931,10 @@ fun BlueFilmScreen(darkTheme: Boolean) {
                                     .clip(RoundedCornerShape(16.dp))
                                     .background(cardBg)
                                     .border(1.dp, cardBorder, RoundedCornerShape(16.dp))
-                                    .clickable { openFolder(folder) }
+                                    .combinedClickable(
+                                        onClick = { openFolder(folder) },
+                                        onLongClick = { folderOptions = folder }
+                                    )
                             ) {
                                 if (cover != null) {
                                     Image(
@@ -1027,6 +1179,54 @@ fun BlueFilmScreen(darkTheme: Boolean) {
                 },
                 dismissButton = {
                     TextButton(onClick = { deleteFile = null }) {
+                        Text("Cancel", fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = primary)
+                    }
+                },
+                containerColor = cardBg,
+                titleContentColor = primary,
+                textContentColor = secondary
+            )
+        }
+
+        // DELETE FOLDER CONFIRM DIALOG - same style as "Delete video?",
+        // but the text states how many videos go with the folder.
+        if (folderToDelete != null) {
+            val folder = folderToDelete!!
+            val count = BlueFilmStore.folderCount(context, folder)
+            AlertDialog(
+                onDismissRequest = { folderToDelete = null },
+                title = {
+                    Text(
+                        "Delete folder?",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp,
+                        color = primary
+                    )
+                },
+                text = {
+                    Text(
+                        if (count == 1) "$folder will be deleted with its 1 video."
+                        else "$folder will be deleted with its $count videos.",
+                        fontSize = 14.sp,
+                        color = secondary
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        if (BlueFilmStore.deleteFolder(context, folder)) {
+                            if (currentFolder == folder) currentFolder = null
+                            note = "Folder deleted."
+                            refreshAll()
+                        } else {
+                            note = "Delete failed."
+                        }
+                        folderToDelete = null
+                    }) {
+                        Text("Delete", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = red)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { folderToDelete = null }) {
                         Text("Cancel", fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = primary)
                     }
                 },

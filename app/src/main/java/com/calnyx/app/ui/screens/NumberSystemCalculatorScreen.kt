@@ -1,4 +1,21 @@
 // FILE: app/src/main/java/com/calnyx/app/ui/screens/NumberSystemCalculatorScreen.kt
+// B/W VERSION - replace your old NumberSystemCalculatorScreen.kt with this file.
+// Logic is UNCHANGED (BigInteger parse/render, grouping, key enable
+// rules, swap, copy format, animations). Only the design changed:
+//  - BLACK / WHITE ONLY, both dark and light mode: only
+//    MaterialTheme.colorScheme neutrals (background, onBackground,
+//    surface, onSurface, surfaceVariant, onSurfaceVariant, outline).
+//    No primary / primaryContainer / secondaryContainer anywhere.
+//    Selected FROM/TO chip = inverted (onBackground bg, background
+//    text); result + caret = onSurface; AC key = inverted;
+//    letter keys (A-F) = surfaceVariant alpha 0.75; digit keys =
+//    surfaceVariant; +/- and backspace = surfaceVariant alpha 0.75.
+//    All white glass borders -> onSurface alpha 0.12.
+//  - DRAWER SWIPE (universal rule): a leftward drag from the FROM
+//    chips row, the TO chips row, or the keypad opens the app
+//    drawer (onOpenDrawer, passed from NavGraph). Rightward drags
+//    are not consumed. The display panel has NO swipe detector —
+//    its input/result rows scroll horizontally and must keep working.
 package com.calnyx.app.ui.screens
 
 import androidx.compose.animation.AnimatedContent
@@ -19,6 +36,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -51,6 +69,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -146,7 +165,8 @@ private fun keyEnabledInBase(key: String, base: NumberBase): Boolean {
 @Composable
 fun NumberSystemCalculatorScreen(
     darkTheme: Boolean,
-    onToggleTheme: () -> Unit
+    onToggleTheme: () -> Unit,
+    onOpenDrawer: () -> Unit = {}
 ) {
     val colors = MaterialTheme.colorScheme
     val clipboardManager = LocalClipboardManager.current
@@ -156,6 +176,31 @@ fun NumberSystemCalculatorScreen(
     var toBase by remember { mutableStateOf(NumberBase.DECIMAL) }
     var input by remember { mutableStateOf("1010") }
     var swapTurns by remember { mutableFloatStateOf(0f) }
+
+    // DRAWER SWIPE — one shared modifier, applied to the FROM chips
+    // row, the TO chips row and the keypad (see below). A leftward
+    // drag past 24dp opens the app drawer once per gesture; a
+    // rightward drag is never consumed, and taps do nothing, so the
+    // chips and keys keep working exactly as before.
+    val drawerSwipe = Modifier.pointerInput(Unit) {
+        val thresholdPx = 24.dp.toPx()
+        var totalDx = 0f
+        var done = false
+        detectHorizontalDragGestures(
+            onDragStart = { totalDx = 0f; done = false },
+            onDragEnd = { totalDx = 0f; done = false },
+            onDragCancel = { totalDx = 0f; done = false },
+            onHorizontalDrag = { change, dragAmount ->
+                if (done) return@detectHorizontalDragGestures
+                totalDx += dragAmount
+                if (totalDx < -thresholdPx) {
+                    done = true
+                    onOpenDrawer()
+                    change.consume()
+                }
+            }
+        )
+    }
 
     val value = remember(input, fromBase) { parseNumber(input, fromBase) }
     val resultRaw = remember(value, toBase) { value?.toString(toBase.radix)?.uppercase() }
@@ -334,12 +379,7 @@ fun NumberSystemCalculatorScreen(
                                 )
                                 .border(
                                     width = 1.dp,
-                                    brush = Brush.verticalGradient(
-                                        listOf(
-                                            Color.White.copy(alpha = 0.22f),
-                                            Color.White.copy(alpha = 0.05f)
-                                        )
-                                    ),
+                                    color = colors.onSurface.copy(alpha = 0.12f),
                                     shape = RoundedCornerShape(cardRadius)
                                 )
                                 .padding(horizontal = cardPadH, vertical = cardPadV)
@@ -354,7 +394,8 @@ fun NumberSystemCalculatorScreen(
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(chipRowH),
+                                    .height(chipRowH)
+                                    .then(drawerSwipe),
                                 horizontalArrangement = Arrangement.spacedBy(chipGapH)
                             ) {
                                 allBases.forEach { base ->
@@ -386,7 +427,8 @@ fun NumberSystemCalculatorScreen(
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(chipRowH),
+                                    .height(chipRowH)
+                                    .then(drawerSwipe),
                                 horizontalArrangement = Arrangement.spacedBy(chipGapH)
                             ) {
                                 allBases.forEach { base ->
@@ -411,6 +453,8 @@ fun NumberSystemCalculatorScreen(
                             // FILLS the rest of the card — the input area.
                             // The value lines sit near its top, a little
                             // below the panel edge — no empty band above them.
+                            // NO drawer swipe here: the input/result rows
+                            // scroll horizontally and must keep working.
                             Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -419,7 +463,7 @@ fun NumberSystemCalculatorScreen(
                                     .background(colors.background.copy(alpha = 0.28f))
                                     .border(
                                         width = 1.dp,
-                                        color = Color.White.copy(alpha = 0.06f),
+                                        color = colors.onSurface.copy(alpha = 0.12f),
                                         shape = RoundedCornerShape(panelRadius)
                                     )
                                     .padding(
@@ -462,7 +506,7 @@ fun NumberSystemCalculatorScreen(
                                                 text = "▌",
                                                 fontSize = caretSize,
                                                 lineHeight = inputLine,
-                                                color = colors.primary,
+                                                color = colors.onSurface,
                                                 modifier = Modifier.alpha(if (caretOn) 0.9f else 0f)
                                             )
                                         }
@@ -507,7 +551,7 @@ fun NumberSystemCalculatorScreen(
                                                     lineHeight = resultLine,
                                                     fontWeight = FontWeight.Bold,
                                                     fontFamily = FontFamily.Monospace,
-                                                    color = colors.primary,
+                                                    color = colors.onSurface,
                                                     textAlign = TextAlign.End,
                                                     maxLines = 1,
                                                     softWrap = false
@@ -563,7 +607,7 @@ fun NumberSystemCalculatorScreen(
                                         Icon(
                                             Icons.Default.Check,
                                             contentDescription = null,
-                                            tint = colors.primary,
+                                            tint = colors.onSurface,
                                             modifier = Modifier.size(copiedIconSize)
                                         )
                                         Spacer(modifier = Modifier.width(copiedGapW))
@@ -571,7 +615,7 @@ fun NumberSystemCalculatorScreen(
                                             text = copiedText ?: "",
                                             fontSize = copiedSize,
                                             fontWeight = FontWeight.Medium,
-                                            color = colors.primary
+                                            color = colors.onSurface
                                         )
                                     }
                                 }
@@ -586,7 +630,7 @@ fun NumberSystemCalculatorScreen(
                     // the screen — shorter keys on any phone.
                     // Entrance replays when the From base changes.
                     key(fromBase) {
-                        NsAnimatedIn(modifier = Modifier.weight(0.44f), delayMs = 60) {
+                        NsAnimatedIn(modifier = Modifier.weight(0.44f).then(drawerSwipe), delayMs = 60) {
                             Column(
                                 modifier = Modifier.fillMaxSize(),
                                 verticalArrangement = Arrangement.spacedBy(keyGapV)
@@ -610,9 +654,9 @@ fun NumberSystemCalculatorScreen(
                                                 containerColor = if (keyLabel.length == 1 &&
                                                     keyLabel[0] in 'A'..'F'
                                                 ) {
-                                                    colors.secondaryContainer.copy(alpha = 0.75f)
+                                                    colors.surfaceVariant.copy(alpha = 0.75f)
                                                 } else {
-                                                    colors.surfaceVariant.copy(alpha = 0.55f)
+                                                    colors.surfaceVariant
                                                 },
                                                 contentColor = colors.onSurface,
                                                 modifier = Modifier.weight(1f),
@@ -630,15 +674,15 @@ fun NumberSystemCalculatorScreen(
                                     NsKey(
                                         text = "±",
                                         enabled = true,
-                                        containerColor = colors.secondaryContainer.copy(alpha = 0.75f),
-                                        contentColor = colors.onSecondaryContainer,
+                                        containerColor = colors.surfaceVariant.copy(alpha = 0.75f),
+                                        contentColor = colors.onSurface,
                                         modifier = Modifier.weight(1f),
                                         onClick = { onKey("±") }
                                     )
                                     NsKey(
                                         text = "0",
                                         enabled = true,
-                                        containerColor = colors.surfaceVariant.copy(alpha = 0.55f),
+                                        containerColor = colors.surfaceVariant,
                                         contentColor = colors.onSurface,
                                         modifier = Modifier.weight(1f),
                                         onClick = { onKey("0") }
@@ -646,8 +690,8 @@ fun NumberSystemCalculatorScreen(
                                     NsKey(
                                         text = "⌫",
                                         enabled = true,
-                                        containerColor = colors.secondaryContainer.copy(alpha = 0.75f),
-                                        contentColor = colors.onSecondaryContainer,
+                                        containerColor = colors.surfaceVariant.copy(alpha = 0.75f),
+                                        contentColor = colors.onSurface,
                                         modifier = Modifier.weight(1f),
                                         onClick = { onKey("⌫") },
                                         onLongClick = { onKey("AC") }
@@ -684,8 +728,8 @@ fun NumberSystemCalculatorScreen(
                                     NsKey(
                                         text = "AC",
                                         enabled = true,
-                                        containerColor = colors.primaryContainer,
-                                        contentColor = colors.onPrimaryContainer,
+                                        containerColor = colors.onBackground,
+                                        contentColor = colors.background,
                                         modifier = Modifier.weight(1f),
                                         onClick = { onKey("AC") }
                                     )
@@ -702,7 +746,8 @@ fun NumberSystemCalculatorScreen(
 
 // One From/To button: ONE line (short name only — BIN / DEC / OCT /
 // HEX), so the four buttons sit side by side without cramping.
-// The selected one fills with the primary colour and pops a touch.
+// The selected one is inverted (dark text on light / light text on
+// dark) and pops a touch.
 @Composable
 private fun NsBaseChip(
     base: NumberBase,
@@ -713,12 +758,12 @@ private fun NsBaseChip(
 ) {
     val colors = MaterialTheme.colorScheme
     val background by animateColorAsState(
-        targetValue = if (selected) colors.primary else colors.surfaceVariant.copy(alpha = 0.45f),
+        targetValue = if (selected) colors.onBackground else colors.surfaceVariant.copy(alpha = 0.45f),
         animationSpec = tween(280),
         label = "nsChipBackground"
     )
     val content by animateColorAsState(
-        targetValue = if (selected) colors.onPrimary else colors.onSurfaceVariant,
+        targetValue = if (selected) colors.background else colors.onSurfaceVariant,
         animationSpec = tween(280),
         label = "nsChipContent"
     )
@@ -760,6 +805,7 @@ private fun NsKey(
     onLongClick: (() -> Unit)? = null,
     onClick: () -> Unit
 ) {
+    val colors = MaterialTheme.colorScheme
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     val pressScale by animateFloatAsState(
@@ -776,7 +822,7 @@ private fun NsKey(
             .background(containerColor)
             .border(
                 width = 1.dp,
-                color = Color.White.copy(alpha = 0.10f),
+                color = colors.onSurface.copy(alpha = 0.12f),
                 shape = RoundedCornerShape(percent = 26)
             )
             .combinedClickable(

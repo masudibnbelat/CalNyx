@@ -31,6 +31,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -86,6 +87,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -198,6 +200,7 @@ private fun opColor(op: String, palette: TapePalette): Color {
 fun CalTapeCalculatorScreen(
     darkTheme: Boolean,
     onToggleTheme: () -> Unit,
+    onOpenDrawer: () -> Unit = {},
     viewModel: CalTapeViewModel = viewModel()
 ) {
     val palette = if (darkTheme) DarkTapePalette else LightTapePalette
@@ -490,6 +493,45 @@ fun CalTapeCalculatorScreen(
         }
     }
 
+    // APP-DRAWER SWIPE (2026-11-06 fix, V2): the NavGraph's 28dp
+    // right-edge zone never fired here — this screen's own
+    // ModalNavigationDrawer (Sheets) sits on top of it and eats the
+    // gesture. V1 put the detector on an OUTER Box, but that lost too:
+    // the drawer's own drag handling sits deeper in the hit path and
+    // eats the touch slop before an ancestor detector ever sees it.
+    // So the SAME detector now also sits on the CONTENT Column inside
+    // the drawer (deepest for every touch on tape/keypad/strip) — that
+    // one sees the drag first and wins. The outer Box keeps it as a
+    // backup; firing twice is harmless (onOpenDrawer just sets a
+    // boolean). A LEFTWARD drag from ANYWHERE opens the app drawer.
+    // A RIGHTWARD drag is deliberately NOT consumed here, so swiping
+    // from the left still opens the Sheets drawer exactly as before.
+    // When the Sheets drawer is already open this does nothing — its
+    // own swipe closes it instead.
+    val drawerSwipe = Modifier.pointerInput(Unit) {
+        val thresholdPx = 24.dp.toPx()
+        var totalDx = 0f
+        var done = false
+        detectHorizontalDragGestures(
+            onDragStart = { totalDx = 0f; done = false },
+            onDragEnd = { totalDx = 0f; done = false },
+            onDragCancel = { totalDx = 0f; done = false },
+            onHorizontalDrag = { change, dragAmount ->
+                if (done) return@detectHorizontalDragGestures
+                if (drawerState.currentValue != DrawerValue.Closed) return@detectHorizontalDragGestures
+                totalDx += dragAmount
+                if (totalDx < -thresholdPx) {
+                    done = true
+                    onOpenDrawer()
+                    change.consume()
+                }
+            }
+        )
+    }
+    Box(
+        modifier = Modifier.fillMaxSize()
+            .then(drawerSwipe)
+    ) {
     ModalNavigationDrawer(
         drawerState = drawerState,
         drawerContent = {
@@ -652,6 +694,7 @@ fun CalTapeCalculatorScreen(
                 .background(palette.bg)
                 .padding(top = topInset)
                 .navigationBarsPadding()
+                .then(drawerSwipe)
         ) {
             // ----- Top row: side-menu button (left) + current sheet name -----
             Row(
@@ -661,7 +704,10 @@ fun CalTapeCalculatorScreen(
                     .padding(horizontal = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(onClick = { scope.launch { drawerState.open() } }) {
+                IconButton(
+                    onClick = { scope.launch { drawerState.open() } },
+                    modifier = Modifier.size(48.dp)
+                ) {
                     Icon(
                         Icons.Default.Menu,
                         contentDescription = "Sheets",
@@ -1120,6 +1166,7 @@ fun CalTapeCalculatorScreen(
                 }
             }
         }
+    }
     }
 }
 

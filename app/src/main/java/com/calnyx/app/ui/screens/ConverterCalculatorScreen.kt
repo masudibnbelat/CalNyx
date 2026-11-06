@@ -1,4 +1,28 @@
 // FILE: app/src/main/java/com/calnyx/app/ui/screens/ConverterCalculatorScreen.kt
+// B/W VERSION - replace your old ConverterCalculatorScreen.kt with this file.
+// Based on the user's pasted version. Logic UNCHANGED (categories,
+// units, conversion math, formatting, picker sheet, swap, keypad,
+// animations). Only these changes:
+// 1. BLACK / WHITE ONLY, both dark and light mode: every primary /
+//    primaryContainer / onPrimary / onPrimaryContainer /
+//    secondaryContainer / onSecondaryContainer / tertiaryContainer
+//    colour is gone. Selected chip = onBackground bg with
+//    background text; swap circle = onBackground with background
+//    icon; caret and result = onSurface; AC key = inverted
+//    (onBackground bg, background text); SWAP key = inverted;
+//    grid-card selected state = onSurface border + onSurface check.
+//    All borders are colors.onSurface.copy(alpha = 0.12f).
+// 2. Aurora background blobs DELETED (both blurred radial-gradient
+//    Boxes) and the driftTransition / drift code that only served
+//    them is deleted. Plain theme background only.
+// 3. Display card glass: solid colors.surfaceVariant.copy(alpha =
+//    0.55f) with the 0.12-alpha onSurface border (was surface
+//    0.45 alpha + white-gradient border).
+// 4. DRAWER SWIPE (universal rule): new onOpenDrawer param. A
+//    leftward drag from anywhere on the display card or the keypad
+//    opens the app drawer. The chips row is NOT covered, so it
+//    keeps scrolling horizontally. Rightward drags are not consumed.
+// NavGraph must pass onOpenDrawer = { drawerOpen = true }.
 package com.calnyx.app.ui.screens
 
 import androidx.compose.animation.animateColorAsState
@@ -13,6 +37,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -48,13 +73,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -394,7 +418,8 @@ private fun trimFormattedNumber(raw: String): String {
 @Composable
 fun ConverterCalculatorScreen(
     darkTheme: Boolean,
-    onToggleTheme: () -> Unit
+    onToggleTheme: () -> Unit,
+    onOpenDrawer: () -> Unit = {}
 ) {
     val colors = MaterialTheme.colorScheme
     val clipboardManager = LocalClipboardManager.current
@@ -442,18 +467,6 @@ fun ConverterCalculatorScreen(
         label = "caretAlpha"
     )
 
-    // Slow drift for the aurora background blobs
-    val driftTransition = rememberInfiniteTransition(label = "drift")
-    val drift by driftTransition.animateFloat(
-        initialValue = -26f,
-        targetValue = 26f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 7000, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "driftX"
-    )
-
     // Rotating swap icon
     val swapRotation by animateFloatAsState(
         targetValue = swapTurns,
@@ -461,12 +474,34 @@ fun ConverterCalculatorScreen(
         label = "swapRotation"
     )
 
-    val glassBorderBrush = Brush.linearGradient(
-        listOf(
-            colors.onSurface.copy(alpha = 0.16f),
-            colors.onSurface.copy(alpha = 0.03f)
+    // B/W border used by the display card (and the key borders below).
+    val cardBorder = colors.onSurface.copy(alpha = 0.12f)
+
+    // DRAWER SWIPE (universal rule): a leftward drag past the
+    // threshold opens the app drawer, once per gesture. Rightward
+    // drags are NOT consumed here, so nothing else loses its own
+    // gesture. Applied to the display card and the keypad only —
+    // never to the root Box or the chips row, so the category
+    // chips keep scrolling horizontally.
+    val drawerSwipe = Modifier.pointerInput(Unit) {
+        val thresholdPx = 24.dp.toPx()
+        var totalDx = 0f
+        var done = false
+        detectHorizontalDragGestures(
+            onDragStart = { totalDx = 0f; done = false },
+            onDragEnd = { totalDx = 0f; done = false },
+            onDragCancel = { totalDx = 0f; done = false },
+            onHorizontalDrag = { change, dragAmount ->
+                if (done) return@detectHorizontalDragGestures
+                totalDx += dragAmount
+                if (totalDx < -thresholdPx) {
+                    done = true
+                    onOpenDrawer()
+                    change.consume()
+                }
+            }
         )
-    )
+    }
 
     fun swapUnits() {
         val tmp = fromSymbol
@@ -507,40 +542,6 @@ fun ConverterCalculatorScreen(
                 .fillMaxSize()
                 .background(colors.background)
         ) {
-            // Aurora blobs — blurred colour fields drifting slowly
-            Box(
-                modifier = Modifier
-                    .size(300.dp)
-                    .align(Alignment.TopEnd)
-                    .offset(x = (70 + drift).dp, y = (-80).dp)
-                    .clip(CircleShape)
-                    .background(
-                        Brush.radialGradient(
-                            listOf(
-                                colors.primaryContainer.copy(alpha = 0.60f),
-                                Color.Transparent
-                            )
-                        )
-                    )
-                    .blur(64.dp)
-            )
-            Box(
-                modifier = Modifier
-                    .size(260.dp)
-                    .align(Alignment.BottomStart)
-                    .offset(x = (-90 - drift).dp, y = (50).dp)
-                    .clip(CircleShape)
-                    .background(
-                        Brush.radialGradient(
-                            listOf(
-                                colors.tertiaryContainer.copy(alpha = 0.55f),
-                                Color.Transparent
-                            )
-                        )
-                    )
-                    .blur(64.dp)
-            )
-
             // RESPONSIVE LAYOUT — no scroll, nothing fixed-height.
             // Every gap, padding and font is a fraction of the real
             // screen size, and the card + keypad split the space by
@@ -618,7 +619,7 @@ fun ConverterCalculatorScreen(
                         converterCategories.forEach { item ->
                             val selected = item.name == selectedCategoryName
                             val chipBg by animateColorAsState(
-                                targetValue = if (selected) colors.primary
+                                targetValue = if (selected) colors.onBackground
                                 else colors.surfaceVariant.copy(alpha = 0.55f),
                                 animationSpec = tween(
                                     durationMillis = 250,
@@ -627,7 +628,7 @@ fun ConverterCalculatorScreen(
                                 label = "chipBg"
                             )
                             val chipText by animateColorAsState(
-                                targetValue = if (selected) colors.onPrimary
+                                targetValue = if (selected) colors.background
                                 else colors.onSurfaceVariant,
                                 animationSpec = tween(
                                     durationMillis = 250,
@@ -675,8 +676,8 @@ fun ConverterCalculatorScreen(
                         modifier = Modifier
                             .fillMaxSize()
                             .clip(RoundedCornerShape(28.dp))
-                            .background(colors.surface.copy(alpha = 0.45f))
-                            .border(1.dp, glassBorderBrush, RoundedCornerShape(28.dp))
+                            .background(colors.surfaceVariant.copy(alpha = 0.55f))
+                            .border(1.dp, cardBorder, RoundedCornerShape(28.dp))
                             .padding(horizontal = cardPadH, vertical = cardPadV)
                     ) {
                         Row(verticalAlignment = Alignment.Top) {
@@ -699,7 +700,7 @@ fun ConverterCalculatorScreen(
                                     )
                                     .size(swapCircleSize)
                                     .clip(CircleShape)
-                                    .background(colors.primary)
+                                    .background(colors.onBackground)
                                     .clickable { swapUnits() },
                                 contentAlignment = Alignment.Center
                             ) {
@@ -709,7 +710,7 @@ fun ConverterCalculatorScreen(
                                     modifier = Modifier
                                         .size(swapIconSize)
                                         .rotate(swapRotation),
-                                    tint = colors.onPrimary
+                                    tint = colors.background
                                 )
                             }
                             ConverterUnitPill(
@@ -756,7 +757,7 @@ fun ConverterCalculatorScreen(
                             Text(
                                 text = "|",
                                 fontSize = caretSize,
-                                color = colors.primary,
+                                color = colors.onSurface,
                                 modifier = Modifier
                                     .padding(start = 2.dp)
                                     .alpha(caretAlpha)
@@ -765,7 +766,7 @@ fun ConverterCalculatorScreen(
 
                         Spacer(modifier = Modifier.height(gapSm))
                         HorizontalDivider(
-                            color = colors.onSurface.copy(alpha = 0.08f)
+                            color = colors.onSurface.copy(alpha = 0.12f)
                         )
                         Spacer(modifier = Modifier.height(gapSm))
 
@@ -781,7 +782,7 @@ fun ConverterCalculatorScreen(
                                     text = resultDisplayText,
                                     fontSize = resultSize,
                                     fontWeight = FontWeight.Bold,
-                                    color = colors.primary,
+                                    color = colors.onSurface,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                     modifier = Modifier.padding(top = 2.dp)
@@ -839,16 +840,16 @@ fun ConverterCalculatorScreen(
                                         )
                                         "AC" -> ConverterKey(
                                             text = "AC",
-                                            containerColor = colors.primaryContainer,
-                                            contentColor = colors.onPrimaryContainer,
+                                            containerColor = colors.onBackground,
+                                            contentColor = colors.background,
                                             onClick = { onKey("AC") },
                                             modifier = Modifier.weight(1f)
                                         )
                                         "⌫", "±" -> ConverterKey(
                                             text = keyLabel,
-                                            containerColor = colors.secondaryContainer
+                                            containerColor = colors.surfaceVariant
                                                 .copy(alpha = 0.75f),
-                                            contentColor = colors.onSecondaryContainer,
+                                            contentColor = colors.onSurface,
                                             onClick = { onKey(keyLabel) },
                                             modifier = Modifier.weight(1f)
                                         )
@@ -889,13 +890,13 @@ fun ConverterCalculatorScreen(
                         chipsRow()
                         Spacer(modifier = Modifier.height(gapMd))
                         key(selectedCategoryName) {
-                            AnimatedIn(delayMillis = 60, modifier = Modifier.weight(1f)) {
+                            AnimatedIn(delayMillis = 60, modifier = Modifier.weight(1f).then(drawerSwipe)) {
                                 displayCard()
                             }
                         }
                         Spacer(modifier = Modifier.height(gapMd))
                         key(selectedCategoryName + "-keys") {
-                            AnimatedIn(delayMillis = 140, modifier = Modifier.weight(1.0f)) {
+                            AnimatedIn(delayMillis = 140, modifier = Modifier.weight(1.0f).then(drawerSwipe)) {
                                 keypad()
                             }
                         }
@@ -926,7 +927,7 @@ fun ConverterCalculatorScreen(
                             chipsRow()
                             Spacer(modifier = Modifier.height(gapMd))
                             key(selectedCategoryName) {
-                                AnimatedIn(delayMillis = 60, modifier = Modifier.weight(1f)) {
+                                AnimatedIn(delayMillis = 60, modifier = Modifier.weight(1f).then(drawerSwipe)) {
                                     displayCard()
                                 }
                             }
@@ -937,6 +938,7 @@ fun ConverterCalculatorScreen(
                                 modifier = Modifier
                                     .weight(1.05f)
                                     .fillMaxHeight()
+                                    .then(drawerSwipe)
                             ) {
                                 keypad()
                             }
@@ -1063,7 +1065,7 @@ private fun ConverterKey(
         label = "keyScale"
     )
     val bg by animateColorAsState(
-        targetValue = if (pressed) colors.primaryContainer else containerColor,
+        targetValue = if (pressed) containerColor.copy(alpha = 0.65f) else containerColor,
         animationSpec = tween(durationMillis = 160, easing = FastOutSlowInEasing),
         label = "keyBg"
     )
@@ -1079,7 +1081,7 @@ private fun ConverterKey(
             .background(bg)
             .border(
                 1.dp,
-                colors.onSurface.copy(alpha = 0.07f),
+                colors.onSurface.copy(alpha = 0.12f),
                 shape
             )
             .clickable(
@@ -1113,7 +1115,7 @@ private fun ConverterSwapKey(
         label = "swapKeyScale"
     )
     val bg by animateColorAsState(
-        targetValue = if (pressed) colors.primaryContainer else colors.primary,
+        targetValue = if (pressed) colors.onBackground.copy(alpha = 0.75f) else colors.onBackground,
         animationSpec = tween(durationMillis = 160, easing = FastOutSlowInEasing),
         label = "swapKeyBg"
     )
@@ -1136,7 +1138,7 @@ private fun ConverterSwapKey(
             modifier = Modifier
                 .size(maxHeight * 0.36f)
                 .rotate(rotation),
-            tint = colors.onPrimary
+            tint = colors.background
         )
     }
 }
@@ -1154,14 +1156,11 @@ private fun UnitGridCard(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(18.dp))
-            .background(
-                if (selected) colors.primaryContainer
-                else colors.surfaceVariant.copy(alpha = 0.6f)
-            )
+            .background(colors.surfaceVariant.copy(alpha = 0.6f))
             .border(
                 if (selected) 1.5.dp else 1.dp,
-                if (selected) colors.primary
-                else colors.onSurface.copy(alpha = 0.06f),
+                if (selected) colors.onSurface
+                else colors.onSurface.copy(alpha = 0.12f),
                 RoundedCornerShape(18.dp)
             )
             .clickable { onClick() }
@@ -1173,8 +1172,7 @@ private fun UnitGridCard(
                     text = name,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Medium,
-                    color = if (selected) colors.onPrimaryContainer
-                    else colors.onSurface,
+                    color = colors.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f)
@@ -1184,23 +1182,21 @@ private fun UnitGridCard(
                         Icons.Default.Check,
                         contentDescription = null,
                         modifier = Modifier.size(16.dp),
-                        tint = colors.primary
+                        tint = colors.onSurface
                     )
                 }
             }
             Text(
                 text = symbol,
                 fontSize = 11.5.sp,
-                color = if (selected) colors.onPrimaryContainer.copy(alpha = 0.7f)
-                else colors.onSurfaceVariant
+                color = colors.onSurfaceVariant
             )
             if (preview.isNotEmpty()) {
                 Text(
                     text = preview,
                     fontSize = 12.5.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = if (selected) colors.onPrimaryContainer
-                    else colors.primary,
+                    color = colors.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(top = 6.dp)

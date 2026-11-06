@@ -9,6 +9,16 @@
 //    no warning paragraph — title and field labels only.
 //  - Reached only by long-pressing "=" in the Normal calculator
 //    while no secret is set. There is no menu trace of it.
+// B/W AUDIT (2026-11-06): app-theme fix only — this screen now
+// takes darkTheme: Boolean = isSystemInDarkTheme() and uses it
+// instead of reading the system theme, so the app's own theme
+// toggle controls it. No chromatic colour was found anywhere
+// (no primary / error): button, fields and borders were already
+// onPageColor / cardBorderColor only. No other change.
+// NO DRAWER SWIPE on this screen: it is a hidden screen —
+// NavGraph deliberately hides the drawer and top bar on the
+// VaultSetup route, and the vault must stay hidden with no menu
+// trace. Do NOT add any onOpenDrawer param or swipe detector here.
 package com.calnyx.app.ui.screens
 
 import android.widget.Toast
@@ -54,7 +64,8 @@ import com.calnyx.app.vault.VaultPrefs
 @Composable
 fun VaultSetupScreen(
     onBack: () -> Unit,
-    onSaved: () -> Unit
+    onSaved: () -> Unit,
+    darkTheme: Boolean = isSystemInDarkTheme()
 ) {
     val context = LocalContext.current
     val alreadySet = VaultPrefs.isSecretSet(context)
@@ -64,7 +75,7 @@ fun VaultSetupScreen(
     var confirmSecret by remember { mutableStateOf("") }
 
     // MODERN palette: only off-white / off-black / grey.
-    val isDark = isSystemInDarkTheme()
+    val isDark = darkTheme
     val pageBg = if (isDark) Color(0xFF0E0E0E) else Color(0xFFF6F4EF)
     val onPageColor = if (isDark) Color(0xFFF6F4EF) else Color(0xFF0E0E0E)
     val cardBorderColor = if (isDark) Color(0xFF2B2B2B) else Color(0xFFE9E6DF)

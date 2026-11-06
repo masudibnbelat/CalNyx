@@ -1,4 +1,17 @@
 // FILE: app/src/main/java/com/calnyx/app/navigation/NavGraph.kt
+// CLIPBOARD VERSION - replace your old NavGraph.kt with this file.
+// Based on RIGHTDRAWER. ONLY Clipboard changes (2026-11-06):
+//  1. New drawer item LAST: Clipboard (ContentPaste icon).
+//  2. New composable for Screen.Clipboard, passing onOpenDrawer
+//     so a leftward swipe anywhere on the Clipboard screen opens
+//     this right drawer (universal drawer rule).
+//  3. REOPEN RULE - VERIFIED, logic NOT changed: Clipboard is in
+//     menuScreens, so it is in persistRoutes, but it is NOT in
+//     calculatorRoutes (only Normal / Scientific / CalTape are).
+//     The LaunchedEffect(currentRoute) below therefore saves
+//     Normal whenever Clipboard is open, so reopening the app
+//     always lands on the Normal calculator, like every other
+//     tool screen. No change to that logic was needed.
 // RIGHTDRAWER VERSION - replace your old NavGraph.kt with this file.
 // Based on SPLIT. Only the drawer changes:
 //  1. The drawer now opens from the RIGHT, not the left.
@@ -74,6 +87,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.Computer
+import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Functions
 import androidx.compose.material.icons.filled.History
@@ -139,6 +153,7 @@ import com.calnyx.app.ui.screens.AppLockScreen
 import com.calnyx.app.ui.screens.HardcoreScreen
 import com.calnyx.app.ui.screens.MoanScreen
 import com.calnyx.app.ui.screens.CalTapeCalculatorScreen
+import com.calnyx.app.ui.screens.ClipboardScreen
 import com.calnyx.app.ui.screens.ConverterCalculatorScreen
 import com.calnyx.app.ui.screens.HistoryScreen
 import com.calnyx.app.ui.screens.IctCalculatorScreen
@@ -192,6 +207,13 @@ sealed class Screen(
             Screen("moan", "Moan", "Sound", Icons.Default.VolumeUp)
     object BlueFilm :
             Screen("blue_film", "Blue Film", "Secret screen recorder", Icons.Default.Videocam)
+    object Clipboard :
+            Screen(
+                    "clipboard",
+                    "Clipboard",
+                    "Copied text & images",
+                    Icons.Default.ContentPaste
+            )
 
     // Hidden vault — menuScreens-এ যোগ করা হয়নি, তাই মেনুতে
     // দেখাবে না। শুধু Normal calculator-এ সিক্রেট হিসাব
@@ -222,6 +244,7 @@ val menuScreens =
                 Screen.Hardcore,
                 Screen.Moan,
                 Screen.BlueFilm,
+                Screen.Clipboard,
         )
 
 // MODERN palette: only off-white / off-black / grey. No purple, no colour accents.
@@ -378,9 +401,9 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
             // reopen restores this calculator.
             navStateDao.save(NavStateEntity(route = route))
         } else if (route in persistRoutes) {
-            // Converter / Number System / ICT / Hardcore / Moan:
-            // remember Normal instead, so reopen lands on the
-            // Normal calculator, not on the tool.
+            // Converter / Number System / ICT / Hardcore / Moan /
+            // BlueFilm / Clipboard: remember Normal instead, so
+            // reopen lands on the Normal calculator, not on the tool.
             navStateDao.save(NavStateEntity(route = Screen.Normal.route))
         }
         // History / Vault / VaultSetup / AppLock: do not touch
@@ -466,25 +489,47 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
                     )
                 }
                 composable(Screen.Scientific.route) {
-                    ScientificCalculatorScreen(darkTheme = darkTheme, onToggleTheme = onToggleTheme)
+                    ScientificCalculatorScreen(
+                        darkTheme = darkTheme,
+                        onToggleTheme = onToggleTheme,
+                        onOpenDrawer = { drawerOpen = true }
+                    )
                 }
                 composable(Screen.Notepad.route) {
                     NotepadCalculatorScreen(darkTheme = darkTheme, onToggleTheme = onToggleTheme)
                 }
                 composable(Screen.CalTape.route) {
-                    CalTapeCalculatorScreen(darkTheme = darkTheme, onToggleTheme = onToggleTheme)
+                    CalTapeCalculatorScreen(
+                        darkTheme = darkTheme,
+                        onToggleTheme = onToggleTheme,
+                        // CALTAPE SWIPE FIX (2026-11-06): a leftward drag
+                        // anywhere on CalTape now opens this drawer —
+                        // the 28dp right-edge zone alone never fired
+                        // there, because CalTape's own Sheets drawer
+                        // sits on top of it.
+                        onOpenDrawer = { drawerOpen = true }
+                    )
                 }
                 composable(Screen.Converter.route) {
-                    ConverterCalculatorScreen(darkTheme = darkTheme, onToggleTheme = onToggleTheme)
+                    ConverterCalculatorScreen(
+                        darkTheme = darkTheme,
+                        onToggleTheme = onToggleTheme,
+                        onOpenDrawer = { drawerOpen = true }
+                    )
                 }
                 composable(Screen.NumberSystem.route) {
                     NumberSystemCalculatorScreen(
                             darkTheme = darkTheme,
-                            onToggleTheme = onToggleTheme
+                            onToggleTheme = onToggleTheme,
+                            onOpenDrawer = { drawerOpen = true }
                     )
                 }
                 composable(Screen.Ict.route) {
-                    IctCalculatorScreen(darkTheme = darkTheme, onToggleTheme = onToggleTheme)
+                    IctCalculatorScreen(
+                        darkTheme = darkTheme,
+                        onToggleTheme = onToggleTheme,
+                        onOpenDrawer = { drawerOpen = true }
+                    )
                 }
                 composable(Screen.Hardcore.route) {
                     HardcoreScreen(darkTheme = darkTheme)
@@ -495,21 +540,43 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
                 composable(Screen.BlueFilm.route) {
                     BlueFilmScreen(darkTheme = darkTheme)
                 }
+                composable(Screen.Clipboard.route) {
+                    ClipboardScreen(
+                        darkTheme = darkTheme,
+                        onToggleTheme = onToggleTheme,
+                        // CLIPBOARD (2026-11-06): leftward swipe
+                        // anywhere on the Clipboard screen opens
+                        // the drawer (universal drawer rule).
+                        onOpenDrawer = { drawerOpen = true }
+                    )
+                }
                 composable(Screen.History.route) {
                     HistoryScreen(onBack = { navController.popBackStack() })
                 }
                 composable(Screen.Vault.route) {
                     VaultScreen(
                             onBack = { navController.popBackStack() },
-                            onOpenAppLock = { navController.navigate(Screen.AppLock.route) }
+                            onOpenAppLock = { navController.navigate(Screen.AppLock.route) },
+                            // THEME (2026-11-06): Vault follows the app's
+                            // own toggle, not the system theme. No drawer
+                            // here — it stays hidden, no menu trace.
+                            darkTheme = darkTheme
                     )
                 }
                 composable(Screen.AppLock.route) {
-                    AppLockScreen(onBack = { navController.popBackStack() })
+                    AppLockScreen(
+                            onBack = { navController.popBackStack() },
+                            // THEME (2026-11-06): app toggle, not system.
+                            // No drawer here — hidden screen.
+                            darkTheme = darkTheme
+                    )
                 }
                 composable(Screen.VaultSetup.route) {
                     VaultSetupScreen(
                             onBack = { navController.popBackStack() },
+                            // THEME (2026-11-06): app toggle, not system.
+                            // No drawer here — hidden screen.
+                            darkTheme = darkTheme,
                             onSaved = {
                                 navController.popBackStack()
                                 navController.navigate(Screen.Vault.route)
@@ -552,17 +619,18 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
                                         modifier = Modifier.size(22.dp)
                                 )
                             }
-                            Spacer(modifier = Modifier.size(36.dp))
+                            Spacer(modifier = Modifier.size(56.dp))
                         }
                         else -> {
                             // DRAWER: 3-DOT menu on the top-RIGHT (the user
                             // asked for the 3-bar hamburger to become a
-                            // 3-dot menu). Same 36dp translucent circle,
-                            // same job — it opens the right drawer.
+                            // 3-dot menu). Same translucent circle, now
+                            // 48dp with a 56dp hit area — it opens the
+                            // right drawer.
                             // Top-left is left empty on purpose: CalTape
                             // has its own top-left 3-dot button, and the
                             // two bars mixed together when both were left.
-                            Spacer(modifier = Modifier.size(36.dp))
+                            Spacer(modifier = Modifier.size(56.dp))
                             TopBarCircleButton(onClick = { drawerOpen = true }) {
                                 Icon(
                                         Icons.Default.MoreVert,
@@ -786,21 +854,33 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
     }
 }
 
-// Top-bar circle button — আগের মতোই: 36dp, হালকা translucent
-// surfaceVariant ব্যাকগ্রাউন্ড, কোনো শ্যাডো/বর্ডার/কালো বাটন নেই।
+// Top-bar circle button — 48dp visible circle inside a 56dp hit
+// area, light translucent surfaceVariant background, no shadow /
+// border / black button. (Was 36dp: the user reported on 2026-11-06
+// that the 3-dot menu on CalTape was hard to tap — a tap anywhere
+// around the dot now opens the drawer.) ONE click handler only, on
+// the outer Box, so the Back button can never fire twice.
 @Composable
 private fun TopBarCircleButton(
         onClick: () -> Unit,
-        buttonSize: Dp = 36.dp,
+        buttonSize: Dp = 48.dp,
         content: @Composable () -> Unit
 ) {
     Box(
             modifier =
-                    Modifier.size(buttonSize)
+                    Modifier.size(buttonSize + 8.dp)
                             .clip(CircleShape)
-                            .background(
-                                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
-                            ),
+                            .clickable { onClick() },
             contentAlignment = Alignment.Center
-    ) { IconButton(onClick = onClick, modifier = Modifier.size(buttonSize)) { content() } }
+    ) {
+        Box(
+                modifier =
+                        Modifier.size(buttonSize)
+                                .clip(CircleShape)
+                                .background(
+                                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+                                ),
+                contentAlignment = Alignment.Center
+        ) { content() }
+    }
 }
