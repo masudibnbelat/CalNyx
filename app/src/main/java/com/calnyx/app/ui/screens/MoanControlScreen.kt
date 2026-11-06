@@ -1,4 +1,12 @@
 // FILE: app/src/main/java/com/calnyx/app/ui/screens/MoanControlScreen.kt
+// V5 - based on V4 (the pasted file minus Notification).
+// (1) Network Switcher moved UP: it is now the third square
+// card in the Power row (Power Menu / Lock Screen / Network
+// Switcher), and its old wide row below is gone.
+// (2) The WhatsApp section is bigger now: a title + a short
+// description on top, then a taller input row. The round
+// button on the right is a slanted Send icon (paper plane)
+// instead of the WhatsApp logo.
 // MOAN + HARDCORE - NO TABS. Two separate screens in this one file:
 // - HardcoreScreen: Power + Network Switcher + Floating Ball.
 // - MoanScreen: Ringer Profile + all audio streams, real-time.
@@ -55,17 +63,22 @@
 //   this screen resumes. The mode is saved to prefs BEFORE
 //   the system setting is written, or the guard would put
 //   the old mode back.
-// - Sound: AudioManager STREAM_MUSIC / RING / NOTIFICATION / ALARM /
+// - Sound: AudioManager STREAM_MUSIC / RING / ALARM /
 //   VOICE_CALL, setStreamVolume on every slider move (real-time).
+//   (The NOTIFICATION stream card was removed at the user's
+//   request - it is no longer in the streams list below.)
 //   Voice Call volume only takes effect during a call - that is an
 //   Android limit, not a bug. Silent needs Notification Policy
 //   Access on some phones (DND) - the button opens that setting.
-// - WhatsApp (Open in WhatsApp / Click to Chat): a card below
-//   Network Switcher. Modern, NO title: just a digits-only
-//   input and the real WhatsApp logo as the button. Typing or
-//   pasting a number and tapping the logo opens that number's
-//   WhatsApp chat via https://wa.me/<number> (WhatsAppHelper
-//   normalizes it: 01XXXXXXXXX -> 8801XXXXXXXXX). The logo is
+// - WhatsApp (Open in WhatsApp / Click to Chat): a bigger card
+//   below Screen Orientation, with a title and a short
+//   description, then a taller digits-only input. The round
+//   button on the right is a slanted Send icon (paper plane),
+//   not the WhatsApp logo. Typing or pasting a number and
+//   tapping Send opens that number's WhatsApp chat via
+//   https://wa.me/<number> (WhatsAppHelper normalizes it:
+//   01XXXXXXXXX -> 8801XXXXXXXXX). The small WhatsApp logo is
+//   still the leading icon inside the input field:
 //   res/drawable/ic_whatsapp.xml (the real WhatsApp bubble),
 //   tinted with the theme colour - black / white only, no
 //   WhatsApp green, per the app's palette rule.
@@ -107,10 +120,9 @@ import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MusicNote
-import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.ScreenRotation
+import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.SignalCellularAlt
 import androidx.compose.material.icons.filled.Vibration
 import androidx.compose.material.icons.filled.VolumeOff
@@ -120,7 +132,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -130,6 +141,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.calnyx.app.R
@@ -387,12 +399,31 @@ private fun ControlTab(
     }
 
     Column(
-        modifier = Modifier.fillMaxSize().verticalScroll(scroll).padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        modifier = Modifier.fillMaxSize().verticalScroll(scroll).padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
+        // HEADER - big title with icon, like Blue Film.
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier.size(52.dp).clip(CircleShape).background(thumbBg),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Default.PowerSettingsNew, contentDescription = null, modifier = Modifier.size(28.dp), tint = onPageColor)
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+            Text("Hardcore", fontWeight = FontWeight.Bold, fontSize = 28.sp, color = onPageColor)
+        }
         // POWER
-        Text("Power", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Color.Gray)
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+        Text("Power", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color.Gray)
+        // POWER - three square cards now: Power Menu, Lock Screen
+        // and Network Switcher (moved up from its own wide row
+        // below). IntrinsicSize.Max + fillMaxHeight keep all
+        // three cards the same height even though "Network
+        // Switcher" wraps to two lines.
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Max)) {
             PowerCard(
                 title = "Power Menu",
                 icon = Icons.Default.PowerSettingsNew,
@@ -400,7 +431,7 @@ private fun ControlTab(
                 cardBorder = cardBorder,
                 onPageColor = onPageColor,
                 thumbBg = thumbBg,
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.weight(1f).fillMaxHeight(),
                 onClick = {
                     if (!accessibilityOn) {
                         onNote("Turn on Accessibility for CalNyx first (App Lock > Open Accessibility Settings).")
@@ -418,7 +449,7 @@ private fun ControlTab(
                 cardBorder = cardBorder,
                 onPageColor = onPageColor,
                 thumbBg = thumbBg,
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.weight(1f).fillMaxHeight(),
                 onClick = {
                     if (!accessibilityOn) {
                         onNote("Turn on Accessibility for CalNyx first (App Lock > Open Accessibility Settings).")
@@ -429,16 +460,25 @@ private fun ControlTab(
                     }
                 }
             )
+            PowerCard(
+                title = "Network Switcher",
+                icon = Icons.Default.SignalCellularAlt,
+                cardBg = cardBg,
+                cardBorder = cardBorder,
+                onPageColor = onPageColor,
+                thumbBg = thumbBg,
+                modifier = Modifier.weight(1f).fillMaxHeight(),
+                onClick = { openNetworkSwitcher(context, onNote) }
+            )
         }
         // Screen Orientation - small buttons, compact.
         Column(
             modifier = Modifier.fillMaxWidth()
-                .shadow(4.dp, RoundedCornerShape(16.dp))
                 .clip(RoundedCornerShape(16.dp))
                 .background(cardBg)
                 .border(1.dp, cardBorder, RoundedCornerShape(16.dp))
-                .padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+                .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Text("Screen Orientation", fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
@@ -465,7 +505,7 @@ private fun ControlTab(
                                     onNote("Orientation saved but not enforced - allow overlay permission (Floating Ball) or Modify system settings for CalNyx.")
                                 }
                             }
-                            .padding(vertical = 12.dp),
+                            .padding(vertical = 10.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
@@ -478,98 +518,81 @@ private fun ControlTab(
                 }
             }
         }
-        // NETWORK SWITCHER -> Phone info
-        Row(
+        // WHATSAPP - Open in WhatsApp (Click to Chat). Bigger
+        // now: title + short description on top, then a taller
+        // input row. The round button on the right is a slanted
+        // Send icon (paper plane) instead of the WhatsApp logo.
+        // The small WhatsApp logo stays as the leading icon
+        // inside the input field. Black / white only.
+        Column(
             modifier = Modifier.fillMaxWidth()
-                .shadow(4.dp, RoundedCornerShape(16.dp))
-                .clip(RoundedCornerShape(16.dp))
-                .background(cardBg)
-                .border(1.dp, cardBorder, RoundedCornerShape(16.dp))
-                .clickable { openNetworkSwitcher(context, onNote) }
-                .padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier.size(52.dp).clip(CircleShape).background(thumbBg),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(Icons.Default.SignalCellularAlt, contentDescription = null, modifier = Modifier.size(28.dp))
-            }
-            Spacer(modifier = Modifier.width(14.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text("Network Switcher", fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
-                Text(
-                    "Open Phone info",
-                    fontSize = 13.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            Icon(Icons.Default.PhoneAndroid, contentDescription = null)
-        }
-        // WHATSAPP - Open in WhatsApp (Click to Chat). Modern,
-        // no title: just the input and the real WhatsApp logo as
-        // the button. The logo is the button, so it is clear
-        // what it does. Black / white only - no WhatsApp green.
-        Row(
-            modifier = Modifier.fillMaxWidth()
-                .shadow(4.dp, RoundedCornerShape(16.dp))
                 .clip(RoundedCornerShape(16.dp))
                 .background(cardBg)
                 .border(1.dp, cardBorder, RoundedCornerShape(16.dp))
                 .padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            OutlinedTextField(
-                value = waNumber,
-                onValueChange = { waNumber = it.filter { ch -> ch.isDigit() } },
-                placeholder = { Text("01XXXXXXXXX") },
-                leadingIcon = {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_whatsapp),
-                        contentDescription = null,
-                        modifier = Modifier.size(22.dp)
-                    )
-                },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                modifier = Modifier.weight(1f),
-                shape = RoundedCornerShape(12.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = onPageColor,
-                    unfocusedBorderColor = cardBorder,
-                    cursorColor = onPageColor
-                )
+            Text("Open in WhatsApp", fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+            Text(
+                "Type a number to open its WhatsApp chat directly.",
+                fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            Box(
-                modifier = Modifier.size(52.dp).clip(CircleShape).background(onPageColor)
-                    .clickable {
-                        if (WhatsAppHelper.openChat(context, waNumber)) {
-                            onNote(null)
-                        } else {
-                            onNote("Type a valid number first.")
-                        }
-                    },
-                contentAlignment = Alignment.Center
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_whatsapp),
-                    contentDescription = "Open in WhatsApp",
-                    modifier = Modifier.size(30.dp),
-                    tint = cardBg
+                OutlinedTextField(
+                    value = waNumber,
+                    onValueChange = { waNumber = it.filter { ch -> ch.isDigit() } },
+                    placeholder = { Text("01XXXXXXXXX") },
+                    leadingIcon = {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_whatsapp),
+                            contentDescription = null,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.weight(1f).height(64.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = onPageColor,
+                        unfocusedBorderColor = cardBorder,
+                        cursorColor = onPageColor
+                    )
                 )
+                Box(
+                    modifier = Modifier.size(64.dp).clip(CircleShape).background(onPageColor)
+                        .clickable {
+                            if (WhatsAppHelper.openChat(context, waNumber)) {
+                                onNote(null)
+                            } else {
+                                onNote("Type a valid number first.")
+                            }
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Send,
+                        contentDescription = "Open in WhatsApp",
+                        modifier = Modifier.size(30.dp),
+                        tint = cardBg
+                    )
+                }
             }
         }
         // FLOATING BALL - compact. Tight padding, tight spacing
         // and shorter sliders, so the card takes less height.
         Column(
             modifier = Modifier.fillMaxWidth()
-                .shadow(4.dp, RoundedCornerShape(16.dp))
                 .clip(RoundedCornerShape(16.dp))
                 .background(cardBg)
                 .border(1.dp, cardBorder, RoundedCornerShape(16.dp))
-                .padding(horizontal = 14.dp, vertical = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                 Text("Floating Ball", fontWeight = FontWeight.SemiBold, fontSize = 16.sp, modifier = Modifier.weight(1f))
@@ -632,7 +655,7 @@ private fun ControlTab(
                     activeTrackColor = if (darkTheme) Color(0xFFF6F4EF) else Color(0xFF0E0E0E),
                     inactiveTrackColor = if (darkTheme) Color(0xFF3A3A3A) else Color(0xFFD8D5CE)
                 ),
-                modifier = Modifier.fillMaxWidth().height(28.dp)
+                modifier = Modifier.fillMaxWidth().height(24.dp)
             )
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Ball Size", modifier = Modifier.weight(1f), fontSize = 15.sp)
@@ -655,7 +678,7 @@ private fun ControlTab(
                     activeTrackColor = if (darkTheme) Color(0xFFF6F4EF) else Color(0xFF0E0E0E),
                     inactiveTrackColor = if (darkTheme) Color(0xFF3A3A3A) else Color(0xFFD8D5CE)
                 ),
-                modifier = Modifier.fillMaxWidth().height(28.dp)
+                modifier = Modifier.fillMaxWidth().height(24.dp)
             )
             Text(
                 "Tap the ball to open the panel. Drag it to move.",
@@ -680,23 +703,22 @@ private fun PowerCard(
 ) {
     Column(
         modifier = modifier
-            .shadow(4.dp, RoundedCornerShape(20.dp))
-            .clip(RoundedCornerShape(20.dp))
+            .clip(RoundedCornerShape(16.dp))
             .background(cardBg)
-            .border(1.dp, cardBorder, RoundedCornerShape(20.dp))
+            .border(1.dp, cardBorder, RoundedCornerShape(16.dp))
             .clickable(onClick = onClick)
-            .padding(vertical = 20.dp),
+            .padding(vertical = 12.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+        verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically)
     ) {
         Box(
-            modifier = Modifier.size(58.dp).clip(CircleShape)
+            modifier = Modifier.size(48.dp).clip(CircleShape)
                 .background(thumbBg),
             contentAlignment = Alignment.Center
         ) {
-            Icon(icon, contentDescription = title, modifier = Modifier.size(28.dp))
+            Icon(icon, contentDescription = title, modifier = Modifier.size(24.dp))
         }
-        Text(title, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = onPageColor)
+        Text(title, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = onPageColor, textAlign = TextAlign.Center)
     }
 }
 
@@ -716,7 +738,6 @@ private fun SoundTab(
         listOf(
             StreamRow(AudioManager.STREAM_MUSIC, "Media", Icons.Default.MusicNote),
             StreamRow(AudioManager.STREAM_RING, "Ringtone", Icons.Default.VolumeUp),
-            StreamRow(AudioManager.STREAM_NOTIFICATION, "Notification", Icons.Default.Notifications),
             StreamRow(AudioManager.STREAM_ALARM, "Alarm", Icons.Default.Alarm),
             StreamRow(AudioManager.STREAM_VOICE_CALL, "Call", Icons.Default.Call)
         )
@@ -741,10 +762,24 @@ private fun SoundTab(
     }
 
     Column(
-        modifier = Modifier.fillMaxSize().verticalScroll(scroll).padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        modifier = Modifier.fillMaxSize().verticalScroll(scroll).padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Text("Ringer Profile", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Color.Gray)
+        // HEADER - big title with icon, like Blue Film.
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier.size(52.dp).clip(CircleShape).background(thumbBg),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Default.MusicNote, contentDescription = null, modifier = Modifier.size(28.dp), tint = onPageColor)
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+            Text("Moan", fontWeight = FontWeight.Bold, fontSize = 28.sp, color = onPageColor)
+        }
+        Text("Ringer Profile", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color.Gray)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
             listOf(
                 AudioManager.RINGER_MODE_NORMAL to "Sound" to Icons.Default.VolumeUp,
@@ -782,10 +817,10 @@ private fun SoundTab(
                                 onNote("Ringer mode could not be changed on this phone.")
                             }
                         }
-                        .padding(vertical = 12.dp),
+                        .padding(vertical = 10.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         Icon(
                             icon,
                             contentDescription = null,
@@ -802,7 +837,7 @@ private fun SoundTab(
                 }
             }
         }
-        Text("Audio Streams", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Color.Gray)
+        Text("Audio Streams", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color.Gray)
         streams.forEach { row ->
             val max = try {
                 audio.getStreamMaxVolume(row.stream)
@@ -813,19 +848,18 @@ private fun SoundTab(
             val percent = if (max > 0) (current * 100 / max) else 0
             Column(
                 modifier = Modifier.fillMaxWidth()
-                    .shadow(4.dp, RoundedCornerShape(16.dp))
                     .clip(RoundedCornerShape(16.dp))
                     .background(cardBg)
                     .border(1.dp, cardBorder, RoundedCornerShape(16.dp))
-                    .padding(14.dp),
+                    .padding(12.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
-                        modifier = Modifier.size(44.dp).clip(CircleShape).background(thumbBg),
+                        modifier = Modifier.size(40.dp).clip(CircleShape).background(thumbBg),
                         contentAlignment = Alignment.Center
                     ) {
-                        Icon(row.icon, contentDescription = null, modifier = Modifier.size(24.dp))
+                        Icon(row.icon, contentDescription = null, modifier = Modifier.size(22.dp))
                     }
                     Spacer(modifier = Modifier.width(12.dp))
                     Text(row.title, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, modifier = Modifier.weight(1f))

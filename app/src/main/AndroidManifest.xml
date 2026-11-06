@@ -1,28 +1,36 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- FILE: app/src/main/AndroidManifest.xml -->
-<!-- BLUEFILM VERSION - replace your old AndroidManifest.xml with this. -->
-<!-- Based on WHATSAPP. New: BlueFilmService (foreground service,
-     mediaProjection type) for the secret screen recorder, the
-     FileProvider for playing a decrypted recording with an
-     external player, FOREGROUND_SERVICE_MEDIA_PROJECTION and
-     WRITE_EXTERNAL_STORAGE (maxSdk 28, for the Android 9
-     gallery export only). -->
-<!-- Based on PANEL7. Only changes: declares OrientationService
-     (foreground service that enforces the orientation lock with
-     a 0x0 overlay, so 180 deg holds outside the app) and
-     OrientationBootReceiver (restores a locked mode after
-     reboot). No new permissions: RECEIVE_BOOT_COMPLETED,
-     FOREGROUND_SERVICE_SPECIAL_USE and SYSTEM_ALERT_WINDOW
-     are already declared. -->
-<!-- Based on PANEL6. Only change: CALL_PHONE REMOVED. The direct
-     dial (ACTION_CALL) placed a REAL call to *#*#4636#*#* on this
-     realme instead of opening Phone info, so it is gone. The
-     Network Switcher now uses the secret-code broadcast instead,
-     which needs no permission. -->
-<!-- Based on PANEL3. Only change: BallPanelActivity gets its own
-     taskAffinity, so it runs in a SEPARATE task from the app.
-     Closing the panel then returns to the app you were in,
-     never to CalNyx. The ball itself never opens the app. -->
+<!-- BLUEFILM-CAMERA VERSION - replace your old AndroidManifest.xml with this. -->
+<!-- Based on WHATSAPP. New vs BLUEFILM (screen recorder): -->
+<!-- BlueFilmService is now a CAMERA video recorder (front / back -->
+<!-- camera, Camera2 + MediaRecorder), NOT a screen recorder. -->
+<!-- - foregroundServiceType="camera" (was "mediaProjection") -->
+<!-- - FOREGROUND_SERVICE_CAMERA added -->
+<!-- V3: WAKE_LOCK added, so Blue Film keeps recording when -->
+<!-- the screen turns off / locks. -->
+<!-- - FOREGROUND_SERVICE_MEDIA_PROJECTION removed (nothing uses -->
+<!--   MediaProjection any more) -->
+<!-- - CAMERA permission was already declared, kept as-is. -->
+<!-- - Camera features added with required="false" so phones -->
+<!--   without a front camera still install. -->
+<!-- - The duplicate FileProvider block (same authorities, listed -->
+<!--   twice) is removed - only one copy is kept. -->
+<!-- Based on PANEL7. Only changes: declares OrientationService -->
+<!-- (foreground service that enforces the orientation lock with -->
+<!-- a 0x0 overlay, so 180 deg holds outside the app) and -->
+<!-- OrientationBootReceiver (restores a locked mode after -->
+<!-- reboot). No new permissions: RECEIVE_BOOT_COMPLETED, -->
+<!-- FOREGROUND_SERVICE_SPECIAL_USE and SYSTEM_ALERT_WINDOW -->
+<!-- are already declared. -->
+<!-- Based on PANEL6. Only change: CALL_PHONE REMOVED. The direct -->
+<!-- dial (ACTION_CALL) placed a REAL call to *#*#4636#*#* on this -->
+<!-- realme instead of opening Phone info, so it is gone. The -->
+<!-- Network Switcher now uses the secret-code broadcast instead, -->
+<!-- which needs no permission. -->
+<!-- Based on PANEL3. Only change: BallPanelActivity gets its own -->
+<!-- taskAffinity, so it runs in a SEPARATE task from the app. -->
+<!-- Closing the panel then returns to the app you were in, -->
+<!-- never to CalNyx. The ball itself never opens the app. -->
 <!-- Based on FIXED2, only Moan Control additions: -->
 <!-- SYSTEM_ALERT_WINDOW (floating ball), MODIFY_AUDIO_SETTINGS -->
 <!-- (sound sliders), VIBRATE, WRITE_SETTINGS (orientation), -->
@@ -57,8 +65,15 @@
     <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature
+        android:name="android.hardware.camera"
+        android:required="false" />
+    <uses-feature
+        android:name="android.hardware.camera.front"
+        android:required="false" />
     <uses-feature
         android:name="android.hardware.camera.flash"
         android:required="false" />
@@ -177,25 +192,13 @@
             </intent-filter>
         </activity>
 
-        <!-- Blue Film screen recorder: foreground service, so it
+        <!-- Blue Film camera video recorder: foreground service, so it
              keeps recording when the app is closed and the screen
              is locked. Not exported - only this app starts it. -->
         <service
             android:name=".BlueFilm.BlueFilmService"
             android:exported="false"
-            android:foregroundServiceType="mediaProjection" />
-
-        <!-- Lets an external video player read a decrypted Blue
-             Film temp file from the app cache (read-only). -->
-        <provider
-            android:name="androidx.core.content.FileProvider"
-            android:authorities="${applicationId}.fileprovider"
-            android:exported="false"
-            android:grantUriPermissions="true">
-            <meta-data
-                android:name="android.support.FILE_PROVIDER_PATHS"
-                android:resource="@xml/file_paths" />
-        </provider>
+            android:foregroundServiceType="camera" />
 
         <!-- App Lock: AccessibilityService, must be enabled by user in Settings -->
         <service

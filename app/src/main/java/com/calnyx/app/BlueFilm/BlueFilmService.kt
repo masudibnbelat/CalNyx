@@ -1,29 +1,45 @@
 // FILE: app/src/main/java/com/calnyx/app/BlueFilm/BlueFilmService.kt
-// NEW FILE - Blue Film secret screen recorder (foreground
-// service, MediaProjection + MediaRecorder).
-//
-// How it works:
-//  - The Blue Film page asks Android for screen-capture
-//    permission once (the system dialog). The result is handed
-//    to this service, which starts a foreground service and
-//    records the screen through a VirtualDisplay into a
-//    MediaRecorder.
-//  - Because it is a foreground service, recording KEEPS GOING
-//    when the app is closed from the screen and when the screen
-//    is locked. Stopping is done from the Blue Film page or from
-//    the service notification's Stop action.
-//  - The raw recording goes to a temp .mp4 in private storage.
-//    On stop it is AES-encrypted into the Blue Film folder
-//    (.bfenc) and the temp file is deleted, so nothing playable
-//    is ever left on the phone. No internet is used at all.
-//  - The notification is kept minimal and generic ("CalNyx /
-//    Running", low priority, no status-bar icon). Note: Android
-//    itself still shows its own small screen-recording chip in
-//    the status bar while a recording runs - that is the OS, no
-//    app can hide it.
-//  - Video only, no microphone audio, so no mic permission is
-//    needed. Resolution is the screen size capped at 1080 on
-//    the long edge, 30 fps, ~5 Mbps.
+// REPLACE the previous camera version.
+// FIX for "record click hangs":
+//  - Camera open + MediaRecorder.prepare() used to run on the
+//    main thread (onStartCommand). prepare() can block for a
+//    long time and the UI freezes / ANRs.
+//  - Now startForeground() runs on the main thread only, then
+//    ALL heavy work is posted to the camera HandlerThread.
+//  - Added isStarting guard: a second tap while the camera is
+//    still opening is ignored instead of opening the camera
+//    twice and deadlocking.
+//  - Recording state is only set to true in onConfigured,
+//    after the session is really running. The screen polls
+//    this flag instead of guessing, so it cannot get stuck
+//    showing "Recording" when nothing is recording.
+//  - Quality config added: 720p (1280x720) or 1080p
+//    (1920x1080), saved in bluefilm_prefs as video_quality.
+//    If the camera does not offer that exact size, the
+//    closest size at or below it is used.
+//  - V3: PARTIAL_WAKE_LOCK acquired on start, released on stop,
+//    so recording keeps going when the screen turns off / locks.
+//    Needs WAKE_LOCK permission in the manifest.
+//  - V5: FIX for "Video could not be decrypted" on some
+//    recordings. Two bugs could corrupt the .bfenc file:
+//    (a) stopRecording() could run TWICE at the same time -
+//    once from ACTION_STOP on the main thread, once from
+//    CameraDevice.onError / onDisconnected on the camera
+//    thread. Both encrypted the same tmp file to the same
+//    timestamped name, interleaving the ciphertext, so the
+//    GCM tag never verified and decrypt always failed.
+//    Now an isStopping guard lets only the first call in.
+//    (b) encrypt wrote straight to the final .bfenc name, so
+//    a partial / interrupted encrypt still appeared in the
+//    list as a real video. Now it encrypts to dest.tmp,
+//    checks dest length == tmp length + 28 (12 IV + 16 tag),
+//    retries once if it does not match, and only then
+//    renames it to the real name. A bad encrypt leaves
+//    nothing in the list. cleanup() also no longer deletes
+//    tmpFile while a stop is in progress.
+//  - Everything else is unchanged: Camera2 + MediaRecorder,
+//    no preview, foreground service type camera, video-only,
+//    encrypt on stop via BlueFilmCrypto/BlueFilmStore, offline.
 package com.calnyx.app.BlueFilm
 
 import android.app.Notification
@@ -33,16 +49,22 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
-import android.hardware.display.DisplayManager
-import android.hardware.display.VirtualDisplay
+import android.content.pm.PackageManager
+import android.content.pm.ServiceInfo
+import android.hardware.camera2.CameraAccessException
+import android.hardware.camera2.CameraCaptureSession
+import android.hardware.camera2.CameraCharacteristics
+import android.hardware.camera2.CameraDevice
+import android.hardware.camera2.CameraManager
+import android.hardware.camera2.params.StreamConfigurationMap
 import android.media.MediaRecorder
-import android.media.projection.MediaProjection
-import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.Handler
+import android.os.HandlerThread
 import android.os.IBinder
-import android.os.Looper
-import android.util.DisplayMetrics
+import android.os.PowerManager
+import android.util.Size
+import android.view.Surface
 import android.view.WindowManager
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
@@ -53,8 +75,10 @@ class BlueFilmService : Service() {
     companion object {
         const val ACTION_START = "com.calnyx.app.bluefilm.START"
         const val ACTION_STOP = "com.calnyx.app.bluefilm.STOP"
-        private const val EXTRA_RESULT_CODE = "result_code"
-        private const val EXTRA_DATA = "data"
+        const val EXTRA_FACING = "camera_facing"
+        private const val PREFS = "bluefilm_prefs"
+        private const val KEY_FACING = "camera_facing"
+        private const val KEY_QUALITY = "video_quality"
         private const val NOTIF_ID = 2001
         private const val CHANNEL_ID = "bluefilm_rec"
 
@@ -63,14 +87,42 @@ class BlueFilmService : Service() {
             private set
 
         @Volatile
+        var isStarting: Boolean = false
+            private set
+
+        @Volatile
         var startedAtMillis: Long = 0L
             private set
 
-        fun start(context: Context, resultCode: Int, data: Intent) {
+        @Volatile
+        var currentFacing: Int = CameraCharacteristics.LENS_FACING_BACK
+            private set
+
+        fun savedFacing(context: Context): Int {
+            return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .getInt(KEY_FACING, CameraCharacteristics.LENS_FACING_BACK)
+        }
+
+        fun savedQuality(context: Context): Int {
+            return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .getInt(KEY_QUALITY, 720)
+        }
+
+        fun saveFacing(context: Context, facing: Int) {
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .edit().putInt(KEY_FACING, facing).apply()
+        }
+
+        fun saveQuality(context: Context, quality: Int) {
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .edit().putInt(KEY_QUALITY, quality).apply()
+        }
+
+        fun start(context: Context, facing: Int) {
+            saveFacing(context, facing)
             val intent = Intent(context, BlueFilmService::class.java).apply {
                 action = ACTION_START
-                putExtra(EXTRA_RESULT_CODE, resultCode)
-                putExtra(EXTRA_DATA, data)
+                putExtra(EXTRA_FACING, facing)
             }
             ContextCompat.startForegroundService(context, intent)
         }
@@ -83,14 +135,62 @@ class BlueFilmService : Service() {
         }
     }
 
-    private var mediaProjection: MediaProjection? = null
-    private var virtualDisplay: VirtualDisplay? = null
+    private var cameraDevice: CameraDevice? = null
+    private var captureSession: CameraCaptureSession? = null
     private var mediaRecorder: MediaRecorder? = null
     private var tmpFile: File? = null
 
-    private val projectionCallback = object : MediaProjection.Callback() {
-        override fun onStop() {
-            // The projection died (permission revoked, etc.).
+    @Volatile
+    private var isStopping: Boolean = false
+    private var cameraThread: HandlerThread? = null
+    private var cameraHandler: Handler? = null
+    private var orientationHint = 90
+    private var wakeLock: PowerManager.WakeLock? = null
+
+    private val cameraCallback = object : CameraDevice.StateCallback() {
+        override fun onOpened(camera: CameraDevice) {
+            cameraDevice = camera
+            createSession()
+        }
+
+        override fun onDisconnected(camera: CameraDevice) {
+            try { camera.close() } catch (_: Exception) {}
+            cameraDevice = null
+            isStarting = false
+            stopRecording()
+        }
+
+        override fun onError(camera: CameraDevice, error: Int) {
+            try { camera.close() } catch (_: Exception) {}
+            cameraDevice = null
+            isStarting = false
+            stopRecording()
+        }
+    }
+
+    private val sessionCallback = object : CameraCaptureSession.StateCallback() {
+        override fun onConfigured(session: CameraCaptureSession) {
+            captureSession = session
+            try {
+                val recorder = mediaRecorder ?: return
+                val request = cameraDevice?.createCaptureRequest(
+                    CameraDevice.TEMPLATE_RECORD
+                )?.apply {
+                    addTarget(recorder.surface)
+                }?.build() ?: return
+                session.setRepeatingRequest(request, null, cameraHandler)
+                recorder.start()
+                isStarting = false
+                isRecording = true
+                startedAtMillis = System.currentTimeMillis()
+            } catch (_: Exception) {
+                isStarting = false
+                stopRecording()
+            }
+        }
+
+        override fun onConfigureFailed(session: CameraCaptureSession) {
+            isStarting = false
             stopRecording()
         }
     }
@@ -100,53 +200,94 @@ class BlueFilmService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_START -> {
-                val resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, 0)
-                val data: Intent? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    intent.getParcelableExtra(EXTRA_DATA, Intent::class.java)
-                } else {
-                    @Suppress("DEPRECATION")
-                    intent.getParcelableExtra(EXTRA_DATA)
-                }
-                if (data != null) startRecording(resultCode, data) else stopSelf()
+                val facing = intent.getIntExtra(EXTRA_FACING, savedFacing(this))
+                currentFacing = facing
+                startRecording(facing)
             }
             ACTION_STOP -> stopRecording()
         }
         return START_NOT_STICKY
     }
 
-    private fun startRecording(resultCode: Int, data: Intent) {
-        if (isRecording) return
-        // Foreground FIRST, before the heavier setup, so the
-        // system never kills the service for being late.
-        startForeground(NOTIF_ID, buildNotification())
+    private fun chooseCameraId(facing: Int): String? {
+        val manager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
+        for (id in manager.cameraIdList) {
+            val chars = manager.getCameraCharacteristics(id)
+            if (chars.get(CameraCharacteristics.LENS_FACING) == facing) return id
+        }
+        return manager.cameraIdList.firstOrNull()
+    }
+
+    private fun chooseVideoSize(map: StreamConfigurationMap?, quality: Int): Size {
+        val target = if (quality >= 1080) Size(1920, 1080) else Size(1280, 720)
+        val sizes = map?.getOutputSizes(MediaRecorder::class.java)
+            ?: return target
+        if (sizes.contains(target)) return target
+        val fitting = sizes.filter { it.width <= target.width && it.height <= target.height }
+        return fitting.maxByOrNull { it.width * it.height }
+            ?: sizes.minByOrNull { it.width * it.height }
+            ?: target
+    }
+
+    private fun startRecording(facing: Int) {
+        if (isRecording || isStarting) return
+        if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.CAMERA)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            stopSelf()
+            return
+        }
+        isStarting = true
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(NOTIF_ID, buildNotification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA)
+        } else {
+            startForeground(NOTIF_ID, buildNotification())
+        }
+        // Heavy work OFF the main thread from here on.
+        val thread = HandlerThread("BlueFilmCamera").apply { start() }
+        cameraThread = thread
+        cameraHandler = Handler(thread.looper)
+        cameraHandler?.post { startRecordingInternal(facing) }
+    }
+
+    private fun startRecordingInternal(facing: Int) {
         try {
-            val pm = getSystemService(Context.MEDIA_PROJECTION_SERVICE)
-                as MediaProjectionManager
-            val projection = pm.getMediaProjection(resultCode, data)
-                ?: run { stopSelf(); return }
-            mediaProjection = projection
-            projection.registerCallback(
-                projectionCallback,
-                Handler(Looper.getMainLooper())
-            )
-
-            val wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
-            val metrics = DisplayMetrics()
-            @Suppress("DEPRECATION")
-            wm.defaultDisplay.getMetrics(metrics)
-            val scale = if (maxOf(metrics.widthPixels, metrics.heightPixels) > 1080) {
-                1080f / maxOf(metrics.widthPixels, metrics.heightPixels)
-            } else {
-                1f
+            // Keep the CPU awake when the screen turns off / locks,
+            // otherwise the recorder can stall on some phones.
+            try {
+                val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+                wakeLock = pm.newWakeLock(
+                    PowerManager.PARTIAL_WAKE_LOCK, "CalNyx:BlueFilmRecord"
+                ).apply { acquire(10 * 60 * 1000L) }
+            } catch (_: Exception) {}
+            val manager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
+            val cameraId = chooseCameraId(facing) ?: run {
+                isStarting = false
+                cleanup()
+                stopSelf()
+                return
             }
-            val vw = (metrics.widthPixels * scale).toInt()
-            val vh = (metrics.heightPixels * scale).toInt()
-
-            tmpFile = File(
-                filesDir,
-                "bluefilm/.tmp_${System.currentTimeMillis()}.mp4"
-            ).apply { parentFile?.mkdirs() }
-
+            val chars = manager.getCameraCharacteristics(cameraId)
+            val map = chars.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
+            val videoSize = chooseVideoSize(map, savedQuality(this))
+            val sensorOrientation = chars.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 0
+            @Suppress("DEPRECATION")
+            val rotation = (getSystemService(Context.WINDOW_SERVICE) as WindowManager)
+                .defaultDisplay.rotation
+            val deviceDegrees = when (rotation) {
+                Surface.ROTATION_0 -> 0
+                Surface.ROTATION_90 -> 90
+                Surface.ROTATION_180 -> 180
+                Surface.ROTATION_270 -> 270
+                else -> 0
+            }
+            orientationHint = if (facing == CameraCharacteristics.LENS_FACING_FRONT) {
+                (sensorOrientation + deviceDegrees) % 360
+            } else {
+                (sensorOrientation - deviceDegrees + 360) % 360
+            }
+            tmpFile = File(filesDir, "bluefilm/.tmp_${System.currentTimeMillis()}.mp4")
+                .apply { parentFile?.mkdirs() }
             val recorder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 MediaRecorder(this)
             } else {
@@ -158,143 +299,159 @@ class BlueFilmService : Service() {
                 setVideoSource(MediaRecorder.VideoSource.SURFACE)
                 setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
                 setVideoEncoder(MediaRecorder.VideoEncoder.H264)
-                setVideoSize(vw, vh)
+                setVideoSize(videoSize.width, videoSize.height)
                 setVideoFrameRate(30)
                 setVideoEncodingBitRate(5_000_000)
+                setOrientationHint(orientationHint)
                 setOutputFile(tmpFile!!.absolutePath)
                 prepare()
             }
-            virtualDisplay = projection.createVirtualDisplay(
-                "BlueFilm",
-                vw,
-                vh,
-                metrics.densityDpi,
-                DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
-                recorder.surface,
-                null,
-                null
-            )
-            recorder.start()
-            isRecording = true
-            startedAtMillis = System.currentTimeMillis()
+            try {
+                manager.openCamera(cameraId, cameraCallback, cameraHandler)
+            } catch (e: CameraAccessException) {
+                isStarting = false
+                cleanup()
+                stopSelf()
+            } catch (e: SecurityException) {
+                isStarting = false
+                cleanup()
+                stopSelf()
+            }
         } catch (_: Exception) {
+            isStarting = false
             cleanup()
             stopSelf()
         }
     }
 
+    private fun createSession() {
+        val recorder = mediaRecorder ?: return
+        val device = cameraDevice ?: return
+        try {
+            @Suppress("DEPRECATION")
+            device.createCaptureSession(listOf(recorder.surface), sessionCallback, cameraHandler)
+        } catch (_: Exception) {
+            isStarting = false
+            stopRecording()
+        }
+    }
+
     private fun stopRecording() {
+        synchronized(this) {
+            if (isStopping) return
+            isStopping = true
+        }
         if (!isRecording) {
-            stopForeground(STOP_FOREGROUND_REMOVE)
+            isStarting = false
+            isStopping = false
+            cleanup()
+            try { stopForeground(STOP_FOREGROUND_REMOVE) } catch (_: Exception) {}
             stopSelf()
             return
         }
         try {
-            try {
-                mediaRecorder?.stop()
-            } catch (_: Exception) {
-            }
-            try {
-                mediaRecorder?.reset()
-            } catch (_: Exception) {
-            }
-            try {
-                mediaRecorder?.release()
-            } catch (_: Exception) {
-            }
+            try { captureSession?.stopRepeating() } catch (_: Exception) {}
+            try { captureSession?.close() } catch (_: Exception) {}
+            captureSession = null
+            try { mediaRecorder?.stop() } catch (_: Exception) {}
+            try { mediaRecorder?.reset() } catch (_: Exception) {}
+            try { mediaRecorder?.release() } catch (_: Exception) {}
             mediaRecorder = null
-            try {
-                virtualDisplay?.release()
-            } catch (_: Exception) {
-            }
-            virtualDisplay = null
-            try {
-                mediaProjection?.unregisterCallback(projectionCallback)
-            } catch (_: Exception) {
-            }
-            try {
-                mediaProjection?.stop()
-            } catch (_: Exception) {
-            }
-            mediaProjection = null
-            // Encrypt the raw recording into the Blue Film folder,
-            // then delete the playable temp file.
+            try { cameraDevice?.close() } catch (_: Exception) {}
+            cameraDevice = null
             val tmp = tmpFile
             if (tmp != null && tmp.exists() && tmp.length() > 0) {
                 try {
                     val dest = BlueFilmStore.newVideoFile(this)
-                    BlueFilmCrypto.encryptFile(this, tmp, dest)
-                } catch (_: Exception) {
-                }
+                    val tmpDest = File(dest.parentFile, dest.name + ".tmp")
+                    var ok = false
+                    for (attempt in 0 until 2) {
+                        if (ok) break
+                        try {
+                            if (tmpDest.exists()) tmpDest.delete()
+                            BlueFilmCrypto.encryptFile(this, tmp, tmpDest)
+                            // Encrypted size must be exactly plaintext + 28
+                            // (12-byte IV + 16-byte GCM tag). Anything else
+                            // means the encrypt was cut short.
+                            if (tmpDest.exists() && tmpDest.length() == tmp.length() + 28) {
+                                ok = tmpDest.renameTo(dest)
+                                if (!ok) tmpDest.delete()
+                            } else {
+                                tmpDest.delete()
+                            }
+                        } catch (_: Exception) {
+                            tmpDest.delete()
+                        }
+                    }
+                } catch (_: Exception) {}
                 tmp.delete()
             }
             tmpFile = null
         } catch (_: Exception) {
         } finally {
             isRecording = false
+            isStarting = false
+            isStopping = false
             startedAtMillis = 0L
-            stopForeground(STOP_FOREGROUND_REMOVE)
+            releaseWakeLock()
+            try { cameraThread?.quitSafely() } catch (_: Exception) {}
+            cameraThread = null
+            cameraHandler = null
+            try { stopForeground(STOP_FOREGROUND_REMOVE) } catch (_: Exception) {}
             stopSelf()
         }
     }
 
+    private fun releaseWakeLock() {
+        try {
+            if (wakeLock?.isHeld == true) wakeLock?.release()
+        } catch (_: Exception) {}
+        wakeLock = null
+    }
+
     private fun cleanup() {
-        try {
-            mediaRecorder?.release()
-        } catch (_: Exception) {
-        }
+        releaseWakeLock()
+        try { captureSession?.close() } catch (_: Exception) {}
+        captureSession = null
+        try { mediaRecorder?.release() } catch (_: Exception) {}
         mediaRecorder = null
-        try {
-            virtualDisplay?.release()
-        } catch (_: Exception) {
+        try { cameraDevice?.close() } catch (_: Exception) {}
+        cameraDevice = null
+        // Never delete the tmp recording while a stop is in
+        // progress - stopRecording() owns tmpFile then.
+        if (!isRecording && !isStopping) {
+            tmpFile?.delete()
+            tmpFile = null
         }
-        virtualDisplay = null
-        try {
-            mediaProjection?.unregisterCallback(projectionCallback)
-        } catch (_: Exception) {
-        }
-        try {
-            mediaProjection?.stop()
-        } catch (_: Exception) {
-        }
-        mediaProjection = null
-        tmpFile?.delete()
-        tmpFile = null
         isRecording = false
+        isStarting = false
         startedAtMillis = 0L
+        try { cameraThread?.quitSafely() } catch (_: Exception) {}
+        cameraThread = null
+        cameraHandler = null
     }
 
     override fun onDestroy() {
-        if (isRecording) cleanup()
+        if (isRecording || isStarting) cleanup()
         super.onDestroy()
     }
 
-    // Minimal, generic notification: low priority, no badge, no
-    // status-bar icon, no "Recording" wording. The Stop action
-    // lets the user stop from the shade when the app is closed.
     private fun buildNotification(): Notification {
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                "CalNyx",
-                NotificationManager.IMPORTANCE_MIN
-            ).apply { setShowBadge(false) }
+            val channel = NotificationChannel(CHANNEL_ID, "Video recording", NotificationManager.IMPORTANCE_LOW)
+                .apply { setShowBadge(false) }
             nm.createNotificationChannel(channel)
         }
-        val stopIntent = Intent(this, BlueFilmService::class.java).apply {
-            action = ACTION_STOP
-        }
+        val stopIntent = Intent(this, BlueFilmService::class.java).apply { action = ACTION_STOP }
         val stopPending = PendingIntent.getService(
-            this,
-            0,
-            stopIntent,
+            this, 0, stopIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(applicationInfo.icon)
-            .setContentTitle("CalNyx")
-            .setContentText("Running")
+            .setContentTitle("CalNyx - Recording video")
+            .setContentText("Camera is recording. Tap Stop to finish.")
             .setOngoing(true)
             .setShowWhen(false)
             .addAction(0, "Stop", stopPending)

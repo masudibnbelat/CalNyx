@@ -1,3 +1,34 @@
+// FILE: app/src/main/java/com/calnyx/app/ui/screens/NormalCalculatorScreen.kt
+// REPLACE the whole file. ANS + RIGHTDRAWER version, based on LIFTED.
+// The user asked (2026-11-06):
+//  1. DRAWER moves to the RIGHT - done in NavGraph (right-edge
+//     swipe opens it, left-edge swipe opens nothing). This file
+//     does NOT change the drawer.
+//  2. HISTORY stays on LEFT swipe - it already was: the keypad
+//     pager is page 0 = keypad, page 1 = history, so a left
+//     swipe over the keypad already opens History. NO change
+//     needed here (the user corrected himself mid-sentence
+//     and the corrected version matches the code).
+//  3. LAB FLASK -> ANS KEY: the round flask toggle is now an
+//     "Ans" key. It inserts the last answer (the result of
+//     the last "=") at the cursor. No tap opens the scientific
+//     keys any more.
+//  4. PULL-DOWN scientific keys: drag the keypad DOWN and the
+//     keys slide down like a drawer, revealing the hidden
+//     scientific keys (the ones the flask used to show);
+//     drag UP to go back to digits. The mode still uses the
+//     same scientificExpanded state and the same key rows.
+//  5. BLACK / WHITE ONLY: the theme's primary (the only
+//     chromatic colour) is gone from this screen - the live
+//     result, the caret, Clear, the page dots, the selection
+//     handle and the = / backspace keys now use plain
+//     black / white. The grey keys were already black-white.
+//  6. FULLY ROUND KEYS: every key is a perfect circle now.
+//     Each key measures its own cell (BoxWithConstraints)
+//     and draws a circle with the smaller side as the
+//     diameter, so it stays round on any phone.
+//  NO function changed otherwise: vault secret, selection,
+//  history, E notation, operator handling all as in LIFTED.
 package com.calnyx.app.ui.screens
 
 import androidx.compose.animation.*
@@ -8,6 +39,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -22,7 +54,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Backspace
-import androidx.compose.material.icons.filled.Science
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -32,6 +63,7 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.*
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
@@ -77,6 +109,24 @@ fun NormalCalculatorScreen(
         val finalResult by viewModel.finalResult.collectAsState()
         val history by historyViewModel.history.collectAsState()
         var scientificExpanded by remember { mutableStateOf(false) }
+
+        // PULL-DOWN slide animation for the keypad: when the
+        // user drags the keypad down/up, scientificExpanded
+        // flips and the keys slide in like a drawer (from
+        // above when opening, from below when closing).
+        // Skipped on the very first composition so the keys
+        // do not slide in when the app opens.
+        val slideY = remember { Animatable(0f) }
+        var firstSlide by remember { mutableStateOf(true) }
+        LaunchedEffect(scientificExpanded) {
+                if (firstSlide) {
+                        firstSlide = false
+                        return@LaunchedEffect
+                }
+                slideY.snapTo(if (scientificExpanded) -90f else 90f)
+                slideY.animateTo(0f, animationSpec = tween(250))
+        }
+        var pullAccum by remember { mutableFloatStateOf(0f) }
 
         // The keypad area is a 2-page horizontal pager: page 0 is the
         // keypad, page 1 is the history. Swiping left/right over the
@@ -403,7 +453,7 @@ fun NormalCalculatorScreen(
                                                                         val caretColor =
                                                                                 MaterialTheme
                                                                                         .colorScheme
-                                                                                        .primary
+                                                                                        .onSurface
                                                                         val clipboardManager =
                                                                                 LocalClipboardManager
                                                                                         .current
@@ -542,9 +592,12 @@ fun NormalCalculatorScreen(
                                                                                                                         )
                                                                                                                 )
                                                                                                                 .background(
+                                                                                                                        // BLACK / WHITE ONLY: the selection
+                                                                                                                        // bar was secondaryContainer, which
+                                                                                                                        // is a tinted colour in the theme.
                                                                                                                         MaterialTheme
                                                                                                                                 .colorScheme
-                                                                                                                                .secondaryContainer
+                                                                                                                                .surfaceVariant
                                                                                                                 )
                                                                                                                 .padding(
                                                                                                                         horizontal =
@@ -1177,7 +1230,7 @@ fun NormalCalculatorScreen(
                                                                         color =
                                                                                 MaterialTheme
                                                                                         .colorScheme
-                                                                                        .primary,
+                                                                                        .onSurface,
                                                                         textAlign = TextAlign.End,
                                                                         maxLines = 1,
                                                                         softWrap = false
@@ -1190,10 +1243,12 @@ fun NormalCalculatorScreen(
                                 }
 
                                 // Scientific strip — ONE long pill under the panel
-                                // (√, π, xⁿ, E) plus a SEPARATE round toggle button
-                                // beside it, like the reference: a flask icon in
-                                // number mode, "123" in scientific mode. The toggle
-                                // swaps the keypad's digits for scientific text keys.
+                                // (√, π, xⁿ, E) plus a SEPARATE round ANS button
+                                // beside it. Ans inserts the last answer at the
+                                // cursor. The scientific keys are no longer behind
+                                // a tap: PULL the keypad DOWN to reveal them (see
+                                // the drag detector on the keypad below), pull UP
+                                // to go back to digits.
                                 // The strip stays put when history is showing.
                                 Row(
                                         modifier =
@@ -1265,31 +1320,23 @@ fun NormalCalculatorScreen(
                                                                                 .surfaceVariant
                                                                 )
                                                                 .clickable {
-                                                                        scientificExpanded =
-                                                                                !scientificExpanded
+                                                                        // ANS: insert the last answer (the result
+                                                                        // of the last "=") at the cursor. If there
+                                                                        // is no answer yet, do nothing.
+                                                                        val ans = finalResult
+                                                                                ?: if (expression.isNotBlank()) result else null
+                                                                        if (!ans.isNullOrBlank()) handleKeyLabel(ans)
                                                                 },
                                                 contentAlignment = Alignment.Center
                                         ) {
-                                                if (scientificExpanded) {
-                                                        Text(
-                                                                text = "123",
-                                                                fontSize = 15.sp,
-                                                                fontWeight = FontWeight.Bold,
-                                                                color =
-                                                                        MaterialTheme.colorScheme
-                                                                                .onSurface
-                                                        )
-                                                } else {
-                                                        Icon(
-                                                                Icons.Default.Science,
-                                                                contentDescription =
-                                                                        "Scientific functions",
-                                                                tint =
-                                                                        MaterialTheme.colorScheme
-                                                                                .onSurface,
-                                                                modifier = Modifier.size(24.dp)
-                                                        )
-                                                }
+                                                Text(
+                                                        text = "Ans",
+                                                        fontSize = 15.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color =
+                                                                MaterialTheme.colorScheme
+                                                                        .onSurface
+                                                )
                                         }
                                 }
 
@@ -1304,22 +1351,44 @@ fun NormalCalculatorScreen(
                                         if (page == 0) {
 
                                                 // Keypad — 4 columns x 5 rows, two modes.
-                                                // NUMBER mode: squircle keys like the reference.
+                                                // NUMBER mode: round keys like the reference.
                                                 // SCIENTIFIC mode: the AC row and the right-hand
                                                 // operator column (÷, ×, −, +, ⌫, =) stay as
-                                                // squircle keys, and the digits are swapped for
-                                                // PLAIN TEXT scientific keys (|x| ln log /
+                                                // round keys, and the digits are swapped for
+                                                // scientific text keys (|x| ln log /
                                                 // sin cos tan / sin⁻¹ cos⁻¹ tan⁻¹ / e eˣ).
                                                 // The rows SHARE the whole area equally and
                                                 // fill it completely, strip to bottom, exactly
                                                 // like the reference — no fixed heights, no
                                                 // dead gaps. Each entry is (display, label).
+                                                // PULL-DOWN: drag the keypad DOWN to reveal
+                                                // the scientific keys, drag UP to go back to
+                                                // digits. The keys slide down like a drawer
+                                                // when they change (slideY above).
                                                 Column(
                                                         modifier =
                                                                 Modifier.fillMaxSize()
+                                                                        .graphicsLayer { translationY = slideY.value }
                                                                         .padding(
                                                                                 horizontal = 12.dp
-                                                                        ),
+                                                                        )
+                                                                        .pointerInput(scientificExpanded) {
+                                                                                val threshold = 40.dp.toPx()
+                                                                                detectVerticalDragGestures(
+                                                                                        onVerticalDrag = { _, dragAmount ->
+                                                                                                pullAccum += dragAmount
+                                                                                                if (pullAccum > threshold && !scientificExpanded) {
+                                                                                                        scientificExpanded = true
+                                                                                                        pullAccum = 0f
+                                                                                                } else if (pullAccum < -threshold && scientificExpanded) {
+                                                                                                        scientificExpanded = false
+                                                                                                        pullAccum = 0f
+                                                                                                }
+                                                                                        },
+                                                                                        onDragEnd = { pullAccum = 0f },
+                                                                                        onDragCancel = { pullAccum = 0f }
+                                                                                )
+                                                                        },
                                                         verticalArrangement =
                                                                 Arrangement.spacedBy(8.dp)
                                                 ) {
@@ -1911,7 +1980,7 @@ fun NormalCalculatorScreen(
                                                                                                                                 color =
                                                                                                                                         MaterialTheme
                                                                                                                                                 .colorScheme
-                                                                                                                                                .primary
+                                                                                                                                                .onSurface
                                                                                                                         )
                                                                                                                 }
                                                                                                         }
@@ -2017,7 +2086,7 @@ Text(
                                                                                 if (active) {
                                                                                         MaterialTheme
                                                                                                 .colorScheme
-                                                                                                .primary
+                                                                                                .onSurface
                                                                                 } else {
                                                                                         MaterialTheme
                                                                                                 .colorScheme
@@ -2051,7 +2120,7 @@ private fun SelectionHandle(
                 modifier =
                         modifier.size(20.dp)
                                 .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.primary)
+                                .background(MaterialTheme.colorScheme.onSurface)
                                 .pointerInput(Unit) {
                                         var anchor = 0f
                                         var total = 0f
@@ -2108,33 +2177,41 @@ private fun ScientificTextKey(
         onClick: () -> Unit
 ) {
         val interactionSource = remember { MutableInteractionSource() }
-        // FIX: scientific key-গুলোতে এখন সংখ্যার বাটনের মতো
-        // background + border আছে, শুধু লেখা নয়।
-        Box(
-                modifier =
-                        modifier
-                                .clip(RoundedCornerShape(percent = 28))
-                                .background(MaterialTheme.colorScheme.surfaceVariant)
-                                .border(
-                                        1.dp,
-                                        MaterialTheme.colorScheme.outlineVariant,
-                                        RoundedCornerShape(percent = 28)
-                                )
-                                .clickable(
-                                        interactionSource = interactionSource,
-                                        indication = null,
-                                        onClick = onClick
-                                ),
+        // FULLY ROUND key: the cell is a rectangle, so the key
+        // measures its own cell (BoxWithConstraints) and draws
+        // a circle with the smaller side as the diameter - a
+        // perfect circle on any phone. Black / white only.
+        BoxWithConstraints(
+                modifier = modifier,
                 contentAlignment = Alignment.Center
         ) {
-                Text(
-                        text = text,
-                        fontSize =
-                                if (text.length >= 4) (20f * fontScale).sp
-                                else (24f * fontScale).sp,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurface
-                )
+                val size = maxWidth.coerceAtMost(maxHeight)
+                Box(
+                        modifier =
+                                Modifier.size(size)
+                                        .clip(CircleShape)
+                                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                                        .border(
+                                                1.dp,
+                                                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f),
+                                                CircleShape
+                                        )
+                                        .clickable(
+                                                interactionSource = interactionSource,
+                                                indication = null,
+                                                onClick = onClick
+                                        ),
+                        contentAlignment = Alignment.Center
+                ) {
+                        Text(
+                                text = text,
+                                fontSize =
+                                        if (text.length >= 4) (20f * fontScale).sp
+                                        else (24f * fontScale).sp,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurface
+                        )
+                }
         }
 }
 
@@ -2149,39 +2226,50 @@ fun CalculatorButton(
         onLongClick: (() -> Unit)? = null,
         onClick: () -> Unit
 ) {
-        // Reference colours: EVERY key is the same container colour,
-        // except ⌫ and =, which are filled with the accent (primary).
+        // Colours - BLACK / WHITE ONLY: every key is the same
+        // container colour, except ⌫ and =, which are filled
+        // with the opposite tone (black in light mode, white
+        // in dark mode). No accent colour anywhere.
         val backgroundColor =
                 if (text == "=" || text == "⌫") {
-                        MaterialTheme.colorScheme.primary
+                        MaterialTheme.colorScheme.onSurface
                 } else {
                         MaterialTheme.colorScheme.surfaceVariant
                 }
         val contentColor =
                 if (text == "=" || text == "⌫") {
-                        MaterialTheme.colorScheme.onPrimary
+                        MaterialTheme.colorScheme.surface
                 } else {
                         MaterialTheme.colorScheme.onSurface
                 }
 
         val interactionSource = remember { MutableInteractionSource() }
 
-        // ONE implementation for every key: a squircle (28% corners)
-        // that fills its whole cell. No press animation, no colour
-        // flash. (The compact parameter is kept for call-site
-        // compatibility; sizing is driven by fontScale now.)
-        Box(
-                modifier =
-                        modifier.clip(RoundedCornerShape(percent = 28))
-                                .background(backgroundColor)
-                                .combinedClickable(
-                                        interactionSource = interactionSource,
-                                        indication = null,
-                                        onClick = onClick,
-                                        onLongClick = onLongClick
-                                ),
+        // FULLY ROUND key: the cell is a rectangle, so the key
+        // measures its own cell (BoxWithConstraints) and draws
+        // a circle with the smaller side as the diameter - a
+        // perfect circle on any phone. No press animation, no
+        // colour flash. (The compact parameter is kept for
+        // call-site compatibility; sizing is driven by fontScale now.)
+        BoxWithConstraints(
+                modifier = modifier,
                 contentAlignment = Alignment.Center
-        ) { CalculatorButtonContent(text, contentColor, fontScale) }
+        ) {
+                val size = maxWidth.coerceAtMost(maxHeight)
+                Box(
+                        modifier =
+                                Modifier.size(size)
+                                        .clip(CircleShape)
+                                        .background(backgroundColor)
+                                        .combinedClickable(
+                                                interactionSource = interactionSource,
+                                                indication = null,
+                                                onClick = onClick,
+                                                onLongClick = onLongClick
+                                        ),
+                        contentAlignment = Alignment.Center
+                ) { CalculatorButtonContent(text, contentColor, fontScale) }
+        }
 }
 
 @Composable

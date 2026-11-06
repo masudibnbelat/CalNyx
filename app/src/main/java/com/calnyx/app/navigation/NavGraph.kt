@@ -1,4 +1,20 @@
 // FILE: app/src/main/java/com/calnyx/app/navigation/NavGraph.kt
+// RIGHTDRAWER VERSION - replace your old NavGraph.kt with this file.
+// Based on SPLIT. Only the drawer changes:
+//  1. The drawer now opens from the RIGHT, not the left.
+//     Material3's ModalNavigationDrawer only opens from the
+//     left, so the right drawer is a custom panel (scrim +
+//     2/3-wide sheet sliding in from the right edge).
+//  2. RIGHT-EDGE SWIPE opens it on every screen (a 28dp
+//     strip on the right edge; drag left to open). LEFT-edge
+//     swipe no longer opens anything. The hamburger
+//     (top-right) still opens it, and tapping a tool,
+//     the scrim, or dragging the panel right closes it.
+//  3. Everything else is unchanged: drawer content
+//     (logo, version, Update icon, tools list, theme
+//     toggle), the 2/3 width, the 0.55 scrim, the reopen
+//     rule, vault hiding.
+// RIGHTDRAWER VERSION - replace your old NavGraph.kt with this file.
 // SPLIT VERSION - replace your old NavGraph.kt with this file.
 // Based on MOAN (DRAWER + FIXED2). Only changes:
 // 1. NO TABS. MoanControl is split into two drawer sections:
@@ -39,6 +55,8 @@
 package com.calnyx.app.navigation
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -47,6 +65,8 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -72,13 +92,9 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.ModalDrawerSheet
-import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.NavigationDrawerItemDefaults
-import androidx.compose.material3.rememberDrawerState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -98,10 +114,12 @@ import android.app.Activity
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import kotlinx.coroutines.delay
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -277,7 +295,13 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
     var normalHistoryOpen by remember { mutableStateOf(false) }
 
     var showUpdate by remember { mutableStateOf(false) }
-    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+    // RIGHT DRAWER state - a plain boolean, not DrawerState:
+    // Material3's ModalNavigationDrawer only opens from the
+    // LEFT, so the right drawer is a custom sliding panel
+    // (see the overlay at the bottom of this file). The
+    // hamburger, the right-edge swipe and the scrim all
+    // drive this one value.
+    var drawerOpen by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     // App version from PackageManager (BuildConfig is not enabled
@@ -346,7 +370,11 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
     }
 
     fun closeDrawerAndGo(route: String?, after: () -> Unit = {}) {
-        scope.launch { drawerState.close() }.invokeOnCompletion {
+        drawerOpen = false
+        scope.launch {
+            // Let the panel slide away before navigating,
+            // like ModalNavigationDrawer's close() did.
+            delay(280)
             after()
             if (route != null && route != currentRoute) {
                 navController.navigate(route) {
@@ -358,161 +386,25 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
         }
     }
 
-    // Left drawer - header + list. Vault / AppLock are NOT listed here.
+    // Right drawer - header + list. Vault / AppLock are NOT listed here.
     val drawerVisible = currentRoute != Screen.Vault.route &&
         currentRoute != Screen.VaultSetup.route &&
         currentRoute != Screen.AppLock.route
     // Drawer is 2/3 of the screen, not full screen. The remaining
     // 1/3 stays visible behind the scrim, dimmed.
     val drawerWidth = (LocalConfiguration.current.screenWidthDp * 2 / 3).dp
-    ModalNavigationDrawer(
-        drawerState = drawerState,
-        gesturesEnabled = drawerVisible,
-        scrimColor = Color.Black.copy(alpha = 0.55f),
-        drawerContent = {
-            ModalDrawerSheet(
-                drawerContainerColor = cardBg,
-                drawerContentColor = onPageColor,
-                modifier = Modifier.width(drawerWidth).fillMaxHeight()
-            ) {
-                Column(
-                    modifier = Modifier.fillMaxSize()
-                        .statusBarsPadding()
-                        .padding(horizontal = 16.dp, vertical = 12.dp)
-                ) {
-                    // Header: logo + CalNyx + version + Update icon.
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Box(
-                            modifier = Modifier.size(52.dp)
-                                .shadow(6.dp, CircleShape)
-                                .clip(CircleShape)
-                                .background(if (darkTheme) NavOffWhite else NavOffBlack),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                Icons.Default.Calculate,
-                                contentDescription = "CalNyx",
-                                tint = if (darkTheme) NavOffBlack else NavOffWhite,
-                                modifier = Modifier.size(28.dp)
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "CalNyx",
-                                fontSize = 22.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = onPageColor
-                            )
-                            if (appVersion.isNotEmpty()) {
-                                Text(
-                                    text = "Version $appVersion",
-                                    fontSize = 12.sp,
-                                    color = Color.Gray
-                                )
-                            }
-                        }
-                        IconButton(onClick = { closeDrawerAndGo(null) { showUpdate = true } }) {
-                            Icon(
-                                Icons.Default.Update,
-                                contentDescription = "App update",
-                                tint = onPageColor,
-                                modifier = Modifier.size(24.dp)
-                            )
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(16.dp))
-                    HorizontalDivider(color = if (darkTheme) NavBorderDark else NavBorderLight)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    // Tools list: icon + title, one row per tool.
-                    // To add a feature later, add its Screen to
-                    // menuScreens, or add another NavigationDrawerItem
-                    // here in the same pattern.
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        menuScreens.forEach { screen ->
-                            NavigationDrawerItem(
-                                label = {
-                                    // Single line, never wrap: "Number System"
-                                    // broke into two lines before. If a title
-                                    // is ever too long it ellipsizes instead.
-                                    Text(
-                                        screen.title,
-                                        fontSize = 15.sp,
-                                        maxLines = 1,
-                                        softWrap = false,
-                                        overflow = TextOverflow.Ellipsis,
-                                        fontWeight = if (currentRoute == screen.route) FontWeight.SemiBold else FontWeight.Medium
-                                    )
-                                },
-                                icon = {
-                                    Icon(
-                                        screen.icon,
-                                        contentDescription = screen.title,
-                                        modifier = Modifier.size(24.dp)
-                                    )
-                                },
-                                selected = currentRoute == screen.route,
-                                onClick = { closeDrawerAndGo(screen.route) },
-                                badge = {
-                                    // Red dot only for the two special
-                                    // sections, only when selected.
-                                    if (currentRoute == screen.route &&
-                                        (screen.route == Screen.Moan.route ||
-                                            screen.route == Screen.Hardcore.route)
-                                    ) {
-                                        Box(
-                                            modifier = Modifier.size(8.dp)
-                                                .clip(CircleShape)
-                                                .background(NavRed)
-                                        )
-                                    }
-                                },
-                                colors = NavigationDrawerItemDefaults.colors(
-                                    selectedContainerColor = if (darkTheme) NavOffWhite else NavOffBlack,
-                                    selectedIconColor = if (darkTheme) NavOffBlack else NavOffWhite,
-                                    selectedTextColor = if (darkTheme) NavOffBlack else NavOffWhite,
-                                    unselectedContainerColor = Color.Transparent,
-                                    unselectedIconColor = onPageColor,
-                                    unselectedTextColor = onPageColor
-                                ),
-                                shape = RoundedCornerShape(16.dp),
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        }
-                    }
-                    Spacer(modifier = Modifier.weight(1f))
-                    HorizontalDivider(color = if (darkTheme) NavBorderDark else NavBorderLight)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    // Theme toggle at the bottom - kept from the old
-                    // bottom sheet header so the function is not lost.
-                    NavigationDrawerItem(
-                        label = { Text(if (darkTheme) "Light mode" else "Dark mode", fontSize = 16.sp, fontWeight = FontWeight.Medium) },
-                        icon = {
-                            Icon(
-                                if (darkTheme) Icons.Default.LightMode else Icons.Default.DarkMode,
-                                contentDescription = "Toggle theme",
-                                modifier = Modifier.size(24.dp)
-                            )
-                        },
-                        selected = false,
-                        onClick = { scope.launch { drawerState.close() }; onToggleTheme() },
-                        colors = NavigationDrawerItemDefaults.colors(
-                            selectedContainerColor = Color.Transparent,
-                            unselectedContainerColor = Color.Transparent,
-                            unselectedIconColor = onPageColor,
-                            unselectedTextColor = onPageColor
-                        ),
-                        shape = RoundedCornerShape(16.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                }
-            }
-        }
-    ) {
+    // Slide + scrim animations for the right drawer.
+    val drawerOffset by animateDpAsState(
+        targetValue = if (drawerOpen) 0.dp else drawerWidth,
+        animationSpec = tween(300), label = "drawerOffset"
+    )
+    val scrimAlpha by animateFloatAsState(
+        targetValue = if (drawerOpen) 0.55f else 0f,
+        animationSpec = tween(280), label = "scrimAlpha"
+    )
+    // The drawer must never stay open on a screen that hides
+    // it (Vault / VaultSetup / AppLock).
+    LaunchedEffect(drawerVisible) { if (!drawerVisible) drawerOpen = false }
     Box(modifier = Modifier.fillMaxSize().background(pageBg)) {
         val start = startRoute
         if (start != null) {
@@ -643,7 +535,7 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
                             // has its own top-left 3-dot button, and the
                             // two bars mixed together when both were left.
                             Spacer(modifier = Modifier.size(36.dp))
-                            TopBarCircleButton(onClick = { scope.launch { drawerState.open() } }) {
+                            TopBarCircleButton(onClick = { drawerOpen = true }) {
                                 Icon(
                                         Icons.Default.Menu,
                                         contentDescription = "Menu",
@@ -660,7 +552,209 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
                 UpdateDialog(onDismiss = { showUpdate = false })
             }
         }
-    }
+
+        // RIGHT DRAWER - custom panel sliding in from the
+        // right. Material3's ModalNavigationDrawer only
+        // opens from the left, so this is built by hand:
+        // a scrim over the content, a panel 2/3 wide
+        // sliding in from the right edge, and a 28dp
+        // swipe zone on the right edge that opens it.
+        // Left-edge swipe no longer opens anything.
+        if (drawerVisible) {
+            if (scrimAlpha > 0.01f) {
+                Box(
+                    modifier = Modifier.fillMaxSize()
+                        .background(Color.Black.copy(alpha = scrimAlpha))
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null
+                        ) { drawerOpen = false }
+                )
+            }
+            if (drawerOpen || drawerOffset < drawerWidth) {
+                Box(
+                    modifier = Modifier.align(Alignment.CenterEnd)
+                        .offset(x = drawerOffset)
+                        .width(drawerWidth)
+                        .fillMaxHeight()
+                        .background(cardBg)
+                        .pointerInput(Unit) {
+                            var acc = 0f
+                            detectHorizontalDragGestures(
+                                onHorizontalDrag = { _, dragAmount ->
+                                    acc += dragAmount
+                                    if (acc > 60f) {
+                                        drawerOpen = false
+                                        acc = 0f
+                                    }
+                                },
+                                onDragEnd = { acc = 0f },
+                                onDragCancel = { acc = 0f }
+                            )
+                        }
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxSize()
+                            .statusBarsPadding()
+                            .padding(horizontal = 16.dp, vertical = 12.dp)
+                    ) {
+                        // Header: logo + CalNyx + version + Update icon.
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier.size(52.dp)
+                                    .shadow(6.dp, CircleShape)
+                                    .clip(CircleShape)
+                                    .background(if (darkTheme) NavOffWhite else NavOffBlack),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    Icons.Default.Calculate,
+                                    contentDescription = "CalNyx",
+                                    tint = if (darkTheme) NavOffBlack else NavOffWhite,
+                                    modifier = Modifier.size(28.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "CalNyx",
+                                    fontSize = 22.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = onPageColor
+                                )
+                                if (appVersion.isNotEmpty()) {
+                                    Text(
+                                        text = "Version $appVersion",
+                                        fontSize = 12.sp,
+                                        color = Color.Gray
+                                    )
+                                }
+                            }
+                            IconButton(onClick = { closeDrawerAndGo(null) { showUpdate = true } }) {
+                                Icon(
+                                    Icons.Default.Update,
+                                    contentDescription = "App update",
+                                    tint = onPageColor,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(16.dp))
+                        HorizontalDivider(color = if (darkTheme) NavBorderDark else NavBorderLight)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        // Tools list: icon + title, one row per tool.
+                        // To add a feature later, add its Screen to
+                        // menuScreens, or add another NavigationDrawerItem
+                        // here in the same pattern.
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            menuScreens.forEach { screen ->
+                                NavigationDrawerItem(
+                                    label = {
+                                        // Single line, never wrap: "Number System"
+                                        // broke into two lines before. If a title
+                                        // is ever too long it ellipsizes instead.
+                                        Text(
+                                            screen.title,
+                                            fontSize = 15.sp,
+                                            maxLines = 1,
+                                            softWrap = false,
+                                            overflow = TextOverflow.Ellipsis,
+                                            fontWeight = if (currentRoute == screen.route) FontWeight.SemiBold else FontWeight.Medium
+                                        )
+                                    },
+                                    icon = {
+                                        Icon(
+                                            screen.icon,
+                                            contentDescription = screen.title,
+                                            modifier = Modifier.size(24.dp)
+                                        )
+                                    },
+                                    selected = currentRoute == screen.route,
+                                    onClick = { closeDrawerAndGo(screen.route) },
+                                    badge = {
+                                        // Red dot only for the two special
+                                        // sections, only when selected.
+                                        if (currentRoute == screen.route &&
+                                            (screen.route == Screen.Moan.route ||
+                                                screen.route == Screen.Hardcore.route)
+                                        ) {
+                                            Box(
+                                                modifier = Modifier.size(8.dp)
+                                                    .clip(CircleShape)
+                                                    .background(NavRed)
+                                            )
+                                        }
+                                    },
+                                    colors = NavigationDrawerItemDefaults.colors(
+                                        selectedContainerColor = if (darkTheme) NavOffWhite else NavOffBlack,
+                                        selectedIconColor = if (darkTheme) NavOffBlack else NavOffWhite,
+                                        selectedTextColor = if (darkTheme) NavOffBlack else NavOffWhite,
+                                        unselectedContainerColor = Color.Transparent,
+                                        unselectedIconColor = onPageColor,
+                                        unselectedTextColor = onPageColor
+                                    ),
+                                    shape = RoundedCornerShape(16.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.weight(1f))
+                        HorizontalDivider(color = if (darkTheme) NavBorderDark else NavBorderLight)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        // Theme toggle at the bottom - kept from the old
+                        // bottom sheet header so the function is not lost.
+                        NavigationDrawerItem(
+                            label = { Text(if (darkTheme) "Light mode" else "Dark mode", fontSize = 16.sp, fontWeight = FontWeight.Medium) },
+                            icon = {
+                                Icon(
+                                    if (darkTheme) Icons.Default.LightMode else Icons.Default.DarkMode,
+                                    contentDescription = "Toggle theme",
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            },
+                            selected = false,
+                            onClick = { drawerOpen = false; onToggleTheme() },
+                            colors = NavigationDrawerItemDefaults.colors(
+                                selectedContainerColor = Color.Transparent,
+                                unselectedContainerColor = Color.Transparent,
+                                unselectedIconColor = onPageColor,
+                                unselectedTextColor = onPageColor
+                            ),
+                            shape = RoundedCornerShape(16.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
+                }
+            }
+            // Right-edge swipe zone to open the drawer.
+            // Only while it is closed; taps pass through
+            // (only a leftward drag is claimed).
+            if (!drawerOpen) {
+                Box(
+                    modifier = Modifier.align(Alignment.CenterEnd)
+                        .width(28.dp)
+                        .fillMaxHeight()
+                        .pointerInput(Unit) {
+                            var acc = 0f
+                            detectHorizontalDragGestures(
+                                onHorizontalDrag = { _, dragAmount ->
+                                    acc += dragAmount
+                                    if (acc < -60f) {
+                                        drawerOpen = true
+                                        acc = 0f
+                                    }
+                                },
+                                onDragEnd = { acc = 0f },
+                                onDragCancel = { acc = 0f }
+                            )
+                        }
+                )
+            }
+        }
     }
 }
 
