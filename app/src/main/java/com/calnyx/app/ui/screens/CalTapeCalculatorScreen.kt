@@ -123,10 +123,11 @@ import kotlin.math.abs
 // Each tape row has two zones — the calculation (operator + amount)
 // in the left half and a TEXT NOTE in the right half. Tap a line to
 // edit its note inline; LONG-PRESS a line to edit the line itself
-// (operator, amount, note, or delete it). Line colours follow the
-// operator: + and × are GREEN, − and ÷ are RED (symbol and number
-// alike), on screen and in the exported PDF. A total row follows its
-// value: positive totals are "+"/green, negative totals are "−"/red.
+// (operator, amount, note, or delete it). BLACK AND WHITE ONLY
+// (B/W version): every line, key and the PDF are black/white — the
+// operator's SYMBOL (+ − × ÷) is what tells them apart, not a
+// colour. A total row follows its value: positive totals show "+",
+// negative totals show "−", both in the text colour.
 // The pending operator shows the moment its key is pressed, with a
 // blinking cursor. Animation throughout: new lines spring in, the
 // strip total counts up/down, keys flash on press, the keypad
@@ -151,51 +152,45 @@ private data class TapePalette(
 )
 
 private val DarkTapePalette = TapePalette(
-    bg = Color(0xFF0F172A),
-    keyNum = Color(0xFF1E293B),
-    keyFn = Color(0xFF324154),
-    keyBack = Color(0xFF465568),
+    bg = Color(0xFF0E0E0E),
+    keyNum = Color(0xFF1B1B1B),
+    keyFn = Color(0xFF262626),
+    keyBack = Color(0xFF262626),
     keyBorder = null,
-    strip = Color(0xFF1E293B),
-    drawerBg = Color(0xFF131E30),
-    text = Color(0xFFF8FAFC),
-    dim = Color(0xFF94A3B8),
-    green = Color(0xFF30D593),
-    red = Color(0xFFF26D6D),
-    live = Color(0xFF7CC4EC),
-    enter = Color(0xFF2F9BD9)
+    strip = Color(0xFF1B1B1B),
+    drawerBg = Color(0xFF0E0E0E),
+    text = Color(0xFFF6F4EF),
+    dim = Color(0xFF8A8A8A),
+    green = Color(0xFFF6F4EF),
+    red = Color(0xFFF6F4EF),
+    live = Color(0xFFF6F4EF),
+    enter = Color(0xFFF6F4EF)
 )
 
 private val LightTapePalette = TapePalette(
-    bg = Color(0xFFF4F8FB),
+    bg = Color(0xFFF6F4EF),
     keyNum = Color(0xFFFFFFFF),
-    keyFn = Color(0xFFDFE7EF),
-    keyBack = Color(0xFFA9BACB),
-    keyBorder = Color(0xFFD8E1EA),
-    strip = Color(0xFFDFE7EF),
+    keyFn = Color(0xFFEFEDE8),
+    keyBack = Color(0xFFEFEDE8),
+    keyBorder = Color(0xFFE9E6DF),
+    strip = Color(0xFFEFEDE8),
     drawerBg = Color(0xFFFFFFFF),
-    text = Color(0xFF15222E),
-    dim = Color(0xFF71879C),
-    green = Color(0xFF0AA06E),
-    red = Color(0xFFE5484D),
-    live = Color(0xFF1D71A0),
-    enter = Color(0xFF1D71A0)
+    text = Color(0xFF0E0E0E),
+    dim = Color(0xFF6B6B6B),
+    green = Color(0xFF0E0E0E),
+    red = Color(0xFF0E0E0E),
+    live = Color(0xFF0E0E0E),
+    enter = Color(0xFF0E0E0E)
 )
-
-private val TapeAc = Color(0xFFF39E0D)
-private val TapeAcText = Color(0xFF201503)
 
 private val moneyFormat = DecimalFormat("#,##0.00")
 
 private fun fmtMoney(value: Double): String = moneyFormat.format(value)
 
-// The one colour rule for the whole tape: + and × green, − and ÷ red.
+// B/W rule for the whole tape: every operator is the text colour.
+// The SYMBOL (+ − × ÷) tells them apart, not a colour.
 private fun opColor(op: String, palette: TapePalette): Color {
-    return when (op) {
-        "+", "*" -> palette.green
-        "-", "/" -> palette.red
-        else -> palette.dim
-    }
+    return palette.text
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -368,7 +363,7 @@ fun CalTapeCalculatorScreen(
                         renameTarget = null
                     }
                 ) {
-                    Text("Save", color = palette.enter, fontWeight = FontWeight.SemiBold)
+                    Text("Save", color = palette.text, fontWeight = FontWeight.SemiBold)
                 }
             },
             dismissButton = {
@@ -421,7 +416,7 @@ fun CalTapeCalculatorScreen(
                                     displayOp(op),
                                     fontSize = 22.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = if (selected) Color.White else palette.text
+                                    color = if (selected) palette.bg else palette.text
                                 )
                             }
                         }
@@ -461,13 +456,13 @@ fun CalTapeCalculatorScreen(
                         Icon(
                             Icons.Default.Delete,
                             contentDescription = null,
-                            tint = palette.red,
+                            tint = palette.text,
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
                             "Delete line",
-                            color = palette.red,
+                            color = palette.text,
                             fontWeight = FontWeight.SemiBold
                         )
                     }
@@ -488,7 +483,7 @@ fun CalTapeCalculatorScreen(
                             editTarget = null
                         }
                     ) {
-                        Text("Save", color = palette.enter, fontWeight = FontWeight.Bold)
+                        Text("Save", color = palette.text, fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -533,7 +528,7 @@ fun CalTapeCalculatorScreen(
                             Icon(
                                 Icons.Default.Description,
                                 contentDescription = null,
-                                tint = if (selected) palette.enter else palette.dim,
+                                tint = if (selected) palette.text else palette.dim,
                                 modifier = Modifier.size(20.dp)
                             )
                             Spacer(modifier = Modifier.width(10.dp))
@@ -589,14 +584,14 @@ fun CalTapeCalculatorScreen(
                         Icon(
                             Icons.Default.Add,
                             contentDescription = null,
-                            tint = palette.enter,
+                            tint = palette.text,
                             modifier = Modifier.size(20.dp)
                         )
                         Spacer(modifier = Modifier.width(10.dp))
                         Text(
                             "New sheet",
                             fontSize = 16.sp,
-                            color = palette.enter,
+                            color = palette.text,
                             fontWeight = FontWeight.Medium
                         )
                     }
@@ -630,7 +625,7 @@ fun CalTapeCalculatorScreen(
                         Icon(
                             Icons.Default.PictureAsPdf,
                             contentDescription = null,
-                            tint = if (lines.isNotEmpty()) palette.red else palette.dim.copy(alpha = 0.4f),
+                            tint = if (lines.isNotEmpty()) palette.text else palette.dim.copy(alpha = 0.4f),
                             modifier = Modifier.size(20.dp)
                         )
                         Spacer(modifier = Modifier.width(10.dp))
@@ -858,20 +853,20 @@ fun CalTapeCalculatorScreen(
                         Row(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(20.dp))
-                                .background(palette.green)
+                                .background(palette.text)
                                 .padding(horizontal = 14.dp, vertical = 7.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
                                 Icons.Default.Check,
                                 contentDescription = null,
-                                tint = Color.White,
+                                tint = palette.bg,
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
                                 feedback ?: "",
-                                color = Color.White,
+                                color = palette.bg,
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.SemiBold
                             )
@@ -939,8 +934,8 @@ fun CalTapeCalculatorScreen(
                                     if (copied) Icons.Default.Check else Icons.Default.ContentCopy,
                                     contentDescription = "Copy tape",
                                     tint = when {
-                                        copied -> palette.green
-                                        lines.isNotEmpty() -> palette.enter
+                                        copied -> palette.text
+                                        lines.isNotEmpty() -> palette.text
                                         else -> palette.dim.copy(alpha = 0.4f)
                                     },
                                     modifier = Modifier.size(20.dp)
@@ -961,7 +956,7 @@ fun CalTapeCalculatorScreen(
                             introDone = keypadIntroDone,
                             onIntroDone = { keypadIntroDone = true }
                         ) {
-                            TapeKey("AC", TapeAc, TapeAcText, palette, Modifier.weight(1f)) { viewModel.onKey("AC") }
+                            TapeKey("AC", palette.text, palette.bg, palette, Modifier.weight(1f)) { viewModel.onKey("AC") }
                             TapeKey("⌫", palette.keyBack, palette.text, palette, Modifier.weight(1f)) {
                                 viewModel.onKey(
                                     "⌫"
@@ -1113,8 +1108,8 @@ fun CalTapeCalculatorScreen(
                             ) { viewModel.onKey(".") }
                             TapeKey(
                                 "=",
-                                palette.enter,
-                                Color.White,
+                                palette.text,
+                                palette.bg,
                                 palette,
                                 Modifier.weight(1f),
                                 fontSize = 28,
@@ -1196,11 +1191,13 @@ private fun TapeKey(
             .clickable(interactionSource = interaction, indication = null, onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
-        // White flash that blooms while the key is pressed.
+        // Flash that blooms while the key is pressed (text colour,
+        // so it shows in both themes — white was invisible on the
+        // light keys).
         Box(
             modifier = Modifier
                 .matchParentSize()
-                .background(Color.White.copy(alpha = flash))
+                .background(palette.text.copy(alpha = flash))
         )
         if (label == "⌫") {
             Icon(
@@ -1250,7 +1247,7 @@ private fun RowScope.TapeNoteZone(
                     color = palette.text,
                     fontSize = 14.sp
                 ),
-                cursorBrush = SolidColor(palette.enter),
+                cursorBrush = SolidColor(palette.text),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = { onNoteDone() }),
                 modifier = Modifier
@@ -1385,10 +1382,10 @@ private fun TapeTotalRow(
     onLongClick: () -> Unit
 ) {
     val note = CalTapeViewModel.splitNote(line.expression).second
-    // A total row follows its value: negative shows "−" in red,
-    // positive shows "+" in green.
+    // A total row follows its value: negative shows "−", positive
+    // shows "+", both in the text colour (black/white only).
     val negative = totalValue < 0
-    val totalColor = if (negative) palette.red else palette.green
+    val totalColor = palette.text
     // Entrance: a new total springs up into place, once per line.
     val entrance = remember(line.id) {
         Animatable(if (seenIds.contains(line.id)) 1f else 0f)
@@ -1535,15 +1532,15 @@ private fun groupThousands(intPart: String): String {
 // folder through MediaStore, named after the sheet, so any file
 // manager can find it (the old app-private folder is hidden by
 // Android). Returns true on success. The page is A4 (595 × 842 pt)
-// and every line is drawn CENTERED on the page. Lines are coloured
-// like the screen: + and × green, − and ÷ red, totals follow their
-// value (folded live, like everywhere else); notes ride along.
+// and every line is drawn CENTERED on the page. Lines are ALL BLACK
+// in the B/W version (the sign, not a colour, tells them apart);
+// totals follow their value (folded live, like everywhere else);
+// notes ride along.
 private fun exportTapePdf(context: Context, sheetName: String, lines: List<HistoryEntity>): Boolean {
     var document: PdfDocument? = null
     return try {
-        // (text, android colour) pairs, in tape order.
-        val green = android.graphics.Color.rgb(10, 160, 110)
-        val red = android.graphics.Color.rgb(229, 72, 77)
+        // (text, android colour) pairs, in tape order — all black
+        // in the B/W version.
         val black = android.graphics.Color.BLACK
         val styled = mutableListOf<Pair<String, Int>>()
         var running = 0.0
@@ -1554,13 +1551,12 @@ private fun exportTapePdf(context: Context, sheetName: String, lines: List<Histo
                 val negative = running < 0
                 val sign = if (negative) "-" else "+"
                 styled.add("-".repeat(15) to black)
-                styled.add(sign + " " + fmtMoney(abs(running)).padStart(13) + suffix to if (negative) red else green)
+                styled.add(sign + " " + fmtMoney(abs(running)).padStart(13) + suffix to black)
             } else {
                 val op = CalTapeViewModel.normalizeOp(base.firstOrNull())
                 val value = base.drop(1).toDoubleOrNull() ?: 0.0
                 running = CalTapeViewModel.applyOperator(running, op, value)
-                val color = if (op == "-" || op == "/") red else green
-                styled.add(op + " " + fmtMoney(value).padStart(13) + suffix to color)
+                styled.add(op + " " + fmtMoney(value).padStart(13) + suffix to black)
             }
         }
         val dateText = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault()).format(Date())
@@ -1587,8 +1583,6 @@ private fun exportTapePdf(context: Context, sheetName: String, lines: List<Histo
             this.color = color
         }
 
-        val greenPaint = tapePaint(green)
-        val redPaint = tapePaint(red)
         val blackPaint = tapePaint(black)
 
         document = PdfDocument()
@@ -1615,11 +1609,7 @@ private fun exportTapePdf(context: Context, sheetName: String, lines: List<Histo
             var drawn = 0
             while (index < styled.size && drawn < linesPerPage) {
                 val (text, color) = styled[index]
-                val paint = when (color) {
-                    green -> greenPaint
-                    red -> redPaint
-                    else -> blackPaint
-                }
+                val paint = blackPaint
                 drawCentered(text, y, paint)
                 y += lineHeight
                 index++

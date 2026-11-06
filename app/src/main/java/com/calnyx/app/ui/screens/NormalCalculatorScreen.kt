@@ -1,18 +1,29 @@
 // FILE: app/src/main/java/com/calnyx/app/ui/screens/NormalCalculatorScreen.kt
-// REPLACE the whole file. ANS + RIGHTDRAWER version, based on LIFTED.
-// The user asked (2026-11-06):
-//  1. DRAWER moves to the RIGHT - done in NavGraph (right-edge
-//     swipe opens it, left-edge swipe opens nothing). This file
-//     does NOT change the drawer.
-//  2. HISTORY stays on LEFT swipe - it already was: the keypad
-//     pager is page 0 = keypad, page 1 = history, so a left
-//     swipe over the keypad already opens History. NO change
-//     needed here (the user corrected himself mid-sentence
-//     and the corrected version matches the code).
-//  3. LAB FLASK -> ANS KEY: the round flask toggle is now an
-//     "Ans" key. It inserts the last answer (the result of
-//     the last "=") at the cursor. No tap opens the scientific
-//     keys any more.
+// REPLACE the whole file. SWIPE + REAL-ANS version, based on the
+// ANS + RIGHTDRAWER file.
+//  1. SWIPE, FROM ANYWHERE ON THIS SCREEN (the user tested it and
+//     the old way failed: the pager ate the swipe over the
+//     keypad, so the drawer only opened from the display):
+//       swipe RIGHT (finger starts left, moves right) -> History
+//       swipe LEFT  (finger starts right, moves left) -> drawer
+//     The pager no longer scrolls by hand (userScrollEnabled =
+//     false) — one detector on the root Box is the only
+//     horizontal-drag consumer, so the drawer can never lose
+//     to the pager again. On the History page a left swipe
+//     goes BACK to the keypad instead (so History always has
+//     a swipe way back). The page dots are tappable too.
+//     While a text selection is live the detector stays off,
+//     so the selection handles can still be dragged.
+//  2. DRAWER callback: NavGraph passes onOpenDrawer (it sets
+//     drawerOpen = true). The NavGraph's own 28dp right-edge
+//     zone stays as well, for the other screens.
+//  3. REAL ANS KEY (was: it inserted the NUMBER, and after "="
+//     the ViewModel's fresh-start rule only fires for single
+//     digits, so a multi-digit answer looked dead): the key now
+//     sends the literal label "Ans". The ViewModel (ANS version)
+//     inserts the "Ans" token, shows it in the display, and
+//     resolves it to the last "=" result at evaluation time,
+//     so "Ans+5" calculates. See CalculatorViewModel-ANS.kt.
 //  4. PULL-DOWN scientific keys: drag the keypad DOWN and the
 //     keys slide down like a drawer, revealing the hidden
 //     scientific keys (the ones the flask used to show);
@@ -39,6 +50,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
@@ -55,6 +67,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Backspace
 import androidx.compose.material3.*
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -63,9 +76,11 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.*
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextLayoutResult
@@ -76,6 +91,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import android.content.Intent
+import android.app.Activity
 import com.calnyx.app.applock.AppLockManager
 import com.calnyx.app.vault.VaultPrefs
 import com.calnyx.app.viewmodel.CalculatorViewModel
@@ -95,6 +111,7 @@ fun NormalCalculatorScreen(
         onHistoryVisibilityChange: (Boolean) -> Unit = {},
         onOpenVault: () -> Unit = {},
         onOpenVaultSetup: () -> Unit = {},
+        onOpenDrawer: () -> Unit = {},
         viewModel: CalculatorViewModel = viewModel(),
         historyViewModel: HistoryViewModel = viewModel()
 ) {
@@ -134,6 +151,28 @@ fun NormalCalculatorScreen(
         // above never move. There is NO swipe-down history any more.
         val pagerState = rememberPagerState(pageCount = { 2 })
         val scope = rememberCoroutineScope()
+
+        // STATUS BAR + NAVIGATION BAR match the page background: the
+        // top strip (clock, battery, WiFi, network) must be the same
+        // colour as the page below it, in both themes — it was
+        // showing the system default (white in light mode, black in
+        // dark mode) instead of the page colour. Same fix as Blue
+        // Film V8 and Moan V2.
+        val view = LocalView.current
+        // Read the colour HERE (composable body) — MaterialTheme.colorScheme
+        // is a @Composable read and may not be called inside SideEffect.
+        val statusBg = MaterialTheme.colorScheme.background
+        SideEffect {
+            val window = (view.context as? Activity)?.window
+            if (window != null) {
+                val bg = statusBg.toArgb()
+                window.statusBarColor = bg
+                window.navigationBarColor = bg
+                val controller = WindowInsetsControllerCompat(window, view)
+                controller.isAppearanceLightStatusBars = !darkTheme
+                controller.isAppearanceLightNavigationBars = !darkTheme
+            }
+        }
 
         // Text selection over the expression, in RAW character indices.
         // Long-press selects the token under the finger; the two handles
@@ -247,7 +286,78 @@ fun NormalCalculatorScreen(
         // bar is always visible now, so this never shrinks.
         val topSpacerHeight = 56.dp
 
-        Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+        // HORIZONTAL SWIPE — drawer ⇄ history, from ANYWHERE on this
+        // screen (display, strip or keypad). The pager itself no
+        // longer scrolls by hand (userScrollEnabled = false below),
+        // so this detector is the only horizontal-drag consumer
+        // and the drawer can never lose the gesture to the pager
+        // the way it did before. A tap (no real movement) does
+        // nothing, so the keys still work. While a text selection
+        // is live the detector stays off, so the selection handles
+        // can still be dragged.
+        Box(
+                modifier =
+                        Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
+                                .pointerInput(Unit) {
+                                        // detectHorizontalDragGestures (not the low-level
+                                        // awaitEachGesture loop — that API does not exist
+                                        // in this project's Compose version). A tap (no
+                                        // real movement) does nothing, so the keys still
+                                        // work. While a text selection is live the
+                                        // detector stays off, so the selection handles
+                                        // can still be dragged.
+                                        var totalDx = 0f
+                                        var done = false
+                                        detectHorizontalDragGestures(
+                                                onDragStart = { _ ->
+                                                        totalDx = 0f
+                                                        done = false
+                                                },
+                                                onDragEnd = {
+                                                        totalDx = 0f
+                                                        done = false
+                                                },
+                                                onDragCancel = {
+                                                        totalDx = 0f
+                                                        done = false
+                                                },
+                                                onHorizontalDrag = { change, dragAmount ->
+                                                        if (done) return@detectHorizontalDragGestures
+                                                        totalDx += dragAmount
+                                                        val threshold = 24.dp.toPx()
+                                                        if (kotlin.math.abs(totalDx) > threshold) {
+                                                                done = true
+                                                                if (selActive && selEnd > selStart) {
+                                                                        // Selection live — leave the
+                                                                        // drag to the handles.
+                                                                } else if (totalDx > 0) {
+                                                                        // RIGHTWARD (finger starts
+                                                                        // left, moves right) -> History.
+                                                                        if (pagerState.currentPage == 0) {
+                                                                                scope.launch {
+                                                                                        pagerState.animateScrollToPage(1)
+                                                                                }
+                                                                        }
+                                                                } else {
+                                                                        // LEFTWARD (finger starts
+                                                                        // right, moves left) -> drawer,
+                                                                        // or back to the keypad when
+                                                                        // History is showing (so History
+                                                                        // always has a swipe way back).
+                                                                        if (pagerState.currentPage == 0) {
+                                                                                onOpenDrawer()
+                                                                        } else {
+                                                                                scope.launch {
+                                                                                        pagerState.animateScrollToPage(0)
+                                                                                }
+                                                                        }
+                                                                }
+                                                                change.consume()
+                                                        }
+                                                }
+                                        )
+                                }
+        ) {
                 Column(
                         modifier =
                                 Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()
@@ -1016,12 +1126,32 @@ fun NormalCalculatorScreen(
                                                                                                                                                                 true
                                                                                                                                                         )
                                                                                                                                                 }
+                                                                                                                                        // The caret is AS TALL AS THE TEXT ITSELF: the laid-out
+                                                                                                                                        // line's own height, drawn from the line's top to its
+                                                                                                                                        // bottom. The old caret used 95% of the Text box height,
+                                                                                                                                        // but an empty expression lays out almost no height, so
+                                                                                                                                        // the caret shrank to a 52dp stub — shorter than the
+                                                                                                                                        // letters. When there is no line yet, the current font
+                                                                                                                                        // size stands in, so the caret is full height even
+                                                                                                                                        // before anything is typed.
+                                                                                                                                        val lineHeight =
+                                                                                                                                                if (lr.lineCount > 0) {
+                                                                                                                                                        lr.getLineBottom(0) - lr.getLineTop(0)
+                                                                                                                                                } else {
+                                                                                                                                                        0f
+                                                                                                                                                }
                                                                                                                                         val caretHeight =
-                                                                                                                                                max(
-                                                                                                                                                        size.height *
-                                                                                                                                                                0.95f,
+                                                                                                                                                maxOf(
+                                                                                                                                                        lineHeight,
+                                                                                                                                                        adaptiveExpressionFontSize.toPx(),
                                                                                                                                                         52.dp.toPx()
                                                                                                                                                 )
+                                                                                                                                        val caretTop =
+                                                                                                                                                if (lr.lineCount > 0) {
+                                                                                                                                                        lr.getLineTop(0)
+                                                                                                                                                } else {
+                                                                                                                                                        (size.height - caretHeight) / 2f
+                                                                                                                                                }
                                                                                                                                         drawRect(
                                                                                                                                                 color =
                                                                                                                                                         caretColor,
@@ -1030,9 +1160,7 @@ fun NormalCalculatorScreen(
                                                                                                                                                                 cx -
                                                                                                                                                                         1.25.dp
                                                                                                                                                                                 .toPx(),
-                                                                                                                                                                (size.height -
-                                                                                                                                                                        caretHeight) /
-                                                                                                                                                                        2f
+                                                                                                                                                                caretTop
                                                                                                                                                         ),
                                                                                                                                                 size =
                                                                                                                                                         Size(
@@ -1320,12 +1448,15 @@ fun NormalCalculatorScreen(
                                                                                 .surfaceVariant
                                                                 )
                                                                 .clickable {
-                                                                        // ANS: insert the last answer (the result
-                                                                        // of the last "=") at the cursor. If there
-                                                                        // is no answer yet, do nothing.
-                                                                        val ans = finalResult
-                                                                                ?: if (expression.isNotBlank()) result else null
-                                                                        if (!ans.isNullOrBlank()) handleKeyLabel(ans)
+                                                                        // ANS: send the literal "Ans" label. The
+                                                                        // ViewModel inserts the "Ans" token, shows
+                                                                        // it in the display, and resolves it to
+                                                                        // the last "=" result when calculating,
+                                                                        // so "Ans+5" works. (Sending the number
+                                                                        // instead looked dead after "=", because
+                                                                        // the fresh-start rule only fires for a
+                                                                        // single digit.)
+                                                                        handleKeyLabel("Ans")
                                                                 },
                                                 contentAlignment = Alignment.Center
                                         ) {
@@ -1340,12 +1471,15 @@ fun NormalCalculatorScreen(
                                         }
                                 }
 
-                                // SWAP AREA — keypad ⇄ history. Swipe left/right over
-                                // the buttons: the keypad slides away and the history
-                                // shows RIGHT HERE, in this same area, at full height.
-                                // Page 0 = keypad, page 1 = history.
+                                // SWAP AREA — keypad ⇄ history. The keypad slides away
+                                // and the history shows RIGHT HERE, in this same area,
+                                // at full height. Page 0 = keypad, page 1 = history.
+                                // The swipe itself is NOT the pager's any more: the
+                                // root Box detector drives it (rightward -> History,
+                                // leftward -> drawer / back to keypad).
                                 HorizontalPager(
                                         state = pagerState,
+                                        userScrollEnabled = false,
                                         modifier = Modifier.fillMaxWidth().weight(1f)
                                 ) { page ->
                                         if (page == 0) {
@@ -2076,7 +2210,12 @@ Text(
                                                 val active = pagerState.currentPage == index
                                                 Box(
                                                         modifier =
-                                                                Modifier.padding(horizontal = 3.dp)
+                                                                Modifier.clickable {
+                                                                                        scope.launch {
+                                                                                                pagerState.animateScrollToPage(index)
+                                                                                        }
+                                                                                }
+                                                                        .padding(horizontal = 8.dp, vertical = 6.dp)
                                                                         .size(
                                                                                 if (active) 7.dp
                                                                                 else 6.dp

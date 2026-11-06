@@ -16,6 +16,15 @@ import kotlinx.coroutines.launch
 import net.objecthunter.exp4j.ExpressionBuilder
 import net.objecthunter.exp4j.function.Function as Exp4jFunction
 
+// ANS version, based on OPERATORFIX (2026-11-06). The "Ans" key is
+// now a real scientific-calculator Answer:
+//  - the display shows the literal token "Ans" (not the number);
+//  - it evaluates to the exact value of the last "=" result,
+//    stored as a Double (full precision, NOT the rounded display
+//    string — formatResult trims to 8 decimals);
+//  - "Ans+5", "Ans*2" etc. all calculate; implicit multiplication
+//    is made explicit on insert (2Ans -> 2xAns) so it can never
+//    silently become 242. Starts at 0, like a real calculator.
 class CalculatorViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository: CalNyxRepository
@@ -54,6 +63,16 @@ class CalculatorViewModel(application: Application) : AndroidViewModel(applicati
     val isDegrees: StateFlow<Boolean> = _isDegrees.asStateFlow()
 
     private var lastSavedKey: String? = null
+
+    // ANS — the exact value of the last "=" result, full Double
+    // precision. The display shows the literal token "Ans";
+    // evaluate() hands it to exp4j as a variable. Only "=" may
+    // change it, never the live preview. Starts at 0.
+    private var ansValue: Double = 0.0
+
+    // The raw Double of the last evaluate() call. calculate()
+    // copies it into ansValue.
+    private var lastRawResult: Double? = null
 
     // Two-argument functions exp4j does not ship with: gcd(12,18), lcm(4,6)
     private val gcdFunction =
@@ -232,6 +251,7 @@ class CalculatorViewModel(application: Application) : AndroidViewModel(applicati
                     while (j < mapped.length && (mapped[j].isLetter() || mapped[j].isDigit())) j++
                     val word = mapped.substring(i, j)
                     when {
+                        word == "Ans" -> sb.append("Ans")
                         word == "ln" -> sb.append("log(")
                         word in knownWords -> {
                             sb.append(word)
@@ -486,15 +506,42 @@ class CalculatorViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
+    // Insert the literal "Ans" token at the caret. After "=" it
+    // starts a fresh expression with just "Ans". Implicit
+    // multiplication is made explicit so "2Ans" can never
+    // silently become 242: a "×" goes in when Ans touches a
+    // number, ")", "%", "!" or a letter on either side
+    // (2Ans -> 2×Ans, Ans2 -> Ans×2, Ans( -> Ans×(, pi Ans
+    // -> pi×Ans). The value itself is NOT inserted — evaluate()
+    // resolves the token to ansValue.
     private fun insertAnswer() {
-        val ans = _finalResult.value ?: _result.value
-        if (ans == "0" || ans == "Error") return
         if (_finalResult.value != null) {
-            setExpression(ans)
+            setExpression("Ans")
             _finalResult.value = null
-        } else {
-            insertAtCursor(ans)
+            updatePreview()
+            return
         }
+        val current = _expression.value
+        val pos = _cursorPosition.value.coerceIn(0, current.length)
+        val before = if (pos > 0) current[pos - 1] else null
+        val after = if (pos < current.length) current[pos] else null
+        val needsTimesBefore =
+                before != null &&
+                        (before.isDigit() ||
+                                before == '.' ||
+                                before == ')' ||
+                                before == '%' ||
+                                before == '!' ||
+                                before.isLetter())
+        val needsTimesAfter =
+                after != null &&
+                        (after.isDigit() || after == '.' || after == '(' || after.isLetter())
+        val text = buildString {
+            if (needsTimesBefore) append('×')
+            append("Ans")
+            if (needsTimesAfter) append('×')
+        }
+        insertAtCursor(text)
         updatePreview()
     }
 
@@ -504,6 +551,8 @@ class CalculatorViewModel(application: Application) : AndroidViewModel(applicati
             _result.value = "Error"
         } else {
             _result.value = finalValue
+            // The exact (unrounded) result becomes the new Answer.
+            lastRawResult?.let { ansValue = it }
             saveCurrentToHistory()
             _finalResult.value = finalValue
             setExpression("")
@@ -514,7 +563,7 @@ class CalculatorViewModel(application: Application) : AndroidViewModel(applicati
         val current = _expression.value
         // E-UPDATE: 'E' যোগ করা হয়েছে, না হলে "2E3" লিখলেও
         // preview "0" দেখাত, কারণ E-কে operator ধরা হতো না।
-        val hasOperator = current.any { it in "+-*/%^()PCE" } || current.contains("mod")
+        val hasOperator = current.any { it in "+-*/%^()PCE" } || current.contains("mod") || current.contains("Ans")
         _result.value =
                 if (!hasOperator) {
                     "0"
@@ -549,9 +598,9 @@ class CalculatorViewModel(application: Application) : AndroidViewModel(applicati
 
         // Modulo for number literals: 10mod3 -> 1
         expr =
-                Regex("([\\d.]+)mod([\\d.]+)").replace(expr) { match ->
-                    val a = match.groupValues[1].toDouble()
-                    val b = match.groupValues[2].toDouble()
+                Regex("((?:Ans|[\\d.]+))mod((?:Ans|[\\d.]+))").replace(expr) { match ->
+                    val a = if (match.groupValues[1] == "Ans") ansValue else match.groupValues[1].toDouble()
+                    val b = if (match.groupValues[2] == "Ans") ansValue else match.groupValues[2].toDouble()
                     if (b == 0.0) {
                         match.value
                     } else {
@@ -589,8 +638,9 @@ class CalculatorViewModel(application: Application) : AndroidViewModel(applicati
 
         // Factorial for plain number literals: 5! -> 120 (integers 0..20)
         expr =
-                Regex("(\\d+(?:\\.\\d+)?)!").replace(expr) { match ->
-                    val n = match.groupValues[1].toDouble()
+                Regex("((?:Ans|\\d+(?:\\.\\d+)?))!").replace(expr) { match ->
+                    val operand = match.groupValues[1]
+                    val n = if (operand == "Ans") ansValue else operand.toDouble()
                     if (n % 1.0 == 0.0 && n in 0.0..20.0) {
                         var factorial = 1L
                         for (i in 2..n.toInt()) factorial *= i
@@ -624,8 +674,11 @@ class CalculatorViewModel(application: Application) : AndroidViewModel(applicati
         }
 
         return try {
-            val built = ExpressionBuilder(expr).function(gcdFunction).function(lcmFunction).build()
-            formatResult(built.evaluate())
+            val built = ExpressionBuilder(expr).variable("Ans").function(gcdFunction).function(lcmFunction).build()
+            built.setVariable("Ans", ansValue)
+            val value = built.evaluate()
+            lastRawResult = value
+            formatResult(value)
         } catch (e: Exception) {
             null
         }

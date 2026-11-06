@@ -7,7 +7,7 @@
 //     2/3-wide sheet sliding in from the right edge).
 //  2. RIGHT-EDGE SWIPE opens it on every screen (a 28dp
 //     strip on the right edge; drag left to open). LEFT-edge
-//     swipe no longer opens anything. The hamburger
+//     swipe no longer opens anything. The 3-dot menu button
 //     (top-right) still opens it, and tapping a tool,
 //     the scrim, or dragging the panel right closes it.
 //  3. Everything else is unchanged: drawer content
@@ -79,7 +79,7 @@ import androidx.compose.material.icons.filled.Functions
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.VolumeUp
@@ -130,6 +130,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.calnyx.app.ThemePrefs
 import com.calnyx.app.applock.AppLockManager
 import com.calnyx.app.data.NavStateDatabase
 import com.calnyx.app.data.NavStateEntity
@@ -294,6 +295,24 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
     }
     var normalHistoryOpen by remember { mutableStateOf(false) }
 
+    // THEME PERSISTENCE (2026-11-06): the mode the user last picked
+    // is saved in SharedPreferences (ThemePrefs) and restored on
+    // launch, so reopening the app — even days later — shows the
+    // same mode (light stays light, dark stays dark) instead of
+    // falling back to dark. The parent still owns the live
+    // darkTheme state; this just syncs it once at startup and
+    // saves every change. One-frame note: on launch the app may
+    // show the parent's default for a single frame before this
+    // sync flips it to the saved mode; the clean, flash-free fix
+    // is to initialise the parent's state from ThemePrefs too.
+    LaunchedEffect(Unit) {
+        val saved = ThemePrefs.isDarkTheme(context, darkTheme)
+        if (saved != darkTheme) onToggleTheme()
+    }
+    LaunchedEffect(darkTheme) {
+        ThemePrefs.setDarkTheme(context, darkTheme)
+    }
+
     var showUpdate by remember { mutableStateOf(false) }
     // RIGHT DRAWER state - a plain boolean, not DrawerState:
     // Material3's ModalNavigationDrawer only opens from the
@@ -436,7 +455,14 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
                             onOpenHistory = { navController.navigate(Screen.History.route) },
                             onHistoryVisibilityChange = { normalHistoryOpen = it },
                             onOpenVault = { navController.navigate(Screen.Vault.route) },
-                            onOpenVaultSetup = { navController.navigate(Screen.VaultSetup.route) }
+                            onOpenVaultSetup = { navController.navigate(Screen.VaultSetup.route) },
+                            // SWIPE FIX (2026-11-06): the calculator's own
+                            // swipe detector calls this to open the drawer.
+                            // A leftward swipe anywhere on the calculator
+                            // opens the drawer; a rightward swipe opens
+                            // History. The NavGraph's 28dp right-edge zone
+                            // stays as well, for the other screens.
+                            onOpenDrawer = { drawerOpen = true }
                     )
                 }
                 composable(Screen.Scientific.route) {
@@ -529,15 +555,17 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
                             Spacer(modifier = Modifier.size(36.dp))
                         }
                         else -> {
-                            // DRAWER: hamburger (3-bar) on the top-RIGHT.
-                            // Same 36dp translucent circle as before.
+                            // DRAWER: 3-DOT menu on the top-RIGHT (the user
+                            // asked for the 3-bar hamburger to become a
+                            // 3-dot menu). Same 36dp translucent circle,
+                            // same job — it opens the right drawer.
                             // Top-left is left empty on purpose: CalTape
                             // has its own top-left 3-dot button, and the
                             // two bars mixed together when both were left.
                             Spacer(modifier = Modifier.size(36.dp))
                             TopBarCircleButton(onClick = { drawerOpen = true }) {
                                 Icon(
-                                        Icons.Default.Menu,
+                                        Icons.Default.MoreVert,
                                         contentDescription = "Menu",
                                         tint = MaterialTheme.colorScheme.onSurface,
                                         modifier = Modifier.size(22.dp)

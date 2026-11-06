@@ -1,12 +1,20 @@
 // FILE: app/src/main/java/com/calnyx/app/ui/screens/MoanControlScreen.kt
-// V5 - based on V4 (the pasted file minus Notification).
-// (1) Network Switcher moved UP: it is now the third square
-// card in the Power row (Power Menu / Lock Screen / Network
-// Switcher), and its old wide row below is gone.
-// (2) The WhatsApp section is bigger now: a title + a short
-// description on top, then a taller input row. The round
-// button on the right is a slanted Send icon (paper plane)
-// instead of the WhatsApp logo.
+// V6 - based on V5. The user tested V5 (screenshots 2026-11-06
+// 12:13-12:16) and asked for:
+// (1) STATUS BAR matches the page background (it was showing the
+//     system default — white in light mode — instead of the page
+//     colour), in both themes. Same fix as Blue Film V8 / Moan V2.
+// (2) The Moan / Hardcore title + icon sit on the SAME line as the
+//     NavGraph's top-bar button (3-dot). The tab Columns had 12dp
+//     top padding, which pushed the header 16dp below the button.
+//     Top padding removed (sides + bottom stay).
+// (3) Power cards: less gap between the three cards, and a smaller
+//     font / icon so they look neater.
+// (4) The WhatsApp Send button is smaller (it was 64dp and looked
+//     too big); the input field shrinks with it so they stay level.
+// V5 kept underneath: Network Switcher is the third square card in
+// the Power row; the WhatsApp section has a title + description and
+// a slanted Send icon on the right.
 // MOAN + HARDCORE - NO TABS. Two separate screens in this one file:
 // - HardcoreScreen: Power + Network Switcher + Floating Ball.
 // - MoanScreen: Ringer Profile + all audio streams, real-time.
@@ -98,6 +106,7 @@
 //   ball can never show.
 package com.calnyx.app.ui.screens
 
+import android.app.Activity
 import android.app.NotificationManager
 import android.content.ComponentName
 import android.content.Context
@@ -133,10 +142,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.ui.text.font.FontWeight
@@ -286,6 +298,22 @@ fun HardcoreScreen(darkTheme: Boolean) {
     val onPageColor = if (darkTheme) Color(0xFFF6F4EF) else Color(0xFF0E0E0E)
     val thumbBg = if (darkTheme) Color(0xFF262626) else Color(0xFFEFEDE8)
     var note by remember { mutableStateOf<String?>(null) }
+    // STATUS BAR + NAVIGATION BAR match the page background: the
+    // top strip (clock, battery, WiFi, network) must be the same
+    // colour as the page below it, in both themes — it was showing
+    // the system default (white in light mode) instead of the page
+    // colour. Same fix as Blue Film V8 / Moan V2.
+    val view = LocalView.current
+    SideEffect {
+        val window = (view.context as? Activity)?.window
+        if (window != null) {
+            window.statusBarColor = pageBg.toArgb()
+            window.navigationBarColor = pageBg.toArgb()
+            val controller = WindowInsetsControllerCompat(window, view)
+            controller.isAppearanceLightStatusBars = !darkTheme
+            controller.isAppearanceLightNavigationBars = !darkTheme
+        }
+    }
     Surface(modifier = Modifier.fillMaxSize(), color = pageBg, contentColor = onPageColor) {
         Column(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
             if (note != null) {
@@ -316,6 +344,22 @@ fun MoanScreen(darkTheme: Boolean) {
     val onPageColor = if (darkTheme) Color(0xFFF6F4EF) else Color(0xFF0E0E0E)
     val thumbBg = if (darkTheme) Color(0xFF262626) else Color(0xFFEFEDE8)
     var note by remember { mutableStateOf<String?>(null) }
+    // STATUS BAR + NAVIGATION BAR match the page background: the
+    // top strip (clock, battery, WiFi, network) must be the same
+    // colour as the page below it, in both themes — it was showing
+    // the system default (white in light mode) instead of the page
+    // colour. Same fix as Blue Film V8 / Moan V2.
+    val view = LocalView.current
+    SideEffect {
+        val window = (view.context as? Activity)?.window
+        if (window != null) {
+            window.statusBarColor = pageBg.toArgb()
+            window.navigationBarColor = pageBg.toArgb()
+            val controller = WindowInsetsControllerCompat(window, view)
+            controller.isAppearanceLightStatusBars = !darkTheme
+            controller.isAppearanceLightNavigationBars = !darkTheme
+        }
+    }
     Surface(modifier = Modifier.fillMaxSize(), color = pageBg, contentColor = onPageColor) {
         Column(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
             if (note != null) {
@@ -399,7 +443,7 @@ private fun ControlTab(
     }
 
     Column(
-        modifier = Modifier.fillMaxSize().verticalScroll(scroll).padding(12.dp),
+        modifier = Modifier.fillMaxSize().verticalScroll(scroll).padding(start = 12.dp, end = 12.dp, bottom = 12.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         // HEADER - big title with icon, like Blue Film.
@@ -423,7 +467,7 @@ private fun ControlTab(
         // below). IntrinsicSize.Max + fillMaxHeight keep all
         // three cards the same height even though "Network
         // Switcher" wraps to two lines.
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Max)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Max)) {
             PowerCard(
                 title = "Power Menu",
                 icon = Icons.Default.PowerSettingsNew,
@@ -556,7 +600,7 @@ private fun ControlTab(
                     },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.weight(1f).height(64.dp),
+                    modifier = Modifier.weight(1f).height(56.dp),
                     shape = RoundedCornerShape(12.dp),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = onPageColor,
@@ -565,7 +609,7 @@ private fun ControlTab(
                     )
                 )
                 Box(
-                    modifier = Modifier.size(64.dp).clip(CircleShape).background(onPageColor)
+                    modifier = Modifier.size(56.dp).clip(CircleShape).background(onPageColor)
                         .clickable {
                             if (WhatsAppHelper.openChat(context, waNumber)) {
                                 onNote(null)
@@ -578,7 +622,7 @@ private fun ControlTab(
                     Icon(
                         imageVector = Icons.Default.Send,
                         contentDescription = "Open in WhatsApp",
-                        modifier = Modifier.size(30.dp),
+                        modifier = Modifier.size(26.dp),
                         tint = cardBg
                     )
                 }
@@ -707,18 +751,18 @@ private fun PowerCard(
             .background(cardBg)
             .border(1.dp, cardBorder, RoundedCornerShape(16.dp))
             .clickable(onClick = onClick)
-            .padding(vertical = 12.dp),
+            .padding(vertical = 10.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically)
     ) {
         Box(
-            modifier = Modifier.size(48.dp).clip(CircleShape)
+            modifier = Modifier.size(44.dp).clip(CircleShape)
                 .background(thumbBg),
             contentAlignment = Alignment.Center
         ) {
-            Icon(icon, contentDescription = title, modifier = Modifier.size(24.dp))
+            Icon(icon, contentDescription = title, modifier = Modifier.size(22.dp))
         }
-        Text(title, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = onPageColor, textAlign = TextAlign.Center)
+        Text(title, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = onPageColor, textAlign = TextAlign.Center)
     }
 }
 
@@ -762,7 +806,7 @@ private fun SoundTab(
     }
 
     Column(
-        modifier = Modifier.fillMaxSize().verticalScroll(scroll).padding(12.dp),
+        modifier = Modifier.fillMaxSize().verticalScroll(scroll).padding(start = 12.dp, end = 12.dp, bottom = 12.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         // HEADER - big title with icon, like Blue Film.
