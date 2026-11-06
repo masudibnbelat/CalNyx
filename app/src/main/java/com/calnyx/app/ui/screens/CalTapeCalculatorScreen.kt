@@ -31,7 +31,9 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitHorizontalTouchSlopOrCancellation
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -160,7 +162,7 @@ private val DarkTapePalette = TapePalette(
     keyBack = Color(0xFF262626),
     keyBorder = null,
     strip = Color(0xFF1B1B1B),
-    drawerBg = Color(0xFF0E0E0E),
+    drawerBg = Color(0xFF262626),
     text = Color(0xFFF6F4EF),
     dim = Color(0xFF8A8A8A),
     green = Color(0xFFF6F4EF),
@@ -493,40 +495,73 @@ fun CalTapeCalculatorScreen(
         }
     }
 
-    // APP-DRAWER SWIPE (2026-11-06 fix, V2): the NavGraph's 28dp
-    // right-edge zone never fired here — this screen's own
-    // ModalNavigationDrawer (Sheets) sits on top of it and eats the
-    // gesture. V1 put the detector on an OUTER Box, but that lost too:
-    // the drawer's own drag handling sits deeper in the hit path and
-    // eats the touch slop before an ancestor detector ever sees it.
-    // So the SAME detector now also sits on the CONTENT Column inside
-    // the drawer (deepest for every touch on tape/keypad/strip) — that
-    // one sees the drag first and wins. The outer Box keeps it as a
-    // backup; firing twice is harmless (onOpenDrawer just sets a
-    // boolean). A LEFTWARD drag from ANYWHERE opens the app drawer.
-    // A RIGHTWARD drag is deliberately NOT consumed here, so swiping
-    // from the left still opens the Sheets drawer exactly as before.
-    // When the Sheets drawer is already open this does nothing — its
-    // own swipe closes it instead.
+    // APP-DRAWER SWIPE (2026-11-06 fix, V2; Sheets fix 2026-11-07;
+    // detector v4, 2026-11-07): the NavGraph's 28dp right-edge zone
+    // never fired here - this screen's own ModalNavigationDrawer
+    // (Sheets) sits on top of it and eats the gesture. V1 put the
+    // detector on an OUTER Box, but that lost too: the drawer's own
+    // drag handling sits deeper in the hit path and eats the touch
+    // slop before an ancestor detector ever sees it. So the SAME
+    // detector also sits on the CONTENT Column inside the drawer
+    // (deepest for every touch on tape/keypad/strip) - that one sees
+    // the drag first and wins. The outer Box keeps it as a backup;
+    // firing twice is harmless (onOpenDrawer just sets a boolean).
+    // WHY TWO PHASES: V2 used detectHorizontalDragGestures here and
+    // that broke the Sheets drawer - that helper claims the drag the
+    // moment the touch slop is passed, so the Sheets drawer
+    // (shallower in the hit path) never saw an unconsumed rightward
+    // drag and its swipe-to-open stopped firing. V3 replaced it with
+    // a manual loop that broke on isConsumed - and THAT broke the
+    // app drawer instead: the Sheets drawer ALSO consumes leftward
+    // drags at slop (it cannot open leftward, but it still claims
+    // them), so the loop stopped before reaching 24.dp. This version
+    // does both directions right:
+    //  Phase 1 - await horizontal slop WITHOUT consuming anything.
+    //  If a scrolling child (a tape row) claims the drag first, the
+    //  slop await returns null and we give up: the row scrolls alone
+    //  and the drawer stays shut.
+    //  Phase 2 - track the rest with the RAW delta (position minus
+    //  previousPosition), IGNORING consumption: the Sheets drawer
+    //  may consume leftward drags, but it cannot open leftward, so
+    //  there is nothing to fight over. Leftward past 24.dp opens
+    //  the app drawer (and claims the gesture, like V2 did);
+    //  rightward past 24.dp stops without consuming, so the Sheets
+    //  drawer gets the whole drag and opens exactly as before.
+    //  When the Sheets drawer is already open this does nothing -
+    //  its own swipe closes it instead.
     val drawerSwipe = Modifier.pointerInput(Unit) {
         val thresholdPx = 24.dp.toPx()
-        var totalDx = 0f
-        var done = false
-        detectHorizontalDragGestures(
-            onDragStart = { totalDx = 0f; done = false },
-            onDragEnd = { totalDx = 0f; done = false },
-            onDragCancel = { totalDx = 0f; done = false },
-            onHorizontalDrag = { change, dragAmount ->
-                if (done) return@detectHorizontalDragGestures
-                if (drawerState.currentValue != DrawerValue.Closed) return@detectHorizontalDragGestures
-                totalDx += dragAmount
+        awaitEachGesture {
+            val down = awaitFirstDown()
+            // onTouchSlopReached is a REQUIRED parameter in this Compose version
+            // (BOM 2024.10.01) - there is no one-argument overload.
+            val slopChange = awaitHorizontalTouchSlopOrCancellation(down.id) { _, _ -> }
+            if (slopChange != null && drawerState.currentValue == DrawerValue.Closed) {
+                var totalDx = (slopChange.position - down.position).x
+                var done = false
                 if (totalDx < -thresholdPx) {
                     done = true
                     onOpenDrawer()
-                    change.consume()
+                    slopChange.consume()
+                }
+                while (!done) {
+                    val event = awaitPointerEvent()
+                    val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                    if (!change.pressed) break
+                    if (drawerState.currentValue != DrawerValue.Closed) break
+                    totalDx += (change.position - change.previousPosition).x
+                    if (totalDx < -thresholdPx) {
+                        done = true
+                        onOpenDrawer()
+                        change.consume()
+                    } else if (totalDx > thresholdPx) {
+                        // Rightward: the Sheets drawer's gesture.
+                        // Stop without consuming - it gets the drag.
+                        break
+                    }
                 }
             }
-        )
+        }
     }
     Box(
         modifier = Modifier.fillMaxSize()
@@ -534,11 +569,17 @@ fun CalTapeCalculatorScreen(
     ) {
     ModalNavigationDrawer(
         drawerState = drawerState,
+        scrimColor = Color.Black.copy(alpha = 0.55f),
         drawerContent = {
             ModalDrawerSheet(
                 drawerContainerColor = palette.drawerBg,
                 drawerContentColor = palette.text,
                 modifier = Modifier.width(280.dp)
+                    .border(
+                        1.dp,
+                        if (darkTheme) Color(0xFF3D3D3D) else Color(0xFFE9E6DF),
+                        RoundedCornerShape(topEnd = 16.dp, bottomEnd = 16.dp)
+                    )
             ) {
                 Column(
                     modifier = Modifier

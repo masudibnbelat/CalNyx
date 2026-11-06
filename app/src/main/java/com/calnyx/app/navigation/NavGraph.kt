@@ -1,3 +1,15 @@
+// ONBOARDING VERSION (2026-11-06) - REPLACE NavGraph.kt.
+//  1. FIRST RUN: if OnboardingPrefs says the introduction was
+//     never finished, CalNyxNavGraph shows OnboardingScreen
+//     INSTEAD of the calculator (early return, before any
+//     other remember). Finishing it (or Skip) saves done=true
+//     and the calculator appears. Clearing app data shows it
+//     again. Nothing else in the graph changed.
+//  2. ABOUT: the About modal now has a Permissions section
+//     (same OnboardingPermissions list as the introduction),
+//     with each permission's state and a Grant button, so a
+//     permission missed or skipped in the introduction can
+//     be granted later from here.
 // ABOUT-CRASH FIX (2026-11-06) - REPLACE NavGraph.kt.
 //  About tapped -> app closed. Likely cause: the dialog
 //  loaded the launcher icon with painterResource(
@@ -60,7 +72,7 @@
 //     the scrim, or dragging the panel right closes it.
 //  3. Everything else is unchanged: drawer content
 //     (logo, version, Update icon, tools list, theme
-//     toggle), the 2/3 width, the 0.55 scrim, the reopen
+//     toggle), the 2/3 width, the 0.65 scrim, the reopen
 //     rule, blackhole hiding.
 // RIGHTDRAWER VERSION - replace your old NavGraph.kt with this file.
 // SPLIT VERSION - replace your old NavGraph.kt with this file.
@@ -70,7 +82,7 @@
 // 2. History drawer entry REMOVED. History route still exists
 //    for the Normal calculator, only the drawer entry is gone.
 // 3. Drawer is 2/3 of screen width, not full screen. Remaining
-//    1/3 is dimmed by a stronger scrim (0.55 black).
+//    1/3 is dimmed by a stronger scrim (0.65 black).
 // 4. Colours: white and black only. Red (NavRed) is used in
 //    exactly one place - a small red dot as the badge on a
 //    selected Moan / Hardcore item, to mark it as special.
@@ -126,6 +138,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Calculate
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.DarkMode
@@ -195,7 +208,14 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import com.calnyx.app.ThemePrefs
+import com.calnyx.app.onboarding.AppPermission
+import com.calnyx.app.onboarding.OnboardingPermissions
+import com.calnyx.app.onboarding.OnboardingPrefs
+import com.calnyx.app.onboarding.PermissionKind
+import com.calnyx.app.ui.screens.OnboardingScreen
 import com.calnyx.app.applock.AppLockManager
 import com.calnyx.app.blackhole.BlackHolePickerGuard
 import com.calnyx.app.data.NavStateDatabase
@@ -303,9 +323,10 @@ val menuScreens =
 private val NavOffWhite = Color(0xFFF6F4EF)
 private val NavOffBlack = Color(0xFF0E0E0E)
 private val NavCardWhite = Color(0xFFFFFFFF)
-private val NavCardBlack = Color(0xFF1B1B1B)
+private val NavCardBlack = Color(0xFF262626)
 private val NavBorderLight = Color(0xFFE9E6DF)
 private val NavBorderDark = Color(0xFF2B2B2B)
+private val NavDrawerEdgeDark = Color(0xFF3D3D3D)
 private val NavThumbLight = Color(0xFFEFEDE8)
 private val NavThumbDark = Color(0xFF262626)
 // Red is the ONLY extra colour, for specialty only. See header.
@@ -321,6 +342,22 @@ private const val DEVELOPER_NAME = "Md. Masud Khan"
 @Composable
 fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
     val context = LocalContext.current
+
+    // FIRST-RUN INTRODUCTION: show it instead of the calculator
+    // until it is finished (or skipped). Early return, before any
+    // other remember, so the hook order below never changes.
+    var onboardingDone by remember { mutableStateOf(OnboardingPrefs.isDone(context)) }
+    if (!onboardingDone) {
+        OnboardingScreen(
+            darkTheme = darkTheme,
+            onFinish = {
+                OnboardingPrefs.setDone(context)
+                onboardingDone = true
+            }
+        )
+        return
+    }
+
     val navStateDao = remember { NavStateDatabase.get(context).navStateDao() }
 
     val navController = rememberNavController()
@@ -511,7 +548,7 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
         animationSpec = tween(300), label = "drawerOffset"
     )
     val scrimAlpha by animateFloatAsState(
-        targetValue = if (drawerOpen) 0.55f else 0f,
+        targetValue = if (drawerOpen) 0.65f else 0f,
         animationSpec = tween(280), label = "scrimAlpha"
     )
     // The drawer must never stay open on a screen that hides
@@ -754,7 +791,12 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
                         .offset(x = drawerOffset)
                         .width(drawerWidth)
                         .fillMaxHeight()
+                        .shadow(16.dp)
                         .background(cardBg)
+                        .border(
+                            1.dp,
+                            if (darkTheme) NavDrawerEdgeDark else NavBorderLight
+                        )
                         .pointerInput(Unit) {
                             var acc = 0f
                             detectHorizontalDragGestures(
@@ -1014,6 +1056,38 @@ private fun AboutDialog(
             null
         }
     }
+    // Permissions section state: same list as the introduction.
+    // Refreshed after every grant and every return from Settings.
+    var permStates by remember { mutableStateOf(OnboardingPermissions.checkAll(context)) }
+    fun refreshPerms() {
+        permStates = OnboardingPermissions.checkAll(context)
+    }
+    val aboutRuntimeLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { refreshPerms() }
+    val aboutLifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(aboutLifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) refreshPerms()
+        }
+        aboutLifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { aboutLifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    fun grantPermission(permission: AppPermission) {
+        try {
+            if (permission.kind == PermissionKind.RUNTIME) {
+                if (permission.runtimePermissions.isNotEmpty()) {
+                    aboutRuntimeLauncher.launch(permission.runtimePermissions.toTypedArray())
+                } else {
+                    refreshPerms()
+                }
+            } else {
+                val intent = OnboardingPermissions.settingsIntent(context, permission)
+                if (intent != null) context.startActivity(intent)
+            }
+        } catch (_: Exception) {
+        }
+    }
     Dialog(onDismissRequest = onClose) {
         Box(
                 modifier = Modifier.fillMaxWidth()
@@ -1093,6 +1167,67 @@ private fun AboutDialog(
                         color = onPageColor,
                         textAlign = TextAlign.Center
                 )
+                HorizontalDivider(color = border)
+                // Permissions - the same list as the first-run
+                // introduction. A permission skipped there can be
+                // granted here instead. Tap Grant to open the
+                // system dialog or the system Settings screen.
+                Text(
+                        text = "Permissions",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = onPageColor
+                )
+                OnboardingPermissions.all().forEach { permission ->
+                    val granted = permStates[permission.id] == true
+                    val isStop = permission.id == OnboardingPermissions.ID_STOP_NOTIFICATIONS
+                    Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                                permission.icon,
+                                contentDescription = null,
+                                tint = onPageColor,
+                                modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                    text = permission.title,
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = onPageColor
+                            )
+                            Text(
+                                    text = if (granted) {
+                                        if (isStop) "Notifications are off" else "Granted"
+                                    } else {
+                                        permission.description
+                                    },
+                                    fontSize = 13.sp,
+                                    color = Color.Gray
+                            )
+                        }
+                        if (granted) {
+                            Icon(
+                                    Icons.Default.Check,
+                                    contentDescription = null,
+                                    tint = onPageColor,
+                                    modifier = Modifier.size(22.dp)
+                            )
+                        } else {
+                            Text(
+                                    text = if (isStop) "Turn off" else "Grant",
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = onPageColor,
+                                    modifier = Modifier.clickable { grantPermission(permission) }
+                                            .padding(8.dp)
+                            )
+                        }
+                    }
+                }
                 HorizontalDivider(color = border)
                 // Contact Developer: name + email, tap to email.
                 Text(

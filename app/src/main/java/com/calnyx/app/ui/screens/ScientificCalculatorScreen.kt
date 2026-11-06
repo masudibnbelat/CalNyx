@@ -1,31 +1,26 @@
 // FILE: app/src/main/java/com/calnyx/app/ui/screens/ScientificCalculatorScreen.kt
-// B/W VERSION - replace your old ScientificCalculatorScreen.kt with this file.
-// Based on the user's pasted ScientificCalculatorScreen.kt. Logic is UNCHANGED
-// (onKeyPress SHIFT/HYP handling, ViewModel calls, history sheet, animations,
-// dayLabel/format helpers). Only these changes:
-//  1. BLACK / WHITE ONLY, both themes: every chromatic colour is gone — the
-//     green LCD, dark-green text, gold / brown, yellow and orange, and every
-//     theme accent colour are replaced with MaterialTheme neutrals only
-//     (background, onBackground, surface, onSurface, surfaceVariant,
-//     onSurfaceVariant, outline). SciKeyStyle enum names
-//     (ORANGE/YELLOW/PURPLE) are kept as legacy names, but remapped to B/W
-//     in SciKeyCell: FUNCTION/DIGIT = surfaceVariant bg + onSurface text,
-//     ORANGE (backspace/AC) and EQUAL (=) = inverted, YELLOW (SHIFT) =
-//     surfaceVariant normally and inverted while shiftMode is on so the
-//     active state is visible, PURPLE (Deg/Rad) = surfaceVariant.
-//     LCD panel = surfaceVariant bg, expression + final result = onSurface
-//     (final bold), preview result = onSurfaceVariant, DEG/RAD indicator =
-//     onSurfaceVariant, SHIFT/HYP indicators = onSurface, shift labels
-//     above keys = onSurfaceVariant, History Clear = onSurface.
-//  2. DESIGN BUGS: keypad gaps 3.dp -> 6.dp (rows were cramped); FUNCTION
-//     keys use 13.sp so long labels (sin⁻¹, cos⁻¹, tan⁻¹, RanInt) fit on
-//     one line; the toolbar now has the same 56.dp top clearance as the
-//     other screens, so it never collides with the NavGraph 3-dot menu.
-//  3. DRAWER SWIPE (universal rule): new onOpenDrawer param (NavGraph
-//     passes it). A leftward drag on the toolbar or the keypad opens the
-//     app drawer; rightward drags are not consumed. The LCD panel is NOT
-//     covered — its expression/result rows scroll horizontally and must
-//     keep working.
+// REDESIGN V2 (2026-11-07) - REPLACE. Based on the B/W version.
+// Logic UNCHANGED (onKeyPress SHIFT/HYP, ViewModel calls, history
+// sheet, format helpers, drawer swipe). Only the look changed:
+//  1. DISPLAY UP: the 56.dp top spacer is now 10.dp. It left a
+//     dead empty band at the top and pushed the display down.
+//     The toolbar content is left-aligned (History + title), so
+//     the floating 3-dot menu at the top right covers nothing.
+//  2. TALLER BUTTONS: the old design put a 13.dp shift-label box
+//     above EVERY key, even the 8 rows with no shift label -
+//     104.dp wasted, buttons only ~33.dp tall. The label now
+//     lives INSIDE the button as a small line above the main
+//     label, so every button fills its whole row. Together with
+//     the shorter top spacer the buttons are nearly twice as
+//     tall and the calculator looks full.
+//  3. COLOUR (the user now allows it on this screen): digits
+//     neutral, function keys soft blue, Deg/Rad soft purple,
+//     SHIFT amber, AC red, = green, backspace inverted. Light +
+//     dark values are explicit, so both themes stay right.
+//  4. ENTRANCE animations removed (LCD slide-down, row-by-row
+//     stagger) - the keypad appears at once instead of slowly
+//     fading in. Press feedback, result pop and font-size
+//     animations stay: those are feedback, not decoration.
 package com.calnyx.app.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
@@ -73,11 +68,10 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.calnyx.app.viewmodel.CalculatorViewModel
 import com.calnyx.app.viewmodel.HistoryViewModel
-import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.*
 
-private enum class SciKeyStyle { FUNCTION, DIGIT, ORANGE, YELLOW, PURPLE, EQUAL }
+private enum class SciKeyStyle { FUNCTION, DIGIT, ORANGE, YELLOW, PURPLE, RED, EQUAL }
 
 private data class SciKey(
     val display: String,
@@ -185,7 +179,7 @@ fun ScientificCalculatorScreen(
             SciKey("8", "8", style = SciKeyStyle.DIGIT),
             SciKey("9", "9", style = SciKeyStyle.DIGIT),
             SciKey("⌫", "⌫", style = SciKeyStyle.ORANGE),
-            SciKey("AC", "AC", style = SciKeyStyle.ORANGE)
+            SciKey("AC", "AC", style = SciKeyStyle.RED)
         ),
         listOf(
             SciKey("4", "4", style = SciKeyStyle.DIGIT),
@@ -209,11 +203,6 @@ fun ScientificCalculatorScreen(
         )
     )
 
-    // LCD entrance animation
-    val displayAnim = remember { Animatable(0f) }
-    LaunchedEffect(Unit) {
-        displayAnim.animateTo(1f, animationSpec = tween(400))
-    }
     // Final-answer pop animation
     val resultPop = remember { Animatable(1f) }
     LaunchedEffect(finalResult) {
@@ -258,9 +247,11 @@ fun ScientificCalculatorScreen(
             .navigationBarsPadding()
             .padding(horizontal = 6.dp)
     ) {
-        // 56.dp top clearance, like the other screens — the toolbar
-        // must never collide with the floating 3-dot menu.
-        Spacer(modifier = Modifier.height(56.dp))
+        // Only 10.dp up here now: the old 56.dp left a dead empty
+        // band at the top and pushed the display down. The toolbar
+        // content is left-aligned (History + title), so the
+        // floating 3-dot menu at the top right covers nothing.
+        Spacer(modifier = Modifier.height(10.dp))
         Row(
             modifier = Modifier.fillMaxWidth().then(drawerSwipe),
             verticalAlignment = Alignment.CenterVertically
@@ -287,10 +278,6 @@ fun ScientificCalculatorScreen(
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(16.dp))
                 .background(MaterialTheme.colorScheme.surfaceVariant)
-                .graphicsLayer {
-                    alpha = displayAnim.value
-                    translationY = (1f - displayAnim.value) * -16f
-                }
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             horizontalAlignment = Alignment.End
         ) {
@@ -426,28 +413,21 @@ fun ScientificCalculatorScreen(
 
         Spacer(modifier = Modifier.height(6.dp))
 
-        // Keypad — rows share the remaining height, 6.dp gaps now,
-        // rows animate in one after another
+        // Keypad — rows share the remaining height, 6.dp gaps.
+        // No entrance animation any more: the whole keypad is
+        // there at once instead of fading in row by row.
         Column(modifier = Modifier.weight(1f).then(drawerSwipe)) {
-            (functionRows + digitRows).forEachIndexed { rowIndex, row ->
-                val rowAnim = remember { Animatable(0f) }
-                LaunchedEffect(Unit) {
-                    delay(rowIndex * 35L)
-                    rowAnim.animateTo(1f, animationSpec = tween(350))
-                }
+            (functionRows + digitRows).forEach { row ->
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .weight(1f)
-                        .graphicsLayer {
-                            alpha = rowAnim.value
-                            translationY = (1f - rowAnim.value) * 30f
-                        },
+                        .weight(1f),
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     row.forEach { key ->
                         SciKeyCell(
                             key = key,
+                            darkTheme = darkTheme,
                             shiftMode = shiftMode,
                             hypMode = hypMode,
                             modifier = Modifier
@@ -554,48 +534,63 @@ fun ScientificCalculatorScreen(
 @Composable
 private fun SciKeyCell(
     key: SciKey,
+    darkTheme: Boolean,
     shiftMode: Boolean,
     hypMode: Boolean,
     modifier: Modifier = Modifier,
     onPress: (SciKey) -> Unit
 ) {
-    // B/W remap (enum names ORANGE / YELLOW / PURPLE are legacy only):
-    // FUNCTION / DIGIT = surfaceVariant bg + onSurface text,
-    // ORANGE (backspace / AC) and EQUAL (=) = inverted,
-    // YELLOW (SHIFT) = surfaceVariant normally, inverted while
-    // shiftMode is on so the active state is visible,
-    // PURPLE (Deg/Rad) = surfaceVariant bg + onSurface text.
+    // COLOURS (2026-11-07 redesign - colour is allowed on this
+    // screen now): digits neutral, function keys soft blue,
+    // Deg/Rad soft purple, SHIFT amber, AC red, = green,
+    // backspace inverted. Light + dark values are explicit so
+    // both themes stay right.
     val containerColor: Color
     val contentColor: Color
     when (key.style) {
         SciKeyStyle.FUNCTION -> {
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
-            contentColor = MaterialTheme.colorScheme.onSurface
+            containerColor = if (darkTheme) Color(0xFF25313F) else Color(0xFFDCE7F5)
+            contentColor = if (darkTheme) Color(0xFFA9C8E8) else Color(0xFF1B3A5D)
         }
 
         SciKeyStyle.DIGIT -> {
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
+            containerColor = if (darkTheme) Color(0xFF26262B) else Color(0xFFF0EEE9)
             contentColor = MaterialTheme.colorScheme.onSurface
         }
 
         SciKeyStyle.ORANGE -> {
+            // Backspace - inverted.
             containerColor = MaterialTheme.colorScheme.onBackground
             contentColor = MaterialTheme.colorScheme.background
         }
 
         SciKeyStyle.YELLOW -> {
-            containerColor = if (shiftMode) MaterialTheme.colorScheme.onBackground else MaterialTheme.colorScheme.surfaceVariant
-            contentColor = if (shiftMode) MaterialTheme.colorScheme.background else MaterialTheme.colorScheme.onSurface
+            // SHIFT - amber; inverted (amber text) while it is on.
+            if (shiftMode) {
+                containerColor = MaterialTheme.colorScheme.onBackground
+                contentColor = Color(0xFFFFB300)
+            } else {
+                containerColor = Color(0xFFFFB300)
+                contentColor = Color(0xFF000000)
+            }
         }
 
         SciKeyStyle.PURPLE -> {
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
-            contentColor = MaterialTheme.colorScheme.onSurface
+            // Deg/Rad - soft purple.
+            containerColor = if (darkTheme) Color(0xFF322B4D) else Color(0xFFE4DFF5)
+            contentColor = if (darkTheme) Color(0xFFC9BFF0) else Color(0xFF4A3A8C)
+        }
+
+        SciKeyStyle.RED -> {
+            // AC - red.
+            containerColor = Color(0xFFE53935)
+            contentColor = Color(0xFFFFFFFF)
         }
 
         SciKeyStyle.EQUAL -> {
-            containerColor = MaterialTheme.colorScheme.onBackground
-            contentColor = MaterialTheme.colorScheme.background
+            // = - green.
+            containerColor = Color(0xFF34A853)
+            contentColor = Color(0xFFFFFFFF)
         }
     }
 
@@ -616,49 +611,54 @@ private fun SciKeyCell(
         label = "sciPressColor"
     )
 
-    Column(modifier = modifier) {
-        // Small shift label above the key (Casio style) —
-        // bottom-aligned in a fixed box so it is never clipped
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(13.dp),
-            contentAlignment = Alignment.BottomCenter
-        ) {
-            Text(
-                text = key.shiftDisplay ?: "",
-                fontSize = 9.sp,
-                lineHeight = 10.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-                maxLines = 1
+    // No separate label row any more: the shift label lives
+    // INSIDE the button as a small line above the main label,
+    // so rows without a shift label no longer waste 13.dp each
+    // and every button fills its whole row. The small line shows
+    // the alternate function: the shift function normally, the
+    // normal one while SHIFT is on.
+    Button(
+        onClick = { onPress(key) },
+        modifier = modifier
+            .graphicsLayer {
+                scaleX = pressScale
+                scaleY = pressScale
+            },
+        shape = RoundedCornerShape(12.dp),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = animatedContainer,
+            contentColor = contentColor
+        ),
+        elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp),
+        contentPadding = PaddingValues(0.dp),
+        interactionSource = interactionSource
+    ) {
+        if (key.action == "⌫") {
+            Icon(
+                Icons.Default.Backspace,
+                contentDescription = "Delete",
+                modifier = Modifier.size(22.dp)
             )
-        }
-        Button(
-            onClick = { onPress(key) },
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f)
-                .graphicsLayer {
-                    scaleX = pressScale
-                    scaleY = pressScale
-                },
-            shape = RoundedCornerShape(12.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = animatedContainer,
-                contentColor = contentColor
-            ),
-            elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp),
-            contentPadding = PaddingValues(0.dp),
-            interactionSource = interactionSource
-        ) {
-            if (key.action == "⌫") {
-                Icon(
-                    Icons.Default.Backspace,
-                    contentDescription = "Delete",
-                    modifier = Modifier.size(22.dp)
-                )
-            } else {
+        } else {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                val smallLabel = when {
+                    shiftMode && key.shiftDisplay != null -> key.display
+                    key.shiftDisplay != null -> key.shiftDisplay
+                    else -> ""
+                }
+                if (smallLabel.isNotEmpty()) {
+                    Text(
+                        text = smallLabel,
+                        fontSize = 9.sp,
+                        lineHeight = 10.sp,
+                        color = contentColor.copy(alpha = 0.65f),
+                        maxLines = 1,
+                        softWrap = false
+                    )
+                }
                 Text(
                     text = when {
                         shiftMode && key.shiftDisplay != null -> key.shiftDisplay

@@ -319,9 +319,6 @@ fun NormalCalculatorScreen(
         // LIFTED: both lines sit higher in the panel (bigger
         // bottom spacer, taller preview strip), so the live
         // result never touches the panel's bottom edge.
-        val expressionFontSize = 78.sp
-        val finalFontSize = 86.sp
-        val previewFontSize = 36.sp
 
         val groupedHistory = remember(history) { history.groupBy { dayLabel(it.createdAt) } }
         val groupedEntries = remember(groupedHistory) { groupedHistory.entries.toList() }
@@ -407,34 +404,43 @@ fun NormalCalculatorScreen(
                                 Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()
                 ) {
                         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                                // LANDSCAPE (2026-11-07): when the screen is wider than
+                                // it is tall the calculator splits side by side — keypad
+                                // on the left, display on the right (so the floating
+                                // 3-dot menu still sits over the display's 56dp
+                                // clearance, never over a key). Fonts shrink so the
+                                // display fits the short height.
+                                val isLandscape = maxWidth > maxHeight
                                 // EQUAL-SIZE KEYS: top row height computed from
                                 // the measured height (see file header).
-                                val topRowHeight =
+                                val topRowHeight = if (isLandscape) {
+                                        // Left column: top row + 5 keypad rows + 29dp dots
+                                        // share the height: 6 equal rows.
+                                        ((maxHeight - 29.dp) / 6f).coerceAtLeast(40.dp)
+                                } else {
                                         ((maxHeight - 98.2.dp) / 8.75f).coerceAtLeast(48.dp) + 8.dp
+                                }
+                                val expressionFontSize = if (isLandscape) 60.sp else 78.sp
+                                val finalFontSize = if (isLandscape) 64.sp else 86.sp
+                                val previewFontSize = if (isLandscape) 28.sp else 36.sp
+                                val exprFloor = if (isLandscape) 40f else 52f
+                                val finalFloor = if (isLandscape) 40f else 52f
+                                // Panel corners: portrait rounds both bottom corners
+                                // (full-width panel); landscape only the outer
+                                // bottom corner (the inner one meets the keypad).
+                                val panelClip = if (isLandscape) RoundedCornerShape(bottomEnd = 28.dp)
+                                        else RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp)
                                 Column(modifier = Modifier.fillMaxSize()) {
-
-                                        // DISPLAY PANEL — one big panel across the top, square
-                                        // at the top, big rounded corners (28dp) at the bottom
-                                        // only, exactly like the reference. Inside: the
-                                        // expression area on top (fixed 72sp, scrollable) and
-                                        // a RESERVED 48dp answer line under it that is always
-                                        // there, so the preview can never be squeezed out or
-                                        // clipped by the panel again.
-                                        Column(
-                                                modifier =
-                                                        Modifier.fillMaxWidth()
-                                                                .weight(displayWeight)
-                                                                .clip(
-                                                                        RoundedCornerShape(
-                                                                                bottomStart = 28.dp,
-                                                                                bottomEnd = 28.dp
-                                                                        )
-                                                                )
+val displayPanel: @Composable (Modifier) -> Unit = { panelModifier ->
+                                Box(modifier = panelModifier) {
+Column(
+                                                        modifier = Modifier.fillMaxSize()
+                                                                .clip(panelClip)
                                                                 .background(
                                                                         MaterialTheme.colorScheme
                                                                                 .surfaceVariant
                                                                 )
-                                        ) {
+                                                ) {
                                                 // Clearance for the floating top bar drawn by NavGraph
                                                 Spacer(modifier = Modifier.height(topSpacerHeight))
 
@@ -483,8 +489,7 @@ fun NormalCalculatorScreen(
                                                                                                 val excess =
                                                                                                         (formattedFinal.length - 7)
                                                                                                                 .coerceAtLeast(0)
-                                                                                                (finalFontSize.value - 2f * excess)
-                                                                                                        .coerceAtLeast(52f).sp
+                                                                                                (finalFontSize.value - 2f * excess).coerceAtLeast(finalFloor).sp
                                                                                         }
                                                                                 val finalScrollState =
                                                                                         rememberScrollState()
@@ -544,13 +549,8 @@ fun NormalCalculatorScreen(
          }
                                                                         }
                                                                 } else {
-                                                                        Column(
-                                                                                modifier =
-                                                                                        Modifier.fillMaxSize(),
-                                                                                verticalArrangement =
-                                                                                        Arrangement.Bottom,
-                                                                                horizontalAlignment =
-                                                                                        Alignment.End
+                                                                        Box(
+                                                                                modifier = Modifier.fillMaxSize()
                                                                         ) {
                                                                                 // Tap-to-edit: the visible
                                                                                 // text is
@@ -720,237 +720,185 @@ fun NormalCalculatorScreen(
                                                                                 // the FORMATTED slice
                                                                                 // (commas and
                                                                                 // glyphs), so it pastes
-                                                                                // prettily
-                                                                                // anywhere; paste is
-                                                                                // sanitised back
-                                                                                // by the ViewModel.
-                                                                                AnimatedVisibility(
-                                                                                        visible = selActive,
-                                                                                        enter =
-                                                                                                EnterTransition
-                                                                                                        .None,
-                                                                                        exit =
-                                                                                                ExitTransition
-                                                                                                        .None,
-                                                                                        modifier =
-                                                                                                Modifier.fillMaxWidth()
-                                                                                ) {
-                                                                                        Row(
-                                                                                                modifier =
-                                                                                                        Modifier.fillMaxWidth(),
-                                                                                                horizontalArrangement =
-                                                                                                        Arrangement
-                                                                                                                .Center
-                                                                                        ) {
-                                                                                                Row(
-                                                                                                        modifier =
-                                                                                                                Modifier.clip(
-                                                                                                                                RoundedCornerShape(
-                                                                                                                                        percent =
-                                                                                                                                                50
-                                                                                                                                )
-                                                                                                                        )
-                                                                                                                        .background(
-                                                                                                                                // BLACK / WHITE ONLY: the selection
-                                                                                                                                // bar was secondaryContainer, which
-                                                                                                                                // is a tinted colour in the theme.
-                                                                                                                                MaterialTheme
-                                                                                                                                        .colorScheme
-                                                                                                                                        .surfaceVariant
-                                                                                                                        )
-                                                                                                                        .padding(
-                                                                                                                                horizontal =
-                                                                                                                                        6.dp
-                                                                                                                        ),
-                                                                                                        verticalAlignment =
-                                                                                                                Alignment
-                                                                                                                        .CenterVertically
-                                                                                                ) {
-                                                                                                        if (selEnd >
-                                                                                                                        selStart
-                                                                                                        ) {
-                                                                                                                TextButton(
-                                                                                                                        onClick = {
-                                                                                                                                val from =
-                                                                                                                                        formatted
-                                                                                                                                                .rawToFmt[
-                                                                                                                                                selStart.coerceIn(
-                                                                                                                                                        0,
-                                                                                                                                                        expression
-                                                                                                                                                                .length
-                                                                                                                                                )]
-                                                                                                                                val to =
-                                                                                                                                        formatted
-                                                                                                                                                .rawToFmt[
-                                                                                                                                                selEnd.coerceIn(
-                                                                                                                                                        0,
-                                                                                                                                                        expression
-                                                                                                                                                                .length
-                                                                                                                                                )]
-                                                                                                                                clipboardManager
-                                                                                                                                        .setText(
-                                                                                                                                                AnnotatedString(
-                                                                                                                                                        formatted
-                                                                                                                                                                .text
-                                                                                                                                                                .substring(
-                                                                                                                                                                        from,
-                                                                                                                                                                        to.coerceAtMost(
-                                                                                                                                                                                formatted
-                                                                                                                                                                                        .text
-                                                                                                                                                                                        .length
-                                                                                                                                                                        )
+                                                                                // // Selection action bar — OVERLAY (2026-11-07): it used to sit
+                                // in-flow inside this Box, so the moment it appeared the
+                                // expression was pushed up and clipped by the panel.
+                                // Now it floats at the Box's top and the expression
+                                // stays exactly where it is, selected or not.
+                                if (selActive) {
+                                Row(
+                                                                                                                                        modifier =
+                                                                                                                                                Modifier.align(Alignment.TopStart).padding(start = 8.dp, top = 2.dp).clip(
+                                                                                                                                                                RoundedCornerShape(
+                                                                                                                                                                        percent =
+                                                                                                                                                                                50
                                                                                                                                                                 )
-                                                                                                                                                )
-                                                                                                                                        )
-                                                                                                                        }
-                                                                                                                ) {
-                                                                                                                        Text(
-                                                                                                                                "Copy",
-                                                                                                                                fontSize =
-                                                                                                                                        14.sp
-                                                                                                                        )
-                                                                                                                }
-                                                                                                                TextButton(
-                                                                                                                        onClick = {
-                                                                                                                                val from =
-                                                                                                                                        formatted
-                                                                                                                                                .rawToFmt[
-                                                                                                                                                selStart.coerceIn(
-                                                                                                                                                        0,
-                                                                                                                                                        expression
-                                                                                                                                                                .length
-                                                                                                                                                )]
-                                                                                                                                val to =
-                                                                                                                                        formatted
-                                                                                                                                                .rawToFmt[
-                                                                                                                                                selEnd.coerceIn(
-                                                                                                                                                        0,
-                                                                                                                                                        expression
-                                                                                                                                                                .length
-                                                                                                                                                )]
-                                                                                                                                clipboardManager
-                                                                                                                                        .setText(
-                                                                                                                                                AnnotatedString(
-                                                                                                                                                        formatted
-                                                                                                                                                                .text
-                                                                                                                                                                .substring(
-                                                                                                                                                                        from,
-                                                                                                                                                                        to.coerceAtMost(
-                                                                                                                                                                                formatted
-                                                                                                                                                                                        .text
-                                                                                                                                                                                        .length
-                                                                                                                                                                        )
-                                                                                                                                                                )
-                                                                                                                                                )
-                                                                                                                                        )
-                                                                                                                                viewModel
-                                                                                                                                        .deleteRange(
-                                                                                                                                                selStart,
-                                                                                                                                                selEnd
-                                                                                                                                        )
-                                                                                                                                selActive =
-                                                                                                                                        false
-                                                                                                                        }
-                                                                                                                ) {
-                                                                                                                        Text(
-                                                                                                                                "Cut",
-                                                                                                                                fontSize =
-                                                                                                                                        14.sp
-                                                                                                                        )
-                                                                                                                }
-                                                                                                        }
-                                                                                                        TextButton(
-                                                                                                                onClick = {
-                                                                                                                        val clip =
-                                                                                                                                clipboardManager
-                                                                                                                                        .getText()
-                                                                                                                                        ?.text
-                                                                                                                        if (!clip.isNullOrEmpty()
-                                                                                                                        ) {
-                                                                                                                                if (selEnd >
-                                                                                                                                                selStart
+                                                                                                                                                        )
+                                                                                                                                                        .background(
+                                                                                                                                                                // BLACK / WHITE ONLY: the selection
+                                                                                                                                                                // bar was secondaryContainer, which
+                                                                                                                                                                // is a tinted colour in the theme.
+                                                                                                                                                                MaterialTheme
+                                                                                                                                                                        .colorScheme
+                                                                                                                                                                        .surfaceVariant
+                                                                                                                                                        )
+                                                                                                                                                        .padding(
+                                                                                                                                                                horizontal =
+                                                                                                                                                                        6.dp
+                                                                                                                                                        ),
+                                                                                                                                        verticalAlignment =
+                                                                                                                                                Alignment
+                                                                                                                                                        .CenterVertically
                                                                                                                                 ) {
-                                                                                                                                        viewModel
-                                                                                                                                                .deleteRange(
-                                                                                                                                                        selStart,
-                                                                                                                                                        selEnd
-                                                                                                                                                )
+                                                                                                                                        if (selEnd >
+                                                                                                                                                        selStart
+                                                                                                                                        ) {
+                                                                                                                                                TextButton(
+                                                                                                                                                        onClick = {
+                                                                                                                                                                val from =
+                                                                                                                                                                        formatted
+                                                                                                                                                                                .rawToFmt[
+                                                                                                                                                                                selStart.coerceIn(
+                                                                                                                                                                                        0,
+                                                                                                                                                                                        expression
+                                                                                                                                                                                                .length
+                                                                                                                                                                                )]
+                                                                                                                                                                val to =
+                                                                                                                                                                        formatted
+                                                                                                                                                                                .rawToFmt[
+                                                                                                                                                                                selEnd.coerceIn(
+                                                                                                                                                                                        0,
+                                                                                                                                                                                        expression
+                                                                                                                                                                                                .length
+                                                                                                                                                                                )]
+                                                                                                                                                                clipboardManager
+                                                                                                                                                                        .setText(
+                                                                                                                                                                                AnnotatedString(
+                                                                                                                                                                                        formatted
+                                                                                                                                                                                                .text
+                                                                                                                                                                                                .substring(
+                                                                                                                                                                                                        from,
+                                                                                                                                                                                                        to.coerceAtMost(
+                                                                                                                                                                                                                formatted
+                                                                                                                                                                                                                        .text
+                                                                                                                                                                                                                        .length
+                                                                                                                                                                                                        )
+                                                                                                                                                                                                )
+                                                                                                                                                                                )
+                                                                                                                                                                        )
+                                                                                                                                                        }
+                                                                                                                                                , contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)) {
+                                                                                                                                                        Text("Copy", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface)
+                                                                                                                                                }
+                                                                                                                                                TextButton(
+                                                                                                                                                        onClick = {
+                                                                                                                                                                val from =
+                                                                                                                                                                        formatted
+                                                                                                                                                                                .rawToFmt[
+                                                                                                                                                                                selStart.coerceIn(
+                                                                                                                                                                                        0,
+                                                                                                                                                                                        expression
+                                                                                                                                                                                                .length
+                                                                                                                                                                                )]
+                                                                                                                                                                val to =
+                                                                                                                                                                        formatted
+                                                                                                                                                                                .rawToFmt[
+                                                                                                                                                                                selEnd.coerceIn(
+                                                                                                                                                                                        0,
+                                                                                                                                                                                        expression
+                                                                                                                                                                                                .length
+                                                                                                                                                                                )]
+                                                                                                                                                                clipboardManager
+                                                                                                                                                                        .setText(
+                                                                                                                                                                                AnnotatedString(
+                                                                                                                                                                                        formatted
+                                                                                                                                                                                                .text
+                                                                                                                                                                                                .substring(
+                                                                                                                                                                                                        from,
+                                                                                                                                                                                                        to.coerceAtMost(
+                                                                                                                                                                                                                formatted
+                                                                                                                                                                                                                        .text
+                                                                                                                                                                                                                        .length
+                                                                                                                                                                                                        )
+                                                                                                                                                                                                )
+                                                                                                                                                                                )
+                                                                                                                                                                        )
+                                                                                                                                                                viewModel
+                                                                                                                                                                        .deleteRange(
+                                                                                                                                                                                selStart,
+                                                                                                                                                                                selEnd
+                                                                                                                                                                        )
+                                                                                                                                                                selActive =
+                                                                                                                                                                        false
+                                                                                                                                                        }
+                                                                                                                                                , contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)) {
+                                                                                                                                                        Text("Cut", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface)
+                                                                                                                                                }
+                                                                                                                                        }
+                                                                                                                                        TextButton(
+                                                                                                                                                onClick = {
+                                                                                                                                                        val clip =
+                                                                                                                                                                clipboardManager
+                                                                                                                                                                        .getText()
+                                                                                                                                                                        ?.text
+                                                                                                                                                        if (!clip.isNullOrEmpty()
+                                                                                                                                                        ) {
+                                                                                                                                                                if (selEnd >
+                                                                                                                                                                                selStart
+                                                                                                                                                                ) {
+                                                                                                                                                                        viewModel
+                                                                                                                                                                                .deleteRange(
+                                                                                                                                                                                        selStart,
+                                                                                                                                                                                        selEnd
+                                                                                                                                                                                )
+                                                                                                                                                                }
+                                                                                                                                                                viewModel
+                                                                                                                                                                        .pasteText(
+                                                                                                                                                                                clip
+                                                                                                                                                                        )
+                                                                                                                                                                selActive =
+                                                                                                                                                                        false
+                                                                                                                                                        }
+                                                                                                                                                }
+                                                                                                                                        , contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)) {
+                                                                                                                                                Text("Paste", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface)
+                                                                                                                                        }
+                                                                                                                                        if (expression
+                                                                                                                                                        .isNotEmpty()
+                                                                                                                                        ) {
+                                                                                                                                                TextButton(
+                                                                                                                                                        onClick = {
+                                                                                                                                                                selStart =
+                                                                                                                                                                        0
+                                                                                                                                                                selEnd =
+                                                                                                                                                                        expression
+                                                                                                                                                                                .length
+                                                                                                                                                        }
+                                                                                                                                                , contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)) {
+                                                                                                                                                        Text("All", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface)
+                                                                                                                                                }
+                                                                                                                                        }
+                                                                                                                                        TextButton(
+                                                                                                                                                onClick = {
+                                                                                                                                                        selActive =
+                                                                                                                                                                false
+                                                                                                                                                }
+                                                                                                                                        , contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)) {
+                                                                                                                                                Text("Done", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface)
+                                                                                                                                        }
                                                                                                                                 }
-                                                                                                                                viewModel
-                                                                                                                                        .pasteText(
-                                                                                                                                                clip
-                                                                                                                                        )
-                                                                                                                                selActive =
-                                                                                                                                        false
-                                                                                                                        }
-                                                                                                                }
-                                                                                                        ) {
-                                                                                                                Text(
-                                                                                                                        "Paste",
-                                                                                                                        fontSize =
-                                                                                                                                14.sp
-                                                                                                                )
-                                                                                                        }
-                                                                                                        if (expression
-                                                                                                                        .isNotEmpty()
-                                                                                                        ) {
-                                                                                                                TextButton(
-                                                                                                                        onClick = {
-                                                                                                                                selStart =
-                                                                                                                                        0
-                                                                                                                                selEnd =
-                                                                                                                                        expression
-                                                                                                                                                .length
-                                                                                                                        }
-                                                                                                                ) {
-                                                                                                                        Text(
-                                                                                                                                "All",
-                                                                                                                                fontSize =
-                                                                                                                                        14.sp
-                                                                                                                        )
-                                                                                                                }
-                                                                                                        }
-                                                                                                        TextButton(
-                                                                                                                onClick = {
-                                                                                                                        selActive =
-                                                                                                                                false
-                                                                                                                }
-                                                                                                        ) {
-                                                                                                                Text(
-                                                                                                                        "Done",
-                                                                                                                        fontSize =
-                                                                                                                                14.sp
-                                                                                                                )
-                                                                                                        }
-                                                                                                }
-                                                                                        }
-                                                                                }
-                                                                                if (selActive) {
-                                                                                        Spacer(
-                                                                                                modifier =
-                                                                                                        Modifier.height(
-                                                                                                                4.dp
-                                                                                                        )
-                                                                                        )
-                                                                                }
-
-                                                                                // Single line only — never
-                                                                                // wraps. ADAPTIVE: 78sp theke
-                                                                                // suru, 8 char-er beshi hole
-                                                                                // 2sp kore kombe, 52sp-e giye
-                                                                                // theme jabe, tarpor shudhu
+                                }                // theme jabe, tarpor shudhu
                                                                                 // scroll hobe, ar choto hobe na.
                                                                                 val adaptiveExpressionFontSize =
                                                                                         remember(formatted.text) {
                                                                                                 val excess =
                                                                                                         (formatted.text.length - 8)
                                                                                                                 .coerceAtLeast(0)
-                                                                                                (expressionFontSize.value - 2f * excess)
-                                                                                                        .coerceAtLeast(52f).sp
+                                                                                                (expressionFontSize.value - 2f * excess).coerceAtLeast(exprFloor).sp
                                                                                         }
                                                                                 Row(
                                                                                         modifier =
-                                                                                                Modifier.fillMaxWidth()
+                                                                                                Modifier.align(Alignment.BottomCenter).fillMaxWidth()
                                                                                                         .horizontalScroll(
                                                                                                                 scrollState,
                                                                                                                 enabled =
@@ -1417,9 +1365,13 @@ fun NormalCalculatorScreen(
                                                 }
 
                                                 Spacer(modifier = Modifier.height(24.dp))
-                                        }
+                                        
+                                                }
+                                }
+                        }
 
-                                        // TOP ROW — 4 SEPARATE ROUND keys, all static.
+val keypadSection: @Composable () -> Unit = {
+// TOP ROW — 4 SEPARATE ROUND keys, all static.
                                         // √, ^, E, Ans — each its own circle, same
                                         // surfaceVariant background as the other keys, no
                                         // pill any more, NO π here at all: π is only
@@ -1814,7 +1766,21 @@ fun NormalCalculatorScreen(
                                                         )
                                                 }
                                         }
+                                
+                        }
+
+if (isLandscape) {
+                                Row(modifier = Modifier.fillMaxSize()) {
+                                        Column(modifier = Modifier.weight(0.58f).fillMaxHeight()) { keypadSection() }
+                                        Box(modifier = Modifier.weight(0.42f).fillMaxHeight()) { displayPanel(Modifier.fillMaxSize()) }
                                 }
+                        } else {
+                                Column(modifier = Modifier.fillMaxSize()) {
+                                        displayPanel(Modifier.fillMaxWidth().weight(displayWeight))
+                                        keypadSection()
+                                }
+                        }
+}
                         }
                 }
         }
