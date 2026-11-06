@@ -1,3 +1,11 @@
+// HARDWARE + SOUND VERSION (2026-11-06) - REPLACE MoanControlScreen.kt.
+//  1. RENAMED: drawer + page titles only. "Hardcore" ->
+//     "Hardware", "Moan" -> "Sound". Function names,
+//     routes, prefs and all behaviour are unchanged.
+//  2. DRAWER SWIPE (universal rule): leftward drag anywhere
+//     on Hardware / Sound opens the app drawer. The volume
+//     sliders keep working: a drag that starts ON a slider
+//     moves the slider, it does not open the drawer.
 // FILE: app/src/main/java/com/calnyx/app/ui/screens/MoanControlScreen.kt
 // V6 - based on V5. The user tested V5 (screenshots 2026-11-06
 // 12:13-12:16) and asked for:
@@ -118,6 +126,7 @@ import android.provider.Settings
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
@@ -145,6 +154,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalLifecycleOwner
@@ -291,7 +301,10 @@ private fun openNetworkSwitcher(
 }
 
 @Composable
-fun HardcoreScreen(darkTheme: Boolean) {
+fun HardcoreScreen(
+    darkTheme: Boolean,
+    onOpenDrawer: () -> Unit = {}
+) {
     val pageBg = if (darkTheme) Color(0xFF0E0E0E) else Color(0xFFF6F4EF)
     val cardBg = if (darkTheme) Color(0xFF1B1B1B) else Color(0xFFFFFFFF)
     val cardBorder = if (darkTheme) Color(0xFF2B2B2B) else Color(0xFFE9E6DF)
@@ -314,8 +327,32 @@ fun HardcoreScreen(darkTheme: Boolean) {
             controller.isAppearanceLightNavigationBars = !darkTheme
         }
     }
+    // DRAWER SWIPE (universal rule, 2026-11-06): a LEFTWARD
+    // drag anywhere on this screen opens the app drawer.
+    // Rightward drags are not consumed here. A tap (no real
+    // movement) does nothing, so buttons still work.
+    val drawerSwipe = Modifier.pointerInput(Unit) {
+        val thresholdPx = 24.dp.toPx()
+        var totalDx = 0f
+        var done = false
+        detectHorizontalDragGestures(
+            onDragStart = { totalDx = 0f; done = false },
+            onDragEnd = { totalDx = 0f; done = false },
+            onDragCancel = { totalDx = 0f; done = false },
+            onHorizontalDrag = { change, dragAmount ->
+                if (done) return@detectHorizontalDragGestures
+                totalDx += dragAmount
+                if (totalDx < -thresholdPx) {
+                    done = true
+                    onOpenDrawer()
+                    change.consume()
+                }
+            }
+        )
+    }
+
     Surface(modifier = Modifier.fillMaxSize(), color = pageBg, contentColor = onPageColor) {
-        Column(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
+        Column(modifier = Modifier.fillMaxSize().statusBarsPadding().then(drawerSwipe)) {
             if (note != null) {
                 Text(
                     text = note ?: "",
@@ -337,7 +374,10 @@ fun HardcoreScreen(darkTheme: Boolean) {
 }
 
 @Composable
-fun MoanScreen(darkTheme: Boolean) {
+fun MoanScreen(
+    darkTheme: Boolean,
+    onOpenDrawer: () -> Unit = {}
+) {
     val pageBg = if (darkTheme) Color(0xFF0E0E0E) else Color(0xFFF6F4EF)
     val cardBg = if (darkTheme) Color(0xFF1B1B1B) else Color(0xFFFFFFFF)
     val cardBorder = if (darkTheme) Color(0xFF2B2B2B) else Color(0xFFE9E6DF)
@@ -360,8 +400,32 @@ fun MoanScreen(darkTheme: Boolean) {
             controller.isAppearanceLightNavigationBars = !darkTheme
         }
     }
+    // DRAWER SWIPE (universal rule, 2026-11-06): a LEFTWARD
+    // drag anywhere on this screen opens the app drawer.
+    // Rightward drags are not consumed here. A tap (no real
+    // movement) does nothing, so buttons still work.
+    val drawerSwipe = Modifier.pointerInput(Unit) {
+        val thresholdPx = 24.dp.toPx()
+        var totalDx = 0f
+        var done = false
+        detectHorizontalDragGestures(
+            onDragStart = { totalDx = 0f; done = false },
+            onDragEnd = { totalDx = 0f; done = false },
+            onDragCancel = { totalDx = 0f; done = false },
+            onHorizontalDrag = { change, dragAmount ->
+                if (done) return@detectHorizontalDragGestures
+                totalDx += dragAmount
+                if (totalDx < -thresholdPx) {
+                    done = true
+                    onOpenDrawer()
+                    change.consume()
+                }
+            }
+        )
+    }
+
     Surface(modifier = Modifier.fillMaxSize(), color = pageBg, contentColor = onPageColor) {
-        Column(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
+        Column(modifier = Modifier.fillMaxSize().statusBarsPadding().then(drawerSwipe)) {
             if (note != null) {
                 Text(
                     text = note ?: "",
@@ -458,7 +522,7 @@ private fun ControlTab(
                 Icon(Icons.Default.PowerSettingsNew, contentDescription = null, modifier = Modifier.size(28.dp), tint = onPageColor)
             }
             Spacer(modifier = Modifier.width(12.dp))
-            Text("Hardcore", fontWeight = FontWeight.Bold, fontSize = 28.sp, color = onPageColor)
+            Text("Hardware", fontWeight = FontWeight.Bold, fontSize = 28.sp, color = onPageColor)
         }
         // POWER
         Text("Power", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color.Gray)
@@ -821,7 +885,7 @@ private fun SoundTab(
                 Icon(Icons.Default.MusicNote, contentDescription = null, modifier = Modifier.size(28.dp), tint = onPageColor)
             }
             Spacer(modifier = Modifier.width(12.dp))
-            Text("Moan", fontWeight = FontWeight.Bold, fontSize = 28.sp, color = onPageColor)
+            Text("Sound", fontWeight = FontWeight.Bold, fontSize = 28.sp, color = onPageColor)
         }
         Text("Ringer Profile", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color.Gray)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {

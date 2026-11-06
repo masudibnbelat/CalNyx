@@ -1,45 +1,14 @@
 // FILE: app/src/main/java/com/calnyx/app/BlueFilm/BlueFilmService.kt
-// REPLACE the previous camera version.
-// FIX for "record click hangs":
-//  - Camera open + MediaRecorder.prepare() used to run on the
-//    main thread (onStartCommand). prepare() can block for a
-//    long time and the UI freezes / ANRs.
-//  - Now startForeground() runs on the main thread only, then
-//    ALL heavy work is posted to the camera HandlerThread.
-//  - Added isStarting guard: a second tap while the camera is
-//    still opening is ignored instead of opening the camera
-//    twice and deadlocking.
-//  - Recording state is only set to true in onConfigured,
-//    after the session is really running. The screen polls
-//    this flag instead of guessing, so it cannot get stuck
-//    showing "Recording" when nothing is recording.
-//  - Quality config added: 720p (1280x720) or 1080p
-//    (1920x1080), saved in bluefilm_prefs as video_quality.
-//    If the camera does not offer that exact size, the
-//    closest size at or below it is used.
-//  - V3: PARTIAL_WAKE_LOCK acquired on start, released on stop,
-//    so recording keeps going when the screen turns off / locks.
-//    Needs WAKE_LOCK permission in the manifest.
-//  - V5: FIX for "Video could not be decrypted" on some
-//    recordings. Two bugs could corrupt the .bfenc file:
-//    (a) stopRecording() could run TWICE at the same time -
-//    once from ACTION_STOP on the main thread, once from
-//    CameraDevice.onError / onDisconnected on the camera
-//    thread. Both encrypted the same tmp file to the same
-//    timestamped name, interleaving the ciphertext, so the
-//    GCM tag never verified and decrypt always failed.
-//    Now an isStopping guard lets only the first call in.
-//    (b) encrypt wrote straight to the final .bfenc name, so
-//    a partial / interrupted encrypt still appeared in the
-//    list as a real video. Now it encrypts to dest.tmp,
-//    checks dest length == tmp length + 28 (12 IV + 16 tag),
-//    retries once if it does not match, and only then
-//    renames it to the real name. A bad encrypt leaves
-//    nothing in the list. cleanup() also no longer deletes
-//    tmpFile while a stop is in progress.
-//  - Everything else is unchanged: Camera2 + MediaRecorder,
-//    no preview, foreground service type camera, video-only,
-//    encrypt on stop via BlueFilmCrypto/BlueFilmStore, offline.
+// PLAIN VERSION (2026-11-06) - REPLACE the old BlueFilmService.kt.
+// Based on V8.2. ONLY change: NO ENCRYPTION on stop any more.
+//  - The recorder still writes a plain .mp4 temp file.
+//  - On stop the temp is now COPIED (via .tmp, size-checked,
+//    retry once, then renamed) straight to its final plain
+//    .mp4 name from BlueFilmStore.newVideoFile(). The isStopping
+//    guard, the wake lock, Camera2, quality, facing and the
+//    notification are all unchanged.
+//  - Old encrypted .bfenc videos are converted by
+//    BlueFilmStore.ensureMigrated() on first open - not here.
 package com.calnyx.app.BlueFilm
 
 import android.app.Notification
@@ -369,11 +338,10 @@ class BlueFilmService : Service() {
                         if (ok) break
                         try {
                             if (tmpDest.exists()) tmpDest.delete()
-                            BlueFilmCrypto.encryptFile(this, tmp, tmpDest)
-                            // Encrypted size must be exactly plaintext + 28
-                            // (12-byte IV + 16-byte GCM tag). Anything else
-                            // means the encrypt was cut short.
-                            if (tmpDest.exists() && tmpDest.length() == tmp.length() + 28) {
+                            tmp.copyTo(tmpDest, overwrite = true)
+                            // Plain copy: size must match exactly.
+                            // Anything else means the copy was cut short.
+                            if (tmpDest.exists() && tmpDest.length() == tmp.length()) {
                                 ok = tmpDest.renameTo(dest)
                                 if (!ok) tmpDest.delete()
                             } else {

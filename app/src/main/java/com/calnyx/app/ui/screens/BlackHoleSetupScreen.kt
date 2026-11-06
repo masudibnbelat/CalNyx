@@ -1,8 +1,8 @@
-// FILE: app/src/main/java/com/calnyx/app/ui/screens/VaultSetupScreen.kt
-// MODERN VERSION - replace your old VaultSetupScreen.kt with this file.
+// FILE: app/src/main/java/com/calnyx/app/ui/screens/BlackHoleSetupScreen.kt
+// MODERN VERSION - replace your old BlackHoleSetupScreen.kt with this file.
 // Logic is UNCHANGED (first-time setup asks no old secret, changing
 // a set secret requires the old secret, Save stores it via
-// VaultPrefs and calls onSaved). Only the design changed:
+// BlackHolePrefs and calls onSaved). Only the design changed:
 //  - Black/white only (off-white / off-black), dark-mode support,
 //    no theme pink on the button or the text fields.
 //  - English only. No Banglish strings, no long descriptions,
@@ -17,7 +17,7 @@
 // onPageColor / cardBorderColor only. No other change.
 // NO DRAWER SWIPE on this screen: it is a hidden screen —
 // NavGraph deliberately hides the drawer and top bar on the
-// VaultSetup route, and the vault must stay hidden with no menu
+// BlackHoleSetup route, and the blackhole must stay hidden with no menu
 // trace. Do NOT add any onOpenDrawer param or swipe detector here.
 package com.calnyx.app.ui.screens
 
@@ -59,16 +59,16 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.calnyx.app.vault.VaultPrefs
+import com.calnyx.app.blackhole.BlackHolePrefs
 
 @Composable
-fun VaultSetupScreen(
+fun BlackHoleSetupScreen(
     onBack: () -> Unit,
     onSaved: () -> Unit,
     darkTheme: Boolean = isSystemInDarkTheme()
 ) {
     val context = LocalContext.current
-    val alreadySet = VaultPrefs.isSecretSet(context)
+    val alreadySet = BlackHolePrefs.isSecretSet(context)
 
     var oldSecret by remember { mutableStateOf("") }
     var newSecret by remember { mutableStateOf("") }
@@ -173,11 +173,11 @@ fun VaultSetupScreen(
                     fresh != confirmSecret.trim() -> {
                         Toast.makeText(context, "Secrets do not match", Toast.LENGTH_SHORT).show()
                     }
-                    alreadySet && oldSecret.trim() != VaultPrefs.getSecret(context) -> {
+                    alreadySet && oldSecret.trim() != BlackHolePrefs.getSecret(context) -> {
                         Toast.makeText(context, "Old secret is incorrect", Toast.LENGTH_SHORT).show()
                     }
                     else -> {
-                        VaultPrefs.setSecret(context, fresh)
+                        BlackHolePrefs.setSecret(context, fresh)
                         Toast.makeText(context, "Secret saved", Toast.LENGTH_SHORT).show()
                         onSaved()
                     }

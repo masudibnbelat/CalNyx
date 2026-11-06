@@ -1,3 +1,10 @@
+// SPY + PLAIN VERSION (2026-11-06) - REPLACE BlueFilmScreen.kt.
+//  1. PLAIN: no encryption any more (see BlueFilmStore).
+//     Play / thumbnails / Download use the stored .mp4
+//     directly. "Damaged" now means the file itself is
+//     unreadable, not a decrypt failure.
+//  2. RENAMED: the page is now "Spy" (drawer + title).
+//  3. DRAWER SWIPE: leftward drag anywhere opens the drawer.
 // FILE: app/src/main/java/com/calnyx/app/ui/screens/BlueFilmScreen.kt
 // FOLDERS VERSION - replace your old BlueFilmScreen.kt with this file.
 // Based on V8.2. Only change: folder Rename + folder Delete.
@@ -111,6 +118,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -165,6 +173,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.ui.text.TextStyle
@@ -185,7 +194,10 @@ import kotlinx.coroutines.withContext
 // foundation API - opt in so the build does not fail on it.
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun BlueFilmScreen(darkTheme: Boolean) {
+fun BlueFilmScreen(
+    darkTheme: Boolean,
+    onOpenDrawer: () -> Unit = {}
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val pageBg = if (darkTheme) Color(0xFF121212) else Color(0xFFF6F4EF)
@@ -300,7 +312,6 @@ fun BlueFilmScreen(darkTheme: Boolean) {
                 val message = when (err) {
                     null -> null
                     "no_file" -> "Video file is missing."
-                    "decrypt_failed" -> "Video could not be decrypted. This file was damaged when it was recorded and cannot be played. Record a new short video to test."
                     "no_fileprovider" -> "FileProvider path is missing. Replace res/xml/file_paths.xml with the merged one."
                     "no_player" -> "No video player app found on this phone."
                     else -> "Player could not be started."
@@ -335,15 +346,15 @@ fun BlueFilmScreen(darkTheme: Boolean) {
             } else if (wasRecording) {
                 elapsedSec = 0L
                 refreshAll()
-                note = "Saved to Blue Film (encrypted)."
+                note = "Saved to Spy."
             }
             wasRecording = rec
             delay(500)
         }
     }
 
-    // Background prep, once per video: decrypt to cache (so
-    // Play is instant later) + make a thumbnail frame.
+    // Background prep, once per video: check the file reads
+    // (so Play is instant later) + make a thumbnail frame.
     // In the folders view it preps the first video of each
     // folder (the folder cover); inside a folder it preps
     // every video there. Nothing here blocks the UI.
@@ -357,10 +368,10 @@ fun BlueFilmScreen(darkTheme: Boolean) {
             for (file in targets) {
                 val name = BlueFilmStore.displayName(file)
                 if (thumbBitmaps.containsKey(name) || damagedNames.contains(name)) continue
-                // Decrypt first: if that fails the file is
-                // damaged and can never play - mark it on the
-                // card instead of letting the user tap it and
-                // get nothing.
+                // If the file itself is missing / empty the
+                // video is damaged and can never play - mark
+                // it on the card instead of letting the user
+                // tap it and get nothing.
                 val tmp = BlueFilmStore.prepareTemp(context, file)
                 if (tmp == null) {
                     withContext(Dispatchers.Main) { damagedNames = damagedNames + name }
@@ -377,11 +388,35 @@ fun BlueFilmScreen(darkTheme: Boolean) {
         }
     }
 
+    // DRAWER SWIPE (universal rule, 2026-11-06): a LEFTWARD
+    // drag anywhere on this screen opens the app drawer.
+    // Rightward drags are not consumed here. A tap (no real
+    // movement) does nothing, so buttons still work.
+    val drawerSwipe = Modifier.pointerInput(Unit) {
+        val thresholdPx = 24.dp.toPx()
+        var totalDx = 0f
+        var done = false
+        detectHorizontalDragGestures(
+            onDragStart = { totalDx = 0f; done = false },
+            onDragEnd = { totalDx = 0f; done = false },
+            onDragCancel = { totalDx = 0f; done = false },
+            onHorizontalDrag = { change, dragAmount ->
+                if (done) return@detectHorizontalDragGestures
+                totalDx += dragAmount
+                if (totalDx < -thresholdPx) {
+                    done = true
+                    onOpenDrawer()
+                    change.consume()
+                }
+            }
+        )
+    }
+
     BoxWithConstraints(
         // Background FIRST, then the bar paddings: the page
         // colour covers the area behind the status bar too,
         // so the top strip matches the page below it.
-        modifier = Modifier.fillMaxSize()
+        modifier = Modifier.fillMaxSize().then(drawerSwipe)
             .background(pageBg)
             .statusBarsPadding()
             .navigationBarsPadding()
@@ -424,7 +459,7 @@ fun BlueFilmScreen(darkTheme: Boolean) {
                 }
                 Spacer(modifier = Modifier.width(screenW * 0.03f))
                 Text(
-                    "Blue Film",
+                    "Spy",
                     fontWeight = FontWeight.Bold,
                     fontSize = 28.sp,
                     color = primary,

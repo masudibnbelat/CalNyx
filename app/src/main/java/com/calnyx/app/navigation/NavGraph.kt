@@ -1,6 +1,41 @@
+// ABOUT-CRASH FIX (2026-11-06) - REPLACE NavGraph.kt.
+//  About tapped -> app closed. Likely cause: the dialog
+//  loaded the launcher icon with painterResource(
+//  R.mipmap.ic_launcher). On this project the launcher
+//  icon is an ADAPTIVE icon (mipmap-anydpi-v26 XML),
+//  and painterResource cannot load an adaptive-icon
+//  drawable - it throws and the app dies. Fixed by
+//  loading the icon through PackageManager instead
+//  (getApplicationIcon -> draw into a Bitmap ->
+//  asImageBitmap), which works for ANY drawable,
+//  adaptive included, with a Calculate-icon fallback
+//  if even that fails. No other change.
+// SPY + HARDWARE/SOUND + ABOUT VERSION (2026-11-06) - REPLACE NavGraph.kt.
+//  1. RENAMED (drawer + page titles only; routes, function
+//     names and behaviour unchanged): Hardcore -> Hardware,
+//     Moan -> Sound, Blue Film -> Spy.
+//  2. DRAWER SWIPE: HardcoreScreen / MoanScreen /
+//     BlueFilmScreen now get onOpenDrawer, so a leftward
+//     swipe anywhere on Hardware, Sound or Spy opens the
+//     drawer (universal drawer rule).
+//  3. ABOUT: the bottom "Contact Developer" item is now
+//     "About this app" (small text). Tap it and an About
+//     modal opens: app icon + CalNyx + version on top,
+//     a Check for updates button (opens the existing
+//     UpdateDialog), a description of the app, and below
+//     it Contact Developer with the developer's name and
+//     email - tap that row to send an email.
 // FILE: app/src/main/java/com/calnyx/app/navigation/NavGraph.kt
-// CLIPBOARD VERSION - replace your old NavGraph.kt with this file.
-// Based on RIGHTDRAWER. ONLY Clipboard changes (2026-11-06):
+// DRAWER-THEME VERSION (2026-11-06) - replace your old NavGraph.kt
+// with this file. Based on CLIPBOARD. ONLY two drawer changes:
+//  1. Header: the app logo circle is GONE. In its place is a
+//     sun/moon circle — tap it and the theme changes at once
+//     (Moon in light mode -> dark, Sun in dark mode -> light).
+//  2. Bottom: the Dark/Light mode toggle is GONE. In its place is
+//     "Contact Developer" — tap it and an email to the developer
+//     opens (DEVELOPER_EMAIL below, from the user's CV).
+//  Everything else is unchanged (drawer items, swipe, privacy,
+//  reopen rule, Clipboard, Blue Film folders).
 //  1. New drawer item LAST: Clipboard (ContentPaste icon).
 //  2. New composable for Screen.Clipboard, passing onOpenDrawer
 //     so a leftward swipe anywhere on the Clipboard screen opens
@@ -26,7 +61,7 @@
 //  3. Everything else is unchanged: drawer content
 //     (logo, version, Update icon, tools list, theme
 //     toggle), the 2/3 width, the 0.55 scrim, the reopen
-//     rule, vault hiding.
+//     rule, blackhole hiding.
 // RIGHTDRAWER VERSION - replace your old NavGraph.kt with this file.
 // SPLIT VERSION - replace your old NavGraph.kt with this file.
 // Based on MOAN (DRAWER + FIXED2). Only changes:
@@ -57,9 +92,11 @@
 //    menu corner, it never clashes with a screen's own top-left
 //    controls, and the hamburger icon stays (it opens a drawer).
 //    History keeps its Back button on the top-left.
-// 3. Drawer header (top): logo circle, CalNyx, version, Update icon.
+// 3. Drawer header (top): theme toggle circle (sun/moon — tap to
+//    change theme at once), CalNyx, version, Update icon. The old
+//    app logo circle was removed here (2026-11-06).
 //    Below: tools as a vertical list - icon + title per row.
-//    History is in the list too. Vault / VaultSetup / AppLock are
+//    History is in the list too. BlackHole / BlackHoleSetup / AppLock are
 //    NOT in the drawer - they stay hidden, no menu trace.
 // 4. To add a feature later: add its Screen to menuScreens below,
 //    or add a NavigationDrawerItem in the drawer list section.
@@ -75,9 +112,12 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
@@ -89,6 +129,9 @@ import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.filled.Calculate
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Functions
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.LightMode
@@ -123,14 +166,22 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import android.app.Activity
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.net.Uri
 import android.os.Build
+import android.widget.Toast
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import kotlinx.coroutines.delay
@@ -146,6 +197,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.calnyx.app.ThemePrefs
 import com.calnyx.app.applock.AppLockManager
+import com.calnyx.app.blackhole.BlackHolePickerGuard
 import com.calnyx.app.data.NavStateDatabase
 import com.calnyx.app.data.NavStateEntity
 import com.calnyx.app.ui.screens.BlueFilmScreen
@@ -161,8 +213,8 @@ import com.calnyx.app.ui.screens.NormalCalculatorScreen
 import com.calnyx.app.ui.screens.NotepadCalculatorScreen
 import com.calnyx.app.ui.screens.NumberSystemCalculatorScreen
 import com.calnyx.app.ui.screens.ScientificCalculatorScreen
-import com.calnyx.app.ui.screens.VaultScreen
-import com.calnyx.app.ui.screens.VaultSetupScreen
+import com.calnyx.app.ui.screens.BlackHoleScreen
+import com.calnyx.app.ui.screens.BlackHoleSetupScreen
 import com.calnyx.app.update.UpdateDialog
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -202,11 +254,11 @@ sealed class Screen(
             )
     object History : Screen("history", "History", "Past calculations", Icons.Default.History)
     object Hardcore :
-            Screen("hardcore", "Hardcore", "Power, network & ball", Icons.Default.PowerSettingsNew)
+            Screen("hardcore", "Hardware", "Power, network & ball", Icons.Default.PowerSettingsNew)
     object Moan :
-            Screen("moan", "Moan", "Sound", Icons.Default.VolumeUp)
+            Screen("moan", "Sound", "Sound", Icons.Default.VolumeUp)
     object BlueFilm :
-            Screen("blue_film", "Blue Film", "Secret screen recorder", Icons.Default.Videocam)
+            Screen("blue_film", "Spy", "Secret camera recorder", Icons.Default.Videocam)
     object Clipboard :
             Screen(
                     "clipboard",
@@ -215,20 +267,20 @@ sealed class Screen(
                     Icons.Default.ContentPaste
             )
 
-    // Hidden vault — menuScreens-এ যোগ করা হয়নি, তাই মেনুতে
+    // Hidden blackhole — menuScreens-এ যোগ করা হয়নি, তাই মেনুতে
     // দেখাবে না। শুধু Normal calculator-এ সিক্রেট হিসাব
     // লিখে = চাপলেই এই রুটে যাওয়া যাবে।
-    object Vault : Screen("vault", "Vault", "Hidden space", Icons.Default.Lock)
+    object BlackHole : Screen("blackhole", "Black Hole", "Hidden space", Icons.Default.Lock)
 
-    // Setup — vault-এর মতোই মেনুতে নেই।
+    // Setup — blackhole-এর মতোই মেনুতে নেই।
     // Normal calculator-e "=" long-press করলে যাওয়া যাবে।
     // Prothombar purono secret lagbe na, pore bodlate
     // chaile purono secret dite hobe।
-    object VaultSetup :
-            Screen("vault_setup", "Vault Setup", "Set hidden space code", Icons.Default.Lock)
+    object BlackHoleSetup :
+            Screen("blackhole_setup", "Black Hole Setup", "Set hidden space code", Icons.Default.Lock)
 
     // Hidden app lock — menuScreens-এ যোগ করা হয়নি, তাই মেনুতে
-    // দেখাবে না। শুধু Vault-এর App Lock কার্ড থেকে যাওয়া যাবে।
+    // দেখাবে না। শুধু BlackHole-এর App Lock কার্ড থেকে যাওয়া যাবে।
     object AppLock :
             Screen("app_lock", "App Lock", "Locked apps", Icons.Default.Lock)
 }
@@ -259,6 +311,12 @@ private val NavThumbDark = Color(0xFF262626)
 // Red is the ONLY extra colour, for specialty only. See header.
 private val NavRed = Color(0xFFC62828)
 
+// Developer's email for the drawer's "Contact Developer" item
+// (2026-11-06). Taken from the user's own CV. To change it, edit
+// this one line — the mail intent below uses it.
+private const val DEVELOPER_EMAIL = "masudibnbelat@gmail.com"
+private const val DEVELOPER_NAME = "Md. Masud Khan"
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
@@ -269,11 +327,11 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
 
-    // PRIVACY: Vault / VaultSetup / AppLock khola rekhe app theke
+    // PRIVACY: BlackHole / BlackHoleSetup / AppLock khola rekhe app theke
     // ber hole (onno app, recents, screen lock — jekono ON_STOP),
     // fire asle ar sei private screen dekhabe na. ON_STOP-ei
     // backstack Normal calculator-e firiye deoa hoy, tai fire
-    // asar somoy Vault-er ek jholok-o dekhabe na. Normal
+    // asar somoy BlackHole-er ek jholok-o dekhabe na. Normal
     // calculator theke locked app unlock korle eta kichu kore na,
     // karon tokhon route Normal-i thake.
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -293,13 +351,24 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
                 }
             }
             // Rotation-e activity recreate hoy, seta ber hoye jaoa na —
-            // tai rotation-e Vault bondho hobe na, sudhu sotti ber holei hobe.
+            // tai rotation-e BlackHole bondho hobe na, sudhu sotti ber holei hobe.
+            // IMPORT FIX (2026-11-06): do NOT close the blackhole while
+            // the system file picker (or the system delete-confirm
+            // dialog) is open. That picker is a separate activity,
+            // so CalNyx goes ON_STOP while it is on screen — but
+            // the user has NOT left the blackhole, they are in the
+            // middle of adding a file. Closing here popped the
+            // BlackHole, the picker result had nowhere to return to,
+            // and the import never ran. Real exits (other app,
+            // recents, screen lock) have the guard clear, so they
+            // still close the blackhole exactly as before.
             if (event == Lifecycle.Event.ON_STOP &&
+                !BlackHolePickerGuard.isPickerOpen() &&
                 (context as? Activity)?.isChangingConfigurations != true
             ) {
                 val route = navController.currentBackStackEntry?.destination?.route
-                if (route == Screen.Vault.route ||
-                    route == Screen.VaultSetup.route ||
+                if (route == Screen.BlackHole.route ||
+                    route == Screen.BlackHoleSetup.route ||
                     route == Screen.AppLock.route
                 ) {
                     if (!navController.popBackStack(Screen.Normal.route, false)) {
@@ -337,6 +406,7 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
     }
 
     var showUpdate by remember { mutableStateOf(false) }
+    var showAbout by remember { mutableStateOf(false) }
     // RIGHT DRAWER state - a plain boolean, not DrawerState:
     // Material3's ModalNavigationDrawer only opens from the
     // LEFT, so the right drawer is a custom sliding panel
@@ -406,8 +476,8 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
             // reopen lands on the Normal calculator, not on the tool.
             navStateDao.save(NavStateEntity(route = Screen.Normal.route))
         }
-        // History / Vault / VaultSetup / AppLock: do not touch
-        // the saved route. Vault is already popped to Normal
+        // History / BlackHole / BlackHoleSetup / AppLock: do not touch
+        // the saved route. BlackHole is already popped to Normal
         // on ON_STOP by the privacy observer above.
     }
 
@@ -428,9 +498,9 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
         }
     }
 
-    // Right drawer - header + list. Vault / AppLock are NOT listed here.
-    val drawerVisible = currentRoute != Screen.Vault.route &&
-        currentRoute != Screen.VaultSetup.route &&
+    // Right drawer - header + list. BlackHole / AppLock are NOT listed here.
+    val drawerVisible = currentRoute != Screen.BlackHole.route &&
+        currentRoute != Screen.BlackHoleSetup.route &&
         currentRoute != Screen.AppLock.route
     // Drawer is 2/3 of the screen, not full screen. The remaining
     // 1/3 stays visible behind the scrim, dimmed.
@@ -445,7 +515,7 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
         animationSpec = tween(280), label = "scrimAlpha"
     )
     // The drawer must never stay open on a screen that hides
-    // it (Vault / VaultSetup / AppLock).
+    // it (BlackHole / BlackHoleSetup / AppLock).
     LaunchedEffect(drawerVisible) { if (!drawerVisible) drawerOpen = false }
     Box(modifier = Modifier.fillMaxSize().background(pageBg)) {
         val start = startRoute
@@ -477,8 +547,8 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
                             onToggleTheme = onToggleTheme,
                             onOpenHistory = { navController.navigate(Screen.History.route) },
                             onHistoryVisibilityChange = { normalHistoryOpen = it },
-                            onOpenVault = { navController.navigate(Screen.Vault.route) },
-                            onOpenVaultSetup = { navController.navigate(Screen.VaultSetup.route) },
+                            onOpenBlackHole = { navController.navigate(Screen.BlackHole.route) },
+                            onOpenBlackHoleSetup = { navController.navigate(Screen.BlackHoleSetup.route) },
                             // SWIPE FIX (2026-11-06): the calculator's own
                             // swipe detector calls this to open the drawer.
                             // A leftward swipe anywhere on the calculator
@@ -532,13 +602,13 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
                     )
                 }
                 composable(Screen.Hardcore.route) {
-                    HardcoreScreen(darkTheme = darkTheme)
+                    HardcoreScreen(darkTheme = darkTheme, onOpenDrawer = { drawerOpen = true })
                 }
                 composable(Screen.Moan.route) {
-                    MoanScreen(darkTheme = darkTheme)
+                    MoanScreen(darkTheme = darkTheme, onOpenDrawer = { drawerOpen = true })
                 }
                 composable(Screen.BlueFilm.route) {
-                    BlueFilmScreen(darkTheme = darkTheme)
+                    BlueFilmScreen(darkTheme = darkTheme, onOpenDrawer = { drawerOpen = true })
                 }
                 composable(Screen.Clipboard.route) {
                     ClipboardScreen(
@@ -553,11 +623,11 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
                 composable(Screen.History.route) {
                     HistoryScreen(onBack = { navController.popBackStack() })
                 }
-                composable(Screen.Vault.route) {
-                    VaultScreen(
+                composable(Screen.BlackHole.route) {
+                    BlackHoleScreen(
                             onBack = { navController.popBackStack() },
                             onOpenAppLock = { navController.navigate(Screen.AppLock.route) },
-                            // THEME (2026-11-06): Vault follows the app's
+                            // THEME (2026-11-06): BlackHole follows the app's
                             // own toggle, not the system theme. No drawer
                             // here — it stays hidden, no menu trace.
                             darkTheme = darkTheme
@@ -571,15 +641,15 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
                             darkTheme = darkTheme
                     )
                 }
-                composable(Screen.VaultSetup.route) {
-                    VaultSetupScreen(
+                composable(Screen.BlackHoleSetup.route) {
+                    BlackHoleSetupScreen(
                             onBack = { navController.popBackStack() },
                             // THEME (2026-11-06): app toggle, not system.
                             // No drawer here — hidden screen.
                             darkTheme = darkTheme,
                             onSaved = {
                                 navController.popBackStack()
-                                navController.navigate(Screen.Vault.route)
+                                navController.navigate(Screen.BlackHole.route)
                             }
                     )
                 }
@@ -589,13 +659,13 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
             // Only a floating hamburger (3-bar) on the top-RIGHT
             // (top-left clashed with CalTape's own 3-dot button).
             // History shows Back on the left instead.
-            // Vault / VaultSetup / AppLock hide it, they have
+            // BlackHole / BlackHoleSetup / AppLock hide it, they have
             // their own back bar.
             AnimatedVisibility(
                     visible =
                             !(currentRoute == Screen.Normal.route && normalHistoryOpen) &&
-                                    currentRoute != Screen.Vault.route &&
-                                    currentRoute != Screen.VaultSetup.route &&
+                                    currentRoute != Screen.BlackHole.route &&
+                                    currentRoute != Screen.BlackHoleSetup.route &&
                                     currentRoute != Screen.AppLock.route,
                     enter = fadeIn(animationSpec = tween(250)),
                     exit = fadeOut(animationSpec = tween(250))
@@ -647,6 +717,17 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
             if (showUpdate) {
                 UpdateDialog(onDismiss = { showUpdate = false })
             }
+            if (showAbout) {
+                AboutDialog(
+                    appVersion = appVersion,
+                    darkTheme = darkTheme,
+                    onClose = { showAbout = false },
+                    onCheckUpdate = {
+                        showAbout = false
+                        showUpdate = true
+                    }
+                )
+            }
         }
 
         // RIGHT DRAWER - custom panel sliding in from the
@@ -694,7 +775,14 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
                             .statusBarsPadding()
                             .padding(horizontal = 16.dp, vertical = 12.dp)
                     ) {
-                        // Header: logo + CalNyx + version + Update icon.
+                        // Header: theme toggle circle + CalNyx +
+                        // version + Update icon. The old app logo
+                        // circle is gone (2026-11-06). The circle
+                        // shows the Moon in light mode (tap -> dark)
+                        // and the Sun in dark mode (tap -> light),
+                        // same 52dp circle, same styling. Tap it and
+                        // the theme changes at once (drawer closes
+                        // so the change is visible immediately).
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically
@@ -703,12 +791,13 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
                                 modifier = Modifier.size(52.dp)
                                     .shadow(6.dp, CircleShape)
                                     .clip(CircleShape)
-                                    .background(if (darkTheme) NavOffWhite else NavOffBlack),
+                                    .background(if (darkTheme) NavOffWhite else NavOffBlack)
+                                    .clickable { drawerOpen = false; onToggleTheme() },
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(
-                                    Icons.Default.Calculate,
-                                    contentDescription = "CalNyx",
+                                    if (darkTheme) Icons.Default.LightMode else Icons.Default.DarkMode,
+                                    contentDescription = "Toggle theme",
                                     tint = if (darkTheme) NavOffBlack else NavOffWhite,
                                     modifier = Modifier.size(28.dp)
                                 )
@@ -800,19 +889,24 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
                         Spacer(modifier = Modifier.weight(1f))
                         HorizontalDivider(color = if (darkTheme) NavBorderDark else NavBorderLight)
                         Spacer(modifier = Modifier.height(8.dp))
-                        // Theme toggle at the bottom - kept from the old
-                        // bottom sheet header so the function is not lost.
+                        // ABOUT THIS APP at the bottom (2026-11-06).
+                        // Replaces "Contact Developer" (that now lives
+                        // INSIDE the About modal). Small text, tap it
+                        // and the About modal opens.
                         NavigationDrawerItem(
-                            label = { Text(if (darkTheme) "Light mode" else "Dark mode", fontSize = 16.sp, fontWeight = FontWeight.Medium) },
+                            label = { Text("About this app", fontSize = 13.sp, fontWeight = FontWeight.Medium) },
                             icon = {
                                 Icon(
-                                    if (darkTheme) Icons.Default.LightMode else Icons.Default.DarkMode,
-                                    contentDescription = "Toggle theme",
+                                    Icons.Default.Info,
+                                    contentDescription = "About this app",
                                     modifier = Modifier.size(24.dp)
                                 )
                             },
                             selected = false,
-                            onClick = { drawerOpen = false; onToggleTheme() },
+                            onClick = {
+                                drawerOpen = false
+                                showAbout = true
+                            },
                             colors = NavigationDrawerItemDefaults.colors(
                                 selectedContainerColor = Color.Transparent,
                                 unselectedContainerColor = Color.Transparent,
@@ -882,5 +976,189 @@ private fun TopBarCircleButton(
                                 ),
                 contentAlignment = Alignment.Center
         ) { content() }
+    }
+}
+
+// ABOUT DIALOG (2026-11-06): opened from the drawer's bottom
+// "About this app" item. Black / white only, English only.
+// Top: app icon + CalNyx + version. Then a Check for updates
+// button (opens the existing UpdateDialog - no new update
+// mechanism), a description of the app, and Contact Developer
+// with the developer's name + email (tap the row to email).
+@Composable
+private fun AboutDialog(
+        appVersion: String,
+        darkTheme: Boolean,
+        onClose: () -> Unit,
+        onCheckUpdate: () -> Unit
+) {
+    val context = LocalContext.current
+    val cardBg = if (darkTheme) NavCardBlack else NavCardWhite
+    val onPageColor = if (darkTheme) NavOffWhite else NavOffBlack
+    val border = if (darkTheme) NavBorderDark else NavBorderLight
+    // App icon WITHOUT painterResource: the launcher icon is
+    // an adaptive-icon XML and painterResource throws on it.
+    // PackageManager returns the real drawable (adaptive
+    // included); draw it into a bitmap once and show that.
+    // Null -> the Calculate icon fallback below.
+    val appIconBitmap = remember(context) {
+        try {
+            val drawable = context.packageManager.getApplicationIcon(context.applicationInfo)
+            val sizePx = 192
+            val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(bitmap)
+            drawable.setBounds(0, 0, sizePx, sizePx)
+            drawable.draw(canvas)
+            bitmap.asImageBitmap()
+        } catch (_: Exception) {
+            null
+        }
+    }
+    Dialog(onDismissRequest = onClose) {
+        Box(
+                modifier = Modifier.fillMaxWidth()
+                        .clip(RoundedCornerShape(24.dp))
+                        .background(cardBg)
+                        .padding(20.dp)
+        ) {
+            Column(
+                    modifier = Modifier.fillMaxWidth()
+                            .verticalScroll(rememberScrollState()),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // App icon + name + version.
+                if (appIconBitmap != null) {
+                    Image(
+                            bitmap = appIconBitmap,
+                            contentDescription = "CalNyx logo",
+                            modifier = Modifier.size(72.dp).clip(CircleShape)
+                    )
+                } else {
+                    Box(
+                            modifier = Modifier.size(72.dp)
+                                    .clip(CircleShape)
+                                    .background(onPageColor),
+                            contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                                Icons.Default.Calculate,
+                                contentDescription = "CalNyx logo",
+                                tint = cardBg,
+                                modifier = Modifier.size(36.dp)
+                        )
+                    }
+                }
+                Text(
+                        text = "CalNyx",
+                        fontSize = 22.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = onPageColor
+                )
+                if (appVersion.isNotEmpty()) {
+                    Text(
+                            text = "Version $appVersion",
+                            fontSize = 13.sp,
+                            color = Color.Gray
+                    )
+                }
+                // Update: opens the existing UpdateDialog.
+                Box(
+                        modifier = Modifier.fillMaxWidth().height(48.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(onPageColor)
+                                .clickable { onCheckUpdate() },
+                        contentAlignment = Alignment.Center
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                                Icons.Default.Update,
+                                contentDescription = null,
+                                tint = cardBg,
+                                modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                                text = "Check for updates",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = cardBg
+                        )
+                    }
+                }
+                // What the app is.
+                Text(
+                        text = "CalNyx is an all-in-one calculator for everyday use \u2014 Normal, Scientific, CalTape, Converter, Number System, ICT and Notepad \u2014 with a hidden Black Hole vault for private photos, videos, documents and audio, an App Lock, Sound and Hardware controls, a floating ball, Spy camera recording and a Clipboard history. Everything works offline and stays on this phone.",
+                        fontSize = 14.sp,
+                        color = onPageColor,
+                        textAlign = TextAlign.Center
+                )
+                HorizontalDivider(color = border)
+                // Contact Developer: name + email, tap to email.
+                Text(
+                        text = "Contact Developer",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = onPageColor
+                )
+                Row(
+                        modifier = Modifier.fillMaxWidth()
+                                .clip(RoundedCornerShape(16.dp))
+                                .border(1.dp, border, RoundedCornerShape(16.dp))
+                                .clickable {
+                                    try {
+                                        context.startActivity(
+                                                Intent.createChooser(
+                                                        Intent(
+                                                                Intent.ACTION_SENDTO,
+                                                                Uri.parse("mailto:$DEVELOPER_EMAIL")
+                                                        ),
+                                                        "Contact developer"
+                                                )
+                                        )
+                                    } catch (_: Exception) {
+                                        Toast.makeText(context, "No email app found", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                                .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                            Icons.Default.Email,
+                            contentDescription = null,
+                            tint = onPageColor,
+                            modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column {
+                        Text(
+                                text = DEVELOPER_NAME,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = onPageColor
+                        )
+                        Text(
+                                text = DEVELOPER_EMAIL,
+                                fontSize = 13.sp,
+                                color = Color.Gray
+                        )
+                    }
+                }
+                // Close.
+                Box(
+                        modifier = Modifier.fillMaxWidth().height(44.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                                .clickable { onClose() },
+                        contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                            text = "Close",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = onPageColor
+                    )
+                }
+            }
+        }
     }
 }

@@ -1,3 +1,39 @@
+// EQUAL-SIZE KEYS + AC FIX (2026-11-06) - REPLACE NormalCalculatorScreen.kt.
+//  1. TOP 4 = KEYPAD SIZE, BY MEASUREMENT: the 64dp top row
+//     came out smaller than the keypad keys, and 92dp came
+//     out bigger - a fixed height can never match, because
+//     the keypad row height depends on the screen height.
+//     The top row height is COMPUTED from the measured screen
+//     height: rowH = (H - 98.2dp) / 8.75, top row = rowH + 8dp
+//     (the 8dp top padding). Derivation: pager = (H - 24 -
+//     top - 29) / 1.55 (display 0.55 + pager 1.0 weights;
+//     24dp spacer above the top row, 29dp page dots), keypad
+//     row = (pager - 4*6dp) / 5. Both circles are min(cell
+//     width, rowH), so they are exactly the same size on any
+//     phone. Glyphs stay 28sp (Ans 20sp bold).
+//     FIX3: the first attempt measured H with onSizeChanged,
+//     but this project does NOT resolve onSizeChanged
+//     (compile error, Unresolved reference). The height now
+//     comes from BoxWithConstraints (maxHeight) instead -
+//     the same API TopRoundKey / CalculatorButton already
+//     use in this file, so it is guaranteed to resolve.
+//     No measurement callback, no recomposition loop.
+//  2. KEYPAD GAPS: vertical gaps between keypad rows 8dp
+//     -> 6dp, so the buttons sit a little lower with more
+//     room on top (horizontal gaps stay 8dp).
+//  3. AC INVERTED: AC now has the same inverted colours as
+//     = and backspace - black background + white text in
+//     light mode, white background + black text in dark.
+// TOP-KEYS + SCIENTIFIC-BORDER FIX (2026-11-06) - REPLACE NormalCalculatorScreen.kt.
+//  1. TOP ROW: the 4 round keys (sqrt, ^, E, Ans) were 92dp
+//     tall with small glyphs. The row is now 64dp tall, so
+//     each circle is smaller, and the glyphs are bigger
+//     (22sp -> 28sp, Ans 15sp -> 20sp bold).
+//  2. SCIENTIFIC KEYS: the keys that appear inside the keypad
+//     when the scientific set is pulled down (ScientificTextKey)
+//     had a 1dp border - the border is removed. They now look
+//     exactly like the other round keys (same background,
+//     no border). Nothing else changed.
 // FILE: app/src/main/java/com/calnyx/app/ui/screens/NormalCalculatorScreen.kt
 // REPLACE the whole file. SWIPE + REAL-ANS version, based on the
 // ANS + RIGHTDRAWER file.
@@ -37,6 +73,18 @@
 //     scientific keys (the ones the flask used to show);
 //     drag UP to go back to digits. The mode still uses the
 //     same scientificExpanded state and the same key rows.
+//  4b. SWAP FIX 2026-11-06 (user video 16:31): the old build put
+//     slideY on the WHOLE keypad Column, so EVERY key shook on a
+//     drag. Now there is NO whole-keypad animation at all: only
+//     the 12 cells that actually change get a small fade+slide
+//     (SwapKey below); the other 8 keypad keys, the display and
+//     the top row never move. Top strip is now 5 SEPARATE round
+//     keys (√, π/%, ^, E, Ans) like all other keys — no pill.
+//     π is NOT on the top row any more (user 2026-11-06 16:44,
+//     screenshot confirmed): π lives ONLY inside, in row 1
+//     in scientific mode (replacing %). Top row is now just
+//     4 static round keys √ ^ E Ans, same size as the keypad
+//     keys below (see TopRoundKey note).
 //  5. BLACK / WHITE ONLY: the theme's primary (the only
 //     chromatic colour) is gone from this screen - the live
 //     result, the caret, Clear, the page dots, the selection
@@ -46,7 +94,7 @@
 //     Each key measures its own cell (BoxWithConstraints)
 //     and draws a circle with the smaller side as the
 //     diameter, so it stays round on any phone.
-//  NO function changed otherwise: vault secret, selection,
+//  NO function changed otherwise: blackhole secret, selection,
 //  history, E notation, operator handling all as in LIFTED.
 package com.calnyx.app.ui.screens
 
@@ -54,7 +102,6 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -85,7 +132,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.*
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalView
@@ -101,7 +147,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import android.content.Intent
 import android.app.Activity
 import com.calnyx.app.applock.AppLockManager
-import com.calnyx.app.vault.VaultPrefs
+import com.calnyx.app.blackhole.BlackHolePrefs
 import com.calnyx.app.viewmodel.CalculatorViewModel
 import com.calnyx.app.viewmodel.HistoryViewModel
 import java.text.SimpleDateFormat
@@ -117,8 +163,8 @@ fun NormalCalculatorScreen(
         onToggleTheme: () -> Unit,
         onOpenHistory: () -> Unit,
         onHistoryVisibilityChange: (Boolean) -> Unit = {},
-        onOpenVault: () -> Unit = {},
-        onOpenVaultSetup: () -> Unit = {},
+        onOpenBlackHole: () -> Unit = {},
+        onOpenBlackHoleSetup: () -> Unit = {},
         onOpenDrawer: () -> Unit = {},
         viewModel: CalculatorViewModel = viewModel(),
         historyViewModel: HistoryViewModel = viewModel()
@@ -135,22 +181,12 @@ fun NormalCalculatorScreen(
         val history by historyViewModel.history.collectAsState()
         var scientificExpanded by remember { mutableStateOf(false) }
 
-        // PULL-DOWN slide animation for the keypad: when the
-        // user drags the keypad down/up, scientificExpanded
-        // flips and the keys slide in like a drawer (from
-        // above when opening, from below when closing).
-        // Skipped on the very first composition so the keys
-        // do not slide in when the app opens.
-        val slideY = remember { Animatable(0f) }
-        var firstSlide by remember { mutableStateOf(true) }
-        LaunchedEffect(scientificExpanded) {
-                if (firstSlide) {
-                        firstSlide = false
-                        return@LaunchedEffect
-                }
-                slideY.snapTo(if (scientificExpanded) -90f else 90f)
-                slideY.animateTo(0f, animationSpec = tween(250))
-        }
+        // PULL-DOWN scientific keys: drag the keypad DOWN to
+        // reveal them, drag UP to go back to digits. There is
+        // NO whole-keypad slide any more (that made every key
+        // shake). Only the cells that change animate, inside
+        // SwapKey below; static keys have no animation modifier
+        // at all, so they stay perfectly still.
         var pullAccum by remember { mutableFloatStateOf(0f) }
 
         // The keypad area is a 2-page horizontal pager: page 0 is the
@@ -196,22 +232,22 @@ fun NormalCalculatorScreen(
         //    sudhu notun secret + confirm diye Save.
         //  - pore bodlate chaile: setup screen-e purono secret
         //    dite hobe, na hole bodlano jabe na.
-        // Tap "=" = vault khola, long-press "=" = setup khola —
+        // Tap "=" = blackhole khola, long-press "=" = setup khola —
         // ei parthokko-ta mone rekho.
-        fun openVaultSetupIfNeeded() {
-                onOpenVaultSetup()
+        fun openBlackHoleSetupIfNeeded() {
+                onOpenBlackHoleSetup()
         }
 
         fun handleKeyLabel(label: String) {
                 // SECRET VAULT: expression-টা সিক্রেটের সাথে মিললে
-                // হিসাব না করে vault খুলবে, history-তেও যাবে না।
+                // হিসাব না করে blackhole খুলবে, history-তেও যাবে না।
                 // Own secret set hoye gele sudhu setai kaj korbe,
                 // tar age purono default-tao kaj korbe (migration).
-                if (label == "=" && VaultPrefs.matches(context, expression.trim())) {
+                if (label == "=" && BlackHolePrefs.matches(context, expression.trim())) {
                         viewModel.onButtonClick("AC")
                         // APP LOCK UNLOCK: kono locked app block hoye thakle
-                        // Vault na khule sei app-tai khulbe. Pending na
-                        // thakle ager moto Vault khulbe.
+                        // BlackHole na khule sei app-tai khulbe. Pending na
+                        // thakle ager moto BlackHole khulbe.
                         val pending = AppLockManager.getPending(context)
                         if (pending != null && AppLockManager.isEnabled(context) && AppLockManager.isLocked(context, pending)) {
                                 // SESSION: timer ekhan theke cholbe na. Ekhon theke
@@ -227,10 +263,10 @@ fun NormalCalculatorScreen(
                                         // App-ta khola gelo na (uninstall ityadi) —
                                         // session rekhe dile pore abar secret chara khulto.
                                         AppLockManager.clearUnlockedSession(context)
-                                        onOpenVault()
+                                        onOpenBlackHole()
                                 }
                         } else {
-                                onOpenVault()
+                                onOpenBlackHole()
                         }
                         return
                 }
@@ -370,565 +406,114 @@ fun NormalCalculatorScreen(
                         modifier =
                                 Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()
                 ) {
-                        Column(modifier = Modifier.fillMaxSize()) {
+                        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                                // EQUAL-SIZE KEYS: top row height computed from
+                                // the measured height (see file header).
+                                val topRowHeight =
+                                        ((maxHeight - 98.2.dp) / 8.75f).coerceAtLeast(48.dp) + 8.dp
+                                Column(modifier = Modifier.fillMaxSize()) {
 
-                                // DISPLAY PANEL — one big panel across the top, square
-                                // at the top, big rounded corners (28dp) at the bottom
-                                // only, exactly like the reference. Inside: the
-                                // expression area on top (fixed 72sp, scrollable) and
-                                // a RESERVED 48dp answer line under it that is always
-                                // there, so the preview can never be squeezed out or
-                                // clipped by the panel again.
-                                Column(
-                                        modifier =
-                                                Modifier.fillMaxWidth()
-                                                        .weight(displayWeight)
-                                                        .clip(
-                                                                RoundedCornerShape(
-                                                                        bottomStart = 28.dp,
-                                                                        bottomEnd = 28.dp
-                                                                )
-                                                        )
-                                                        .background(
-                                                                MaterialTheme.colorScheme
-                                                                        .surfaceVariant
-                                                        )
-                                ) {
-                                        // Clearance for the floating top bar drawn by NavGraph
-                                        Spacer(modifier = Modifier.height(topSpacerHeight))
-
-                                        // Expression / final-answer area
-                                        Box(
+                                        // DISPLAY PANEL — one big panel across the top, square
+                                        // at the top, big rounded corners (28dp) at the bottom
+                                        // only, exactly like the reference. Inside: the
+                                        // expression area on top (fixed 72sp, scrollable) and
+                                        // a RESERVED 48dp answer line under it that is always
+                                        // there, so the preview can never be squeezed out or
+                                        // clipped by the panel again.
+                                        Column(
                                                 modifier =
                                                         Modifier.fillMaxWidth()
-                                                                .weight(1f)
-                                                                .padding(horizontal = 20.dp)
+                                                                .weight(displayWeight)
+                                                                .clip(
+                                                                        RoundedCornerShape(
+                                                                                bottomStart = 28.dp,
+                                                                                bottomEnd = 28.dp
+                                                                        )
+                                                                )
+                                                                .background(
+                                                                        MaterialTheme.colorScheme
+                                                                                .surfaceVariant
+                                                                )
                                         ) {
-                                                AnimatedContent(
-                                                        targetState = finalResult,
-                                                        transitionSpec = {
-                                                                EnterTransition.None togetherWith
-                                                                        ExitTransition.None
-                                                        },
-                                                        label = "displayMode",
-                                                        modifier = Modifier.fillMaxSize()
-                                                ) { final ->
-                                                        if (final != null) {
-                                                                // Completed calculation: only the
-                                                                // answer,
-                                                                // big — FIXED 80sp, the line
-                                                                // scrolls to
-                                                                // keep the end visible when it is
-                                                                // long
-                                                                Column(
-                                                                        modifier =
-                                                                                Modifier.fillMaxSize(),
-                                                                        verticalArrangement =
-                                                                                Arrangement.Bottom,
-                                                                        horizontalAlignment =
-                                                                                Alignment.End
-                                                                ) {
-                                                                        val formattedFinal =
-                                                                                remember(final) {
-                                                                                        formatForDisplay(
-                                                                                                final
-                                                                                        )
-                                                                                }
-                                                                        // 86sp theke suru, 7 char-er
-                                                                        // beshi hole 2sp kore kombe,
-                                                                        // 52sp-e giye theme jabe.
-                                                                        val adaptiveFinalFontSize =
-                                                                                remember(formattedFinal) {
-                                                                                        val excess =
-                                                                                                (formattedFinal.length - 7)
-                                                                                                        .coerceAtLeast(0)
-                                                                                        (finalFontSize.value - 2f * excess)
-                                                                                                .coerceAtLeast(52f).sp
-                                                                                }
-                                                                        val finalScrollState =
-                                                                                rememberScrollState()
-                                                                        LaunchedEffect(final) {
-    // FIX: answer-এর প্রথম অংশ দেখাবে, শেষে নয়।
-    finalScrollState.scrollTo(0)
-}
-                        // ANSWER COPY: final answer select + copy-র জন্য।
-                        val answerClipboard = LocalClipboardManager.current
-                        var answerCopied by remember(final) { mutableStateOf(false) }
-                                                                        Row(
+                                                // Clearance for the floating top bar drawn by NavGraph
+                                                Spacer(modifier = Modifier.height(topSpacerHeight))
+
+                                                // Expression / final-answer area
+                                                Box(
+                                                        modifier =
+                                                                Modifier.fillMaxWidth()
+                                                                        .weight(1f)
+                                                                        .padding(horizontal = 20.dp)
+                                                ) {
+                                                        AnimatedContent(
+                                                                targetState = finalResult,
+                                                                transitionSpec = {
+                                                                        EnterTransition.None togetherWith
+                                                                                ExitTransition.None
+                                                                },
+                                                                label = "displayMode",
+                                                                modifier = Modifier.fillMaxSize()
+                                                        ) { final ->
+                                                                if (final != null) {
+                                                                        // Completed calculation: only the
+                                                                        // answer,
+                                                                        // big — FIXED 80sp, the line
+                                                                        // scrolls to
+                                                                        // keep the end visible when it is
+                                                                        // long
+                                                                        Column(
                                                                                 modifier =
-                                                                                        Modifier.fillMaxWidth()
-                                                                                                .horizontalScroll(
-                                                                                                        finalScrollState
-                                                                                                ),
-                                                                                verticalAlignment =
-                                                                                        Alignment
-                                                                                                .CenterVertically,
-                                                                                horizontalArrangement =
-                                                                                        Arrangement
-                                                                                                .End
+                                                                                        Modifier.fillMaxSize(),
+                                                                                verticalArrangement =
+                                                                                        Arrangement.Bottom,
+                                                                                horizontalAlignment =
+                                                                                        Alignment.End
                                                                         ) {
-                                                                                SelectionContainer {
- Text(
-                                                                                        text =
-                                                                                                formattedFinal,
-                                                                                        fontSize =
-                                                                                                adaptiveFinalFontSize,
-                                                                                        fontWeight =
-                                                                                                FontWeight
-                                                                                                        .Normal,
-                                                                                        color =
-                                                                                                MaterialTheme
-                                                                                                        .colorScheme
-                                                                                                        .onSurface,
-                                                                                        textAlign =
-                                                                                                TextAlign
-                                                                                                        .End,
-                                                                                        maxLines =
-                                                                                                1,
-                                                                                        softWrap =
-                                                                                                false
-                                                                                )
- } // end SelectionContainer
-                                                                        }
- Row(
-     modifier = Modifier.fillMaxWidth(),
-     horizontalArrangement = Arrangement.End
- ) {
-     TextButton(onClick = {
-         answerClipboard.setText(AnnotatedString(formattedFinal))
-         answerCopied = true
-     }) {
-         Text(if (answerCopied) "Copied ✓" else "Copy", fontSize = 14.sp)
-     }
- }
-                                                                }
-                                                        } else {
-                                                                Column(
-                                                                        modifier =
-                                                                                Modifier.fillMaxSize(),
-                                                                        verticalArrangement =
-                                                                                Arrangement.Bottom,
-                                                                        horizontalAlignment =
-                                                                                Alignment.End
-                                                                ) {
-                                                                        // Tap-to-edit: the visible
-                                                                        // text is
-                                                                        // formatted (commas, ×, √)
-                                                                        // while the
-                                                                        // stored expression is raw
-                                                                        // ASCII.
-                                                                        // formatWithMap keeps a
-                                                                        // boundary map
-                                                                        // between the two, so a tap
-                                                                        // lands the
-                                                                        // caret on the exact
-                                                                        // character. The
-                                                                        // caret itself is drawn by
-                                                                        // the Text,
-                                                                        // inside its own draw pass
-                                                                        // (see below).
-                                                                        val formatted =
-                                                                                remember(
-                                                                                        expression
-                                                                                ) {
-                                                                                        formatWithMap(
-                                                                                                expression
-                                                                                        )
-                                                                                }
-                                                                        var expressionLayout by remember {
-                                                                                mutableStateOf<
-                                                                                        TextLayoutResult?>(
-                                                                                        null
-                                                                                )
-                                                                        }
-                                                                        val currentLayout by
-                                                                                rememberUpdatedState(
-                                                                                        expressionLayout
-                                                                                )
-                                                                        val currentFormatted by
-                                                                                rememberUpdatedState(
-                                                                                        formatted
-                                                                                )
-                                                                        val currentExpression by
-                                                                                rememberUpdatedState(
-                                                                                        expression
-                                                                                )
-
-                                                                        // Filled by the Text's
-                                                                        // onTextLayout in
-                                                                        // its layout phase; read by
-                                                                        // the Text's
-                                                                        // own draw phase in the
-                                                                        // same frame.
-                                                                        val caretHolder = remember {
-                                                                                CaretLayoutHolder()
-                                                                        }
-
-                                                                        // The caret no longer
-                                                                        // blinks — it is
-                                                                        // drawn solid in the draw
-                                                                        // pass below.
-                                                                        val caretColor =
-                                                                                MaterialTheme
-                                                                                        .colorScheme
-                                                                                        .onSurface
-                                                                        val clipboardManager =
-                                                                                LocalClipboardManager
-                                                                                        .current
-
-                                                                        val scrollState =
-                                                                                rememberScrollState()
-                                                                        // Keep the caret visible.
-                                                                        // Following
-                                                                        // the end while typing is
-                                                                        // an INSTANT
-                                                                        // scrollTo — an
-                                                                        // animateScrollTo per
-                                                                        // keystroke queued up
-                                                                        // behind fast
-                                                                        // typing and made the
-                                                                        // screen laggy.
-                                                                        // Only a caret placed
-                                                                        // mid-expression
-                                                                        // by a tap still animates
-                                                                        // into view.
-                                                                        LaunchedEffect(
-                                                                                expression,
-                                                                                cursorPosition
-                                                                        ) {
-                                                                                val lr =
-                                                                                        expressionLayout
-                                                                                if (expression
-                                                                                                .isEmpty()
-                                                                                ) {
-                                                                                        // nothing
-                                                                                        // to scroll
-                                                                                } else if (cursorPosition >=
-                                                                                                expression
-                                                                                                        .length ||
-                                                                                                lr ==
-                                                                                                        null
-                                                                                ) {
-                                                                                        scrollState
-                                                                                                .scrollTo(
-                                                                                                        scrollState
-                                                                                                                .maxValue
+                                                                                val formattedFinal =
+                                                                                        remember(final) {
+                                                                                                formatForDisplay(
+                                                                                                        final
                                                                                                 )
-                                                                                } else {
-                                                                                        val safeOffset =
-                                                                                                formatted
-                                                                                                                .rawToFmt[
-                                                                                                                cursorPosition
-                                                                                                                        .coerceIn(
-                                                                                                                                0,
-                                                                                                                                expression
-                                                                                                                                        .length
-                                                                                                                        )]
-                                                                                                        .coerceAtMost(
-                                                                                                                lr.layoutInput
-                                                                                                                        .text
-                                                                                                                        .length
-                                                                                                        )
-                                                                                        val cx =
-                                                                                                lr.getHorizontalPosition(
-                                                                                                        safeOffset,
-                                                                                                        true
-                                                                                                )
-                                                                                        val view =
-                                                                                                scrollState
-                                                                                                        .viewportSize
-                                                                                        when {
-                                                                                                cx <
-                                                                                                        scrollState
-                                                                                                                .value ->
-                                                                                                        scrollState
-                                                                                                                .animateScrollTo(
-                                                                                                                        cx.toInt()
-                                                                                                                                .coerceAtLeast(
-                                                                                                                                        0
-                                                                                                                                ),
-                                                                                                                        animationSpec =
-                                                                                                                                tween(
-                                                                                                                                        120
-                                                                                                                                )
-                                                                                                                )
-                                                                                                view >
-                                                                                                        0 &&
-                                                                                                        cx >
-                                                                                                                scrollState
-                                                                                                                        .value +
-                                                                                                                        view -
-                                                                                                                        24 ->
-                                                                                                        scrollState
-                                                                                                                .animateScrollTo(
-                                                                                                                        (cx -
-                                                                                                                                        view +
-                                                                                                                                        24)
-                                                                                                                                .toInt(),
-                                                                                                                        animationSpec =
-                                                                                                                                tween(
-                                                                                                                                        120
-                                                                                                                                )
-                                                                                                                )
                                                                                         }
-                                                                                }
-                                                                        }
-
-                                                                        // Selection action bar —
-                                                                        // Copy takes
-                                                                        // the FORMATTED slice
-                                                                        // (commas and
-                                                                        // glyphs), so it pastes
-                                                                        // prettily
-                                                                        // anywhere; paste is
-                                                                        // sanitised back
-                                                                        // by the ViewModel.
-                                                                        AnimatedVisibility(
-                                                                                visible = selActive,
-                                                                                enter =
-                                                                                        EnterTransition
-                                                                                                .None,
-                                                                                exit =
-                                                                                        ExitTransition
-                                                                                                .None,
-                                                                                modifier =
-                                                                                        Modifier.fillMaxWidth()
-                                                                        ) {
+                                                                                // 86sp theke suru, 7 char-er
+                                                                                // beshi hole 2sp kore kombe,
+                                                                                // 52sp-e giye theme jabe.
+                                                                                val adaptiveFinalFontSize =
+                                                                                        remember(formattedFinal) {
+                                                                                                val excess =
+                                                                                                        (formattedFinal.length - 7)
+                                                                                                                .coerceAtLeast(0)
+                                                                                                (finalFontSize.value - 2f * excess)
+                                                                                                        .coerceAtLeast(52f).sp
+                                                                                        }
+                                                                                val finalScrollState =
+                                                                                        rememberScrollState()
+                                                                                LaunchedEffect(final) {
+            // FIX: answer-এর প্রথম অংশ দেখাবে, শেষে নয়।
+            finalScrollState.scrollTo(0)
+        }
+                                // ANSWER COPY: final answer select + copy-র জন্য।
+                                val answerClipboard = LocalClipboardManager.current
+                                var answerCopied by remember(final) { mutableStateOf(false) }
                                                                                 Row(
                                                                                         modifier =
-                                                                                                Modifier.fillMaxWidth(),
+                                                                                                Modifier.fillMaxWidth()
+                                                                                                        .horizontalScroll(
+                                                                                                                finalScrollState
+                                                                                                        ),
+                                                                                        verticalAlignment =
+                                                                                                Alignment
+                                                                                                        .CenterVertically,
                                                                                         horizontalArrangement =
                                                                                                 Arrangement
-                                                                                                        .Center
+                                                                                                        .End
                                                                                 ) {
-                                                                                        Row(
-                                                                                                modifier =
-                                                                                                        Modifier.clip(
-                                                                                                                        RoundedCornerShape(
-                                                                                                                                percent =
-                                                                                                                                        50
-                                                                                                                        )
-                                                                                                                )
-                                                                                                                .background(
-                                                                                                                        // BLACK / WHITE ONLY: the selection
-                                                                                                                        // bar was secondaryContainer, which
-                                                                                                                        // is a tinted colour in the theme.
-                                                                                                                        MaterialTheme
-                                                                                                                                .colorScheme
-                                                                                                                                .surfaceVariant
-                                                                                                                )
-                                                                                                                .padding(
-                                                                                                                        horizontal =
-                                                                                                                                6.dp
-                                                                                                                ),
-                                                                                                verticalAlignment =
-                                                                                                        Alignment
-                                                                                                                .CenterVertically
-                                                                                        ) {
-                                                                                                if (selEnd >
-                                                                                                                selStart
-                                                                                                ) {
-                                                                                                        TextButton(
-                                                                                                                onClick = {
-                                                                                                                        val from =
-                                                                                                                                formatted
-                                                                                                                                        .rawToFmt[
-                                                                                                                                        selStart.coerceIn(
-                                                                                                                                                0,
-                                                                                                                                                expression
-                                                                                                                                                        .length
-                                                                                                                                        )]
-                                                                                                                        val to =
-                                                                                                                                formatted
-                                                                                                                                        .rawToFmt[
-                                                                                                                                        selEnd.coerceIn(
-                                                                                                                                                0,
-                                                                                                                                                expression
-                                                                                                                                                        .length
-                                                                                                                                        )]
-                                                                                                                        clipboardManager
-                                                                                                                                .setText(
-                                                                                                                                        AnnotatedString(
-                                                                                                                                                formatted
-                                                                                                                                                        .text
-                                                                                                                                                        .substring(
-                                                                                                                                                                from,
-                                                                                                                                                                to.coerceAtMost(
-                                                                                                                                                                        formatted
-                                                                                                                                                                                .text
-                                                                                                                                                                                .length
-                                                                                                                                                                )
-                                                                                                                                                        )
-                                                                                                                                        )
-                                                                                                                                )
-                                                                                                                }
-                                                                                                        ) {
-                                                                                                                Text(
-                                                                                                                        "Copy",
-                                                                                                                        fontSize =
-                                                                                                                                14.sp
-                                                                                                                )
-                                                                                                        }
-                                                                                                        TextButton(
-                                                                                                                onClick = {
-                                                                                                                        val from =
-                                                                                                                                formatted
-                                                                                                                                        .rawToFmt[
-                                                                                                                                        selStart.coerceIn(
-                                                                                                                                                0,
-                                                                                                                                                expression
-                                                                                                                                                        .length
-                                                                                                                                        )]
-                                                                                                                        val to =
-                                                                                                                                formatted
-                                                                                                                                        .rawToFmt[
-                                                                                                                                        selEnd.coerceIn(
-                                                                                                                                                0,
-                                                                                                                                                expression
-                                                                                                                                                        .length
-                                                                                                                                        )]
-                                                                                                                        clipboardManager
-                                                                                                                                .setText(
-                                                                                                                                        AnnotatedString(
-                                                                                                                                                formatted
-                                                                                                                                                        .text
-                                                                                                                                                        .substring(
-                                                                                                                                                                from,
-                                                                                                                                                                to.coerceAtMost(
-                                                                                                                                                                        formatted
-                                                                                                                                                                                .text
-                                                                                                                                                                                .length
-                                                                                                                                                                )
-                                                                                                                                                        )
-                                                                                                                                        )
-                                                                                                                                )
-                                                                                                                        viewModel
-                                                                                                                                .deleteRange(
-                                                                                                                                        selStart,
-                                                                                                                                        selEnd
-                                                                                                                                )
-                                                                                                                        selActive =
-                                                                                                                                false
-                                                                                                                }
-                                                                                                        ) {
-                                                                                                                Text(
-                                                                                                                        "Cut",
-                                                                                                                        fontSize =
-                                                                                                                                14.sp
-                                                                                                                )
-                                                                                                        }
-                                                                                                }
-                                                                                                TextButton(
-                                                                                                        onClick = {
-                                                                                                                val clip =
-                                                                                                                        clipboardManager
-                                                                                                                                .getText()
-                                                                                                                                ?.text
-                                                                                                                if (!clip.isNullOrEmpty()
-                                                                                                                ) {
-                                                                                                                        if (selEnd >
-                                                                                                                                        selStart
-                                                                                                                        ) {
-                                                                                                                                viewModel
-                                                                                                                                        .deleteRange(
-                                                                                                                                                selStart,
-                                                                                                                                                selEnd
-                                                                                                                                        )
-                                                                                                                        }
-                                                                                                                        viewModel
-                                                                                                                                .pasteText(
-                                                                                                                                        clip
-                                                                                                                                )
-                                                                                                                        selActive =
-                                                                                                                                false
-                                                                                                                }
-                                                                                                        }
-                                                                                                ) {
-                                                                                                        Text(
-                                                                                                                "Paste",
-                                                                                                                fontSize =
-                                                                                                                        14.sp
-                                                                                                        )
-                                                                                                }
-                                                                                                if (expression
-                                                                                                                .isNotEmpty()
-                                                                                                ) {
-                                                                                                        TextButton(
-                                                                                                                onClick = {
-                                                                                                                        selStart =
-                                                                                                                                0
-                                                                                                                        selEnd =
-                                                                                                                                expression
-                                                                                                                                        .length
-                                                                                                                }
-                                                                                                        ) {
-                                                                                                                Text(
-                                                                                                                        "All",
-                                                                                                                        fontSize =
-                                                                                                                                14.sp
-                                                                                                                )
-                                                                                                        }
-                                                                                                }
-                                                                                                TextButton(
-                                                                                                        onClick = {
-                                                                                                                selActive =
-                                                                                                                        false
-                                                                                                        }
-                                                                                                ) {
-                                                                                                        Text(
-                                                                                                                "Done",
-                                                                                                                fontSize =
-                                                                                                                        14.sp
-                                                                                                        )
-                                                                                                }
-                                                                                        }
-                                                                                }
-                                                                        }
-                                                                        if (selActive) {
-                                                                                Spacer(
-                                                                                        modifier =
-                                                                                                Modifier.height(
-                                                                                                        4.dp
-                                                                                                )
-                                                                                )
-                                                                        }
-
-                                                                        // Single line only — never
-                                                                        // wraps. ADAPTIVE: 78sp theke
-                                                                        // suru, 8 char-er beshi hole
-                                                                        // 2sp kore kombe, 52sp-e giye
-                                                                        // theme jabe, tarpor shudhu
-                                                                        // scroll hobe, ar choto hobe na.
-                                                                        val adaptiveExpressionFontSize =
-                                                                                remember(formatted.text) {
-                                                                                        val excess =
-                                                                                                (formatted.text.length - 8)
-                                                                                                        .coerceAtLeast(0)
-                                                                                        (expressionFontSize.value - 2f * excess)
-                                                                                                .coerceAtLeast(52f).sp
-                                                                                }
-                                                                        Row(
-                                                                                modifier =
-                                                                                        Modifier.fillMaxWidth()
-                                                                                                .horizontalScroll(
-                                                                                                        scrollState,
-                                                                                                        enabled =
-                                                                                                                !selActive
-                                                                                                ),
-                                                                                verticalAlignment =
-                                                                                        Alignment
-                                                                                                .CenterVertically,
-                                                                                horizontalArrangement =
-                                                                                        Arrangement
-                                                                                                .End
-                                                                        ) {
-                                                                                Box {
-                                                                                        Text(
+                                                                                        SelectionContainer {
+         Text(
                                                                                                 text =
-                                                                                                        formatted
-                                                                                                                .text,
+                                                                                                        formattedFinal,
                                                                                                 fontSize =
-                                                                                                        adaptiveExpressionFontSize,
+                                                                                                        adaptiveFinalFontSize,
                                                                                                 fontWeight =
                                                                                                         FontWeight
                                                                                                                 .Normal,
@@ -942,67 +527,489 @@ fun NormalCalculatorScreen(
                                                                                                 maxLines =
                                                                                                         1,
                                                                                                 softWrap =
-                                                                                                        false,
-                                                                                                onTextLayout = {
-                                                                                                        expressionLayout =
-                                                                                                                it
-                                                                                                        caretHolder
-                                                                                                                .layout =
-                                                                                                                it
-                                                                                                },
-                                                                                                modifier =
-                                                                                                        Modifier.widthIn(
-                                                                                                                        min =
-                                                                                                                                56.dp
+                                                                                                        false
+                                                                                        )
+         } // end SelectionContainer
+                                                                                }
+         Row(
+             modifier = Modifier.fillMaxWidth(),
+             horizontalArrangement = Arrangement.End
+         ) {
+             TextButton(onClick = {
+                 answerClipboard.setText(AnnotatedString(formattedFinal))
+                 answerCopied = true
+             }) {
+                 Text(if (answerCopied) "Copied ✓" else "Copy", fontSize = 14.sp)
+             }
+         }
+                                                                        }
+                                                                } else {
+                                                                        Column(
+                                                                                modifier =
+                                                                                        Modifier.fillMaxSize(),
+                                                                                verticalArrangement =
+                                                                                        Arrangement.Bottom,
+                                                                                horizontalAlignment =
+                                                                                        Alignment.End
+                                                                        ) {
+                                                                                // Tap-to-edit: the visible
+                                                                                // text is
+                                                                                // formatted (commas, ×, √)
+                                                                                // while the
+                                                                                // stored expression is raw
+                                                                                // ASCII.
+                                                                                // formatWithMap keeps a
+                                                                                // boundary map
+                                                                                // between the two, so a tap
+                                                                                // lands the
+                                                                                // caret on the exact
+                                                                                // character. The
+                                                                                // caret itself is drawn by
+                                                                                // the Text,
+                                                                                // inside its own draw pass
+                                                                                // (see below).
+                                                                                val formatted =
+                                                                                        remember(
+                                                                                                expression
+                                                                                        ) {
+                                                                                                formatWithMap(
+                                                                                                        expression
+                                                                                                )
+                                                                                        }
+                                                                                var expressionLayout by remember {
+                                                                                        mutableStateOf<
+                                                                                                TextLayoutResult?>(
+                                                                                                null
+                                                                                        )
+                                                                                }
+                                                                                val currentLayout by
+                                                                                        rememberUpdatedState(
+                                                                                                expressionLayout
+                                                                                        )
+                                                                                val currentFormatted by
+                                                                                        rememberUpdatedState(
+                                                                                                formatted
+                                                                                        )
+                                                                                val currentExpression by
+                                                                                        rememberUpdatedState(
+                                                                                                expression
+                                                                                        )
+
+                                                                                // Filled by the Text's
+                                                                                // onTextLayout in
+                                                                                // its layout phase; read by
+                                                                                // the Text's
+                                                                                // own draw phase in the
+                                                                                // same frame.
+                                                                                val caretHolder = remember {
+                                                                                        CaretLayoutHolder()
+                                                                                }
+
+                                                                                // The caret no longer
+                                                                                // blinks — it is
+                                                                                // drawn solid in the draw
+                                                                                // pass below.
+                                                                                val caretColor =
+                                                                                        MaterialTheme
+                                                                                                .colorScheme
+                                                                                                .onSurface
+                                                                                val clipboardManager =
+                                                                                        LocalClipboardManager
+                                                                                                .current
+
+                                                                                val scrollState =
+                                                                                        rememberScrollState()
+                                                                                // Keep the caret visible.
+                                                                                // Following
+                                                                                // the end while typing is
+                                                                                // an INSTANT
+                                                                                // scrollTo — an
+                                                                                // animateScrollTo per
+                                                                                // keystroke queued up
+                                                                                // behind fast
+                                                                                // typing and made the
+                                                                                // screen laggy.
+                                                                                // Only a caret placed
+                                                                                // mid-expression
+                                                                                // by a tap still animates
+                                                                                // into view.
+                                                                                LaunchedEffect(
+                                                                                        expression,
+                                                                                        cursorPosition
+                                                                                ) {
+                                                                                        val lr =
+                                                                                                expressionLayout
+                                                                                        if (expression
+                                                                                                        .isEmpty()
+                                                                                        ) {
+                                                                                                // nothing
+                                                                                                // to scroll
+                                                                                        } else if (cursorPosition >=
+                                                                                                        expression
+                                                                                                                .length ||
+                                                                                                        lr ==
+                                                                                                                null
+                                                                                        ) {
+                                                                                                scrollState
+                                                                                                        .scrollTo(
+                                                                                                                scrollState
+                                                                                                                        .maxValue
+                                                                                                        )
+                                                                                        } else {
+                                                                                                val safeOffset =
+                                                                                                        formatted
+                                                                                                                        .rawToFmt[
+                                                                                                                        cursorPosition
+                                                                                                                                .coerceIn(
+                                                                                                                                        0,
+                                                                                                                                        expression
+                                                                                                                                                .length
+                                                                                                                                )]
+                                                                                                                .coerceAtMost(
+                                                                                                                        lr.layoutInput
+                                                                                                                                .text
+                                                                                                                                .length
                                                                                                                 )
-                                                                                                                .pointerInput(
-                                                                                                                        Unit
-                                                                                                                ) {
-                                                                                                                        detectTapGestures(
-                                                                                                                                onTap = {
-                                                                                                                                        offset
-                                                                                                                                        ->
-                                                                                                                                        val lr =
-                                                                                                                                                currentLayout
-                                                                                                                                                        ?: return@detectTapGestures
-                                                                                                                                        val fmt =
-                                                                                                                                                currentFormatted
-                                                                                                                                        selActive =
-                                                                                                                                                false
-                                                                                                                                        val fmtOffset =
-                                                                                                                                                lr.getOffsetForPosition(
-                                                                                                                                                                offset
-                                                                                                                                                        )
-                                                                                                                                                        .coerceIn(
-                                                                                                                                                                0,
-                                                                                                                                                                fmt.text
-                                                                                                                                                                        .length
-                                                                                                                                                        )
-                                                                                                                                        viewModel
-                                                                                                                                                .setCursorPosition(
-                                                                                                                                                        fmt.fmtToRaw[
-                                                                                                                                                                fmtOffset]
+                                                                                                val cx =
+                                                                                                        lr.getHorizontalPosition(
+                                                                                                                safeOffset,
+                                                                                                                true
+                                                                                                        )
+                                                                                                val view =
+                                                                                                        scrollState
+                                                                                                                .viewportSize
+                                                                                                when {
+                                                                                                        cx <
+                                                                                                                scrollState
+                                                                                                                        .value ->
+                                                                                                                scrollState
+                                                                                                                        .animateScrollTo(
+                                                                                                                                cx.toInt()
+                                                                                                                                        .coerceAtLeast(
+                                                                                                                                                0
+                                                                                                                                        ),
+                                                                                                                                animationSpec =
+                                                                                                                                        tween(
+                                                                                                                                                120
+                                                                                                                                        )
+                                                                                                                        )
+                                                                                                        view >
+                                                                                                                0 &&
+                                                                                                                cx >
+                                                                                                                        scrollState
+                                                                                                                                .value +
+                                                                                                                                view -
+                                                                                                                                24 ->
+                                                                                                                scrollState
+                                                                                                                        .animateScrollTo(
+                                                                                                                                (cx -
+                                                                                                                                                view +
+                                                                                                                                                24)
+                                                                                                                                        .toInt(),
+                                                                                                                                animationSpec =
+                                                                                                                                        tween(
+                                                                                                                                                120
+                                                                                                                                        )
+                                                                                                                        )
+                                                                                                }
+                                                                                        }
+                                                                                }
+
+                                                                                // Selection action bar —
+                                                                                // Copy takes
+                                                                                // the FORMATTED slice
+                                                                                // (commas and
+                                                                                // glyphs), so it pastes
+                                                                                // prettily
+                                                                                // anywhere; paste is
+                                                                                // sanitised back
+                                                                                // by the ViewModel.
+                                                                                AnimatedVisibility(
+                                                                                        visible = selActive,
+                                                                                        enter =
+                                                                                                EnterTransition
+                                                                                                        .None,
+                                                                                        exit =
+                                                                                                ExitTransition
+                                                                                                        .None,
+                                                                                        modifier =
+                                                                                                Modifier.fillMaxWidth()
+                                                                                ) {
+                                                                                        Row(
+                                                                                                modifier =
+                                                                                                        Modifier.fillMaxWidth(),
+                                                                                                horizontalArrangement =
+                                                                                                        Arrangement
+                                                                                                                .Center
+                                                                                        ) {
+                                                                                                Row(
+                                                                                                        modifier =
+                                                                                                                Modifier.clip(
+                                                                                                                                RoundedCornerShape(
+                                                                                                                                        percent =
+                                                                                                                                                50
+                                                                                                                                )
+                                                                                                                        )
+                                                                                                                        .background(
+                                                                                                                                // BLACK / WHITE ONLY: the selection
+                                                                                                                                // bar was secondaryContainer, which
+                                                                                                                                // is a tinted colour in the theme.
+                                                                                                                                MaterialTheme
+                                                                                                                                        .colorScheme
+                                                                                                                                        .surfaceVariant
+                                                                                                                        )
+                                                                                                                        .padding(
+                                                                                                                                horizontal =
+                                                                                                                                        6.dp
+                                                                                                                        ),
+                                                                                                        verticalAlignment =
+                                                                                                                Alignment
+                                                                                                                        .CenterVertically
+                                                                                                ) {
+                                                                                                        if (selEnd >
+                                                                                                                        selStart
+                                                                                                        ) {
+                                                                                                                TextButton(
+                                                                                                                        onClick = {
+                                                                                                                                val from =
+                                                                                                                                        formatted
+                                                                                                                                                .rawToFmt[
+                                                                                                                                                selStart.coerceIn(
+                                                                                                                                                        0,
+                                                                                                                                                        expression
+                                                                                                                                                                .length
+                                                                                                                                                )]
+                                                                                                                                val to =
+                                                                                                                                        formatted
+                                                                                                                                                .rawToFmt[
+                                                                                                                                                selEnd.coerceIn(
+                                                                                                                                                        0,
+                                                                                                                                                        expression
+                                                                                                                                                                .length
+                                                                                                                                                )]
+                                                                                                                                clipboardManager
+                                                                                                                                        .setText(
+                                                                                                                                                AnnotatedString(
+                                                                                                                                                        formatted
+                                                                                                                                                                .text
+                                                                                                                                                                .substring(
+                                                                                                                                                                        from,
+                                                                                                                                                                        to.coerceAtMost(
+                                                                                                                                                                                formatted
+                                                                                                                                                                                        .text
+                                                                                                                                                                                        .length
+                                                                                                                                                                        )
+                                                                                                                                                                )
                                                                                                                                                 )
-                                                                                                                                },
-                                                                                                                                onLongPress = {
-                                                                                                                                        offset
-                                                                                                                                        ->
-                                                                                                                                        val lr =
-                                                                                                                                                currentLayout
-                                                                                                                                                        ?: return@detectTapGestures
-                                                                                                                                        val fmt =
-                                                                                                                                                currentFormatted
-                                                                                                                                        val rawExpr =
-                                                                                                                                                currentExpression
-                                                                                                                                        if (rawExpr.isEmpty()
-                                                                                                                                        ) {
-                                                                                                                                                selStart =
-                                                                                                                                                        0
-                                                                                                                                                selEnd =
-                                                                                                                                                        0
+                                                                                                                                        )
+                                                                                                                        }
+                                                                                                                ) {
+                                                                                                                        Text(
+                                                                                                                                "Copy",
+                                                                                                                                fontSize =
+                                                                                                                                        14.sp
+                                                                                                                        )
+                                                                                                                }
+                                                                                                                TextButton(
+                                                                                                                        onClick = {
+                                                                                                                                val from =
+                                                                                                                                        formatted
+                                                                                                                                                .rawToFmt[
+                                                                                                                                                selStart.coerceIn(
+                                                                                                                                                        0,
+                                                                                                                                                        expression
+                                                                                                                                                                .length
+                                                                                                                                                )]
+                                                                                                                                val to =
+                                                                                                                                        formatted
+                                                                                                                                                .rawToFmt[
+                                                                                                                                                selEnd.coerceIn(
+                                                                                                                                                        0,
+                                                                                                                                                        expression
+                                                                                                                                                                .length
+                                                                                                                                                )]
+                                                                                                                                clipboardManager
+                                                                                                                                        .setText(
+                                                                                                                                                AnnotatedString(
+                                                                                                                                                        formatted
+                                                                                                                                                                .text
+                                                                                                                                                                .substring(
+                                                                                                                                                                        from,
+                                                                                                                                                                        to.coerceAtMost(
+                                                                                                                                                                                formatted
+                                                                                                                                                                                        .text
+                                                                                                                                                                                        .length
+                                                                                                                                                                        )
+                                                                                                                                                                )
+                                                                                                                                                )
+                                                                                                                                        )
+                                                                                                                                viewModel
+                                                                                                                                        .deleteRange(
+                                                                                                                                                selStart,
+                                                                                                                                                selEnd
+                                                                                                                                        )
+                                                                                                                                selActive =
+                                                                                                                                        false
+                                                                                                                        }
+                                                                                                                ) {
+                                                                                                                        Text(
+                                                                                                                                "Cut",
+                                                                                                                                fontSize =
+                                                                                                                                        14.sp
+                                                                                                                        )
+                                                                                                                }
+                                                                                                        }
+                                                                                                        TextButton(
+                                                                                                                onClick = {
+                                                                                                                        val clip =
+                                                                                                                                clipboardManager
+                                                                                                                                        .getText()
+                                                                                                                                        ?.text
+                                                                                                                        if (!clip.isNullOrEmpty()
+                                                                                                                        ) {
+                                                                                                                                if (selEnd >
+                                                                                                                                                selStart
+                                                                                                                                ) {
+                                                                                                                                        viewModel
+                                                                                                                                                .deleteRange(
+                                                                                                                                                        selStart,
+                                                                                                                                                        selEnd
+                                                                                                                                                )
+                                                                                                                                }
+                                                                                                                                viewModel
+                                                                                                                                        .pasteText(
+                                                                                                                                                clip
+                                                                                                                                        )
+                                                                                                                                selActive =
+                                                                                                                                        false
+                                                                                                                        }
+                                                                                                                }
+                                                                                                        ) {
+                                                                                                                Text(
+                                                                                                                        "Paste",
+                                                                                                                        fontSize =
+                                                                                                                                14.sp
+                                                                                                                )
+                                                                                                        }
+                                                                                                        if (expression
+                                                                                                                        .isNotEmpty()
+                                                                                                        ) {
+                                                                                                                TextButton(
+                                                                                                                        onClick = {
+                                                                                                                                selStart =
+                                                                                                                                        0
+                                                                                                                                selEnd =
+                                                                                                                                        expression
+                                                                                                                                                .length
+                                                                                                                        }
+                                                                                                                ) {
+                                                                                                                        Text(
+                                                                                                                                "All",
+                                                                                                                                fontSize =
+                                                                                                                                        14.sp
+                                                                                                                        )
+                                                                                                                }
+                                                                                                        }
+                                                                                                        TextButton(
+                                                                                                                onClick = {
+                                                                                                                        selActive =
+                                                                                                                                false
+                                                                                                                }
+                                                                                                        ) {
+                                                                                                                Text(
+                                                                                                                        "Done",
+                                                                                                                        fontSize =
+                                                                                                                                14.sp
+                                                                                                                )
+                                                                                                        }
+                                                                                                }
+                                                                                        }
+                                                                                }
+                                                                                if (selActive) {
+                                                                                        Spacer(
+                                                                                                modifier =
+                                                                                                        Modifier.height(
+                                                                                                                4.dp
+                                                                                                        )
+                                                                                        )
+                                                                                }
+
+                                                                                // Single line only — never
+                                                                                // wraps. ADAPTIVE: 78sp theke
+                                                                                // suru, 8 char-er beshi hole
+                                                                                // 2sp kore kombe, 52sp-e giye
+                                                                                // theme jabe, tarpor shudhu
+                                                                                // scroll hobe, ar choto hobe na.
+                                                                                val adaptiveExpressionFontSize =
+                                                                                        remember(formatted.text) {
+                                                                                                val excess =
+                                                                                                        (formatted.text.length - 8)
+                                                                                                                .coerceAtLeast(0)
+                                                                                                (expressionFontSize.value - 2f * excess)
+                                                                                                        .coerceAtLeast(52f).sp
+                                                                                        }
+                                                                                Row(
+                                                                                        modifier =
+                                                                                                Modifier.fillMaxWidth()
+                                                                                                        .horizontalScroll(
+                                                                                                                scrollState,
+                                                                                                                enabled =
+                                                                                                                        !selActive
+                                                                                                        ),
+                                                                                        verticalAlignment =
+                                                                                                Alignment
+                                                                                                        .CenterVertically,
+                                                                                        horizontalArrangement =
+                                                                                                Arrangement
+                                                                                                        .End
+                                                                                ) {
+                                                                                        Box {
+                                                                                                Text(
+                                                                                                        text =
+                                                                                                                formatted
+                                                                                                                        .text,
+                                                                                                        fontSize =
+                                                                                                                adaptiveExpressionFontSize,
+                                                                                                        fontWeight =
+                                                                                                                FontWeight
+                                                                                                                        .Normal,
+                                                                                                        color =
+                                                                                                                MaterialTheme
+                                                                                                                        .colorScheme
+                                                                                                                        .onSurface,
+                                                                                                        textAlign =
+                                                                                                                TextAlign
+                                                                                                                        .End,
+                                                                                                        maxLines =
+                                                                                                                1,
+                                                                                                        softWrap =
+                                                                                                                false,
+                                                                                                        onTextLayout = {
+                                                                                                                expressionLayout =
+                                                                                                                        it
+                                                                                                                caretHolder
+                                                                                                                        .layout =
+                                                                                                                        it
+                                                                                                        },
+                                                                                                        modifier =
+                                                                                                                Modifier.widthIn(
+                                                                                                                                min =
+                                                                                                                                        56.dp
+                                                                                                                        )
+                                                                                                                        .pointerInput(
+                                                                                                                                Unit
+                                                                                                                        ) {
+                                                                                                                                detectTapGestures(
+                                                                                                                                        onTap = {
+                                                                                                                                                offset
+                                                                                                                                                ->
+                                                                                                                                                val lr =
+                                                                                                                                                        currentLayout
+                                                                                                                                                                ?: return@detectTapGestures
+                                                                                                                                                val fmt =
+                                                                                                                                                        currentFormatted
                                                                                                                                                 selActive =
-                                                                                                                                                        true
-                                                                                                                                        } else {
+                                                                                                                                                        false
                                                                                                                                                 val fmtOffset =
                                                                                                                                                         lr.getOffsetForPosition(
                                                                                                                                                                         offset
@@ -1012,1240 +1019,800 @@ fun NormalCalculatorScreen(
                                                                                                                                                                         fmt.text
                                                                                                                                                                                 .length
                                                                                                                                                                 )
-                                                                                                                                                val rawBoundary =
-                                                                                                                                                        fmt.fmtToRaw[
-                                                                                                                                                                fmtOffset]
-                                                                                                                                                val charIndex =
-                                                                                                                                                        rawBoundary
-                                                                                                                                                                .coerceIn(
-                                                                                                                                                                        0,
-                                                                                                                                                                        rawExpr.length -
-                                                                                                                                                                                1
-                                                                                                                                                                )
-                                                                                                                                                val range =
-                                                                                                                                                        tokenRangeAt(
-                                                                                                                                                                rawExpr,
-                                                                                                                                                                charIndex
+                                                                                                                                                viewModel
+                                                                                                                                                        .setCursorPosition(
+                                                                                                                                                                fmt.fmtToRaw[
+                                                                                                                                                                        fmtOffset]
                                                                                                                                                         )
-                                                                                                                                                selStart =
-                                                                                                                                                        range.first
-                                                                                                                                                selEnd =
-                                                                                                                                                        range.second
-                                                                                                                                                selActive =
-                                                                                                                                                        true
-                                                                                                                                        }
-                                                                                                                                }
-                                                                                                                        )
-                                                                                                                }
-                                                                                                                .drawWithContent {
-                                                                                                                        drawContent()
-                                                                                                                        // Selection highlight and
-                                                                                                                        // caret, drawn by the Text
-                                                                                                                        // itself in the same frame
-                                                                                                                        // whose layout is in the
-                                                                                                                        // holder — always in sync
-                                                                                                                        // with the glyphs. The
-                                                                                                                        // caret
-                                                                                                                        // is a THIN line (2.5dp),
-                                                                                                                        // at least 52dp tall (an
-                                                                                                                        // empty expression gives
-                                                                                                                        // the Text almost no
-                                                                                                                        // height, which used to
-                                                                                                                        // shrink the caret to a
-                                                                                                                        // stub), drawn solid
-                                                                                                                        // (no blink) — like the
-                                                                                                                        // reference.
-                                                                                                                        val lr =
-                                                                                                                                caretHolder
-                                                                                                                                        .layout
-                                                                                                                        if (lr !=
-                                                                                                                                        null &&
-                                                                                                                                        lr.layoutInput
-                                                                                                                                                .text
-                                                                                                                                                .text ==
-                                                                                                                                                formatted
-                                                                                                                                                        .text
-                                                                                                                        ) {
-                                                                                                                                if (selActive &&
-                                                                                                                                                selEnd >
-                                                                                                                                                        selStart
-                                                                                                                                ) {
-                                                                                                                                        val sx =
-                                                                                                                                                lr.getHorizontalPosition(
-                                                                                                                                                        formatted
-                                                                                                                                                                .rawToFmt[
-                                                                                                                                                                selStart.coerceIn(
-                                                                                                                                                                        0,
-                                                                                                                                                                        expression
-                                                                                                                                                                                .length
-                                                                                                                                                                )],
-                                                                                                                                                        true
-                                                                                                                                                )
-                                                                                                                                        val ex =
-                                                                                                                                                lr.getHorizontalPosition(
-                                                                                                                                                        formatted
-                                                                                                                                                                .rawToFmt[
-                                                                                                                                                                selEnd.coerceIn(
-                                                                                                                                                                        0,
-                                                                                                                                                                        expression
-                                                                                                                                                                                .length
-                                                                                                                                                                )],
-                                                                                                                                                        true
-                                                                                                                                                )
-                                                                                                                                        drawRect(
-                                                                                                                                                color =
-                                                                                                                                                        caretColor
-                                                                                                                                                                .copy(
-                                                                                                                                                                        alpha =
-                                                                                                                                                                                0.30f
-                                                                                                                                                                ),
-                                                                                                                                                topLeft =
-                                                                                                                                                        Offset(
-                                                                                                                                                                sx,
-                                                                                                                                                                0f
-                                                                                                                                                        ),
-                                                                                                                                                size =
-                                                                                                                                                        Size(
-                                                                                                                                                                ex -
-                                                                                                                                                                        sx,
-                                                                                                                                                                size.height
-                                                                                                                                                        )
-                                                                                                                                        )
-                                                                                                                                } else if (!selActive
-                                                                                                                                ) {
-                                                                                                                                        val caretOffset =
-                                                                                                                                                formatted
-                                                                                                                                                        .rawToFmt[
-                                                                                                                                                        cursorPosition
-                                                                                                                                                                .coerceIn(
-                                                                                                                                                                        0,
-                                                                                                                                                                        expression
-                                                                                                                                                                                .length
-                                                                                                                                                                )]
-                                                                                                                                        val cx =
-                                                                                                                                                if (formatted
-                                                                                                                                                                .text
-                                                                                                                                                                .isEmpty()
+                                                                                                                                        },
+                                                                                                                                        onLongPress = {
+                                                                                                                                                offset
+                                                                                                                                                ->
+                                                                                                                                                val lr =
+                                                                                                                                                        currentLayout
+                                                                                                                                                                ?: return@detectTapGestures
+                                                                                                                                                val fmt =
+                                                                                                                                                        currentFormatted
+                                                                                                                                                val rawExpr =
+                                                                                                                                                        currentExpression
+                                                                                                                                                if (rawExpr.isEmpty()
                                                                                                                                                 ) {
-                                                                                                                                                        0f
+                                                                                                                                                        selStart =
+                                                                                                                                                                0
+                                                                                                                                                        selEnd =
+                                                                                                                                                                0
+                                                                                                                                                        selActive =
+                                                                                                                                                                true
                                                                                                                                                 } else {
+                                                                                                                                                        val fmtOffset =
+                                                                                                                                                                lr.getOffsetForPosition(
+                                                                                                                                                                                offset
+                                                                                                                                                                        )
+                                                                                                                                                                        .coerceIn(
+                                                                                                                                                                                0,
+                                                                                                                                                                                fmt.text
+                                                                                                                                                                                        .length
+                                                                                                                                                                        )
+                                                                                                                                                        val rawBoundary =
+                                                                                                                                                                fmt.fmtToRaw[
+                                                                                                                                                                        fmtOffset]
+                                                                                                                                                        val charIndex =
+                                                                                                                                                                rawBoundary
+                                                                                                                                                                        .coerceIn(
+                                                                                                                                                                                0,
+                                                                                                                                                                                rawExpr.length -
+                                                                                                                                                                                        1
+                                                                                                                                                                        )
+                                                                                                                                                        val range =
+                                                                                                                                                                tokenRangeAt(
+                                                                                                                                                                        rawExpr,
+                                                                                                                                                                        charIndex
+                                                                                                                                                                )
+                                                                                                                                                        selStart =
+                                                                                                                                                                range.first
+                                                                                                                                                        selEnd =
+                                                                                                                                                                range.second
+                                                                                                                                                        selActive =
+                                                                                                                                                                true
+                                                                                                                                                }
+                                                                                                                                        }
+                                                                                                                                )
+                                                                                                                        }
+                                                                                                                        .drawWithContent {
+                                                                                                                                drawContent()
+                                                                                                                                // Selection highlight and
+                                                                                                                                // caret, drawn by the Text
+                                                                                                                                // itself in the same frame
+                                                                                                                                // whose layout is in the
+                                                                                                                                // holder — always in sync
+                                                                                                                                // with the glyphs. The
+                                                                                                                                // caret
+                                                                                                                                // is a THIN line (2.5dp),
+                                                                                                                                // at least 52dp tall (an
+                                                                                                                                // empty expression gives
+                                                                                                                                // the Text almost no
+                                                                                                                                // height, which used to
+                                                                                                                                // shrink the caret to a
+                                                                                                                                // stub), drawn solid
+                                                                                                                                // (no blink) — like the
+                                                                                                                                // reference.
+                                                                                                                                val lr =
+                                                                                                                                        caretHolder
+                                                                                                                                                .layout
+                                                                                                                                if (lr !=
+                                                                                                                                                null &&
+                                                                                                                                                lr.layoutInput
+                                                                                                                                                        .text
+                                                                                                                                                        .text ==
+                                                                                                                                                        formatted
+                                                                                                                                                                .text
+                                                                                                                                ) {
+                                                                                                                                        if (selActive &&
+                                                                                                                                                        selEnd >
+                                                                                                                                                                selStart
+                                                                                                                                        ) {
+                                                                                                                                                val sx =
                                                                                                                                                         lr.getHorizontalPosition(
-                                                                                                                                                                caretOffset,
+                                                                                                                                                                formatted
+                                                                                                                                                                        .rawToFmt[
+                                                                                                                                                                        selStart.coerceIn(
+                                                                                                                                                                                0,
+                                                                                                                                                                                expression
+                                                                                                                                                                                        .length
+                                                                                                                                                                        )],
                                                                                                                                                                 true
                                                                                                                                                         )
-                                                                                                                                                }
-                                                                                                                                        // The caret is AS TALL AS THE TEXT ITSELF: the laid-out
-                                                                                                                                        // line's own height, drawn from the line's top to its
-                                                                                                                                        // bottom. The old caret used 95% of the Text box height,
-                                                                                                                                        // but an empty expression lays out almost no height, so
-                                                                                                                                        // the caret shrank to a 52dp stub — shorter than the
-                                                                                                                                        // letters. When there is no line yet, the current font
-                                                                                                                                        // size stands in, so the caret is full height even
-                                                                                                                                        // before anything is typed.
-                                                                                                                                        val lineHeight =
-                                                                                                                                                if (lr.lineCount > 0) {
-                                                                                                                                                        lr.getLineBottom(0) - lr.getLineTop(0)
-                                                                                                                                                } else {
-                                                                                                                                                        0f
-                                                                                                                                                }
-                                                                                                                                        val caretHeight =
-                                                                                                                                                maxOf(
-                                                                                                                                                        lineHeight,
-                                                                                                                                                        adaptiveExpressionFontSize.toPx(),
-                                                                                                                                                        52.dp.toPx()
-                                                                                                                                                )
-                                                                                                                                        val caretTop =
-                                                                                                                                                if (lr.lineCount > 0) {
-                                                                                                                                                        lr.getLineTop(0)
-                                                                                                                                                } else {
-                                                                                                                                                        (size.height - caretHeight) / 2f
-                                                                                                                                                }
-                                                                                                                                        drawRect(
-                                                                                                                                                color =
-                                                                                                                                                        caretColor,
-                                                                                                                                                topLeft =
-                                                                                                                                                        Offset(
-                                                                                                                                                                cx -
-                                                                                                                                                                        1.25.dp
-                                                                                                                                                                                .toPx(),
-                                                                                                                                                                caretTop
-                                                                                                                                                        ),
-                                                                                                                                                size =
-                                                                                                                                                        Size(
-                                                                                                                                                                2.5.dp
-                                                                                                                                                                        .toPx(),
-                                                                                                                                                                caretHeight
+                                                                                                                                                val ex =
+                                                                                                                                                        lr.getHorizontalPosition(
+                                                                                                                                                                formatted
+                                                                                                                                                                        .rawToFmt[
+                                                                                                                                                                        selEnd.coerceIn(
+                                                                                                                                                                                0,
+                                                                                                                                                                                expression
+                                                                                                                                                                                        .length
+                                                                                                                                                                        )],
+                                                                                                                                                                true
                                                                                                                                                         )
-                                                                                                                                        )
+                                                                                                                                                drawRect(
+                                                                                                                                                        color =
+                                                                                                                                                                caretColor
+                                                                                                                                                                        .copy(
+                                                                                                                                                                                alpha =
+                                                                                                                                                                                        0.30f
+                                                                                                                                                                        ),
+                                                                                                                                                        topLeft =
+                                                                                                                                                                Offset(
+                                                                                                                                                                        sx,
+                                                                                                                                                                        0f
+                                                                                                                                                                ),
+                                                                                                                                                        size =
+                                                                                                                                                                Size(
+                                                                                                                                                                        ex -
+                                                                                                                                                                                sx,
+                                                                                                                                                                        size.height
+                                                                                                                                                                )
+                                                                                                                                                )
+                                                                                                                                        } else if (!selActive
+                                                                                                                                        ) {
+                                                                                                                                                val caretOffset =
+                                                                                                                                                        formatted
+                                                                                                                                                                .rawToFmt[
+                                                                                                                                                                cursorPosition
+                                                                                                                                                                        .coerceIn(
+                                                                                                                                                                                0,
+                                                                                                                                                                                expression
+                                                                                                                                                                                        .length
+                                                                                                                                                                        )]
+                                                                                                                                                val cx =
+                                                                                                                                                        if (formatted
+                                                                                                                                                                        .text
+                                                                                                                                                                        .isEmpty()
+                                                                                                                                                        ) {
+                                                                                                                                                                0f
+                                                                                                                                                        } else {
+                                                                                                                                                                lr.getHorizontalPosition(
+                                                                                                                                                                        caretOffset,
+                                                                                                                                                                        true
+                                                                                                                                                                )
+                                                                                                                                                        }
+                                                                                                                                                // The caret is AS TALL AS THE TEXT ITSELF: the laid-out
+                                                                                                                                                // line's own height, drawn from the line's top to its
+                                                                                                                                                // bottom. The old caret used 95% of the Text box height,
+                                                                                                                                                // but an empty expression lays out almost no height, so
+                                                                                                                                                // the caret shrank to a 52dp stub — shorter than the
+                                                                                                                                                // letters. When there is no line yet, the current font
+                                                                                                                                                // size stands in, so the caret is full height even
+                                                                                                                                                // before anything is typed.
+                                                                                                                                                val lineHeight =
+                                                                                                                                                        if (lr.lineCount > 0) {
+                                                                                                                                                                lr.getLineBottom(0) - lr.getLineTop(0)
+                                                                                                                                                        } else {
+                                                                                                                                                                0f
+                                                                                                                                                        }
+                                                                                                                                                val caretHeight =
+                                                                                                                                                        maxOf(
+                                                                                                                                                                lineHeight,
+                                                                                                                                                                adaptiveExpressionFontSize.toPx(),
+                                                                                                                                                                52.dp.toPx()
+                                                                                                                                                        )
+                                                                                                                                                val caretTop =
+                                                                                                                                                        if (lr.lineCount > 0) {
+                                                                                                                                                                lr.getLineTop(0)
+                                                                                                                                                        } else {
+                                                                                                                                                                (size.height - caretHeight) / 2f
+                                                                                                                                                        }
+                                                                                                                                                drawRect(
+                                                                                                                                                        color =
+                                                                                                                                                                caretColor,
+                                                                                                                                                        topLeft =
+                                                                                                                                                                Offset(
+                                                                                                                                                                        cx -
+                                                                                                                                                                                1.25.dp
+                                                                                                                                                                                        .toPx(),
+                                                                                                                                                                        caretTop
+                                                                                                                                                                ),
+                                                                                                                                                        size =
+                                                                                                                                                                Size(
+                                                                                                                                                                        2.5.dp
+                                                                                                                                                                                .toPx(),
+                                                                                                                                                                        caretHeight
+                                                                                                                                                                )
+                                                                                                                                                )
+                                                                                                                                        }
                                                                                                                                 }
                                                                                                                         }
-                                                                                                                }
-                                                                                        )
+                                                                                                )
 
-                                                                                        // Drag
-                                                                                        // handles
-                                                                                        // at both
-                                                                                        // ends of
-                                                                                        // the
-                                                                                        // selection
-                                                                                        if (selActive &&
-                                                                                                        formatted
-                                                                                                                .text
-                                                                                                                .isNotEmpty()
-                                                                                        ) {
-                                                                                                val lr =
-                                                                                                        expressionLayout
-                                                                                                if (lr !=
-                                                                                                                null &&
-                                                                                                                lr.layoutInput
+                                                                                                // Drag
+                                                                                                // handles
+                                                                                                // at both
+                                                                                                // ends of
+                                                                                                // the
+                                                                                                // selection
+                                                                                                if (selActive &&
+                                                                                                                formatted
                                                                                                                         .text
-                                                                                                                        .text ==
-                                                                                                                        formatted
-                                                                                                                                .text
+                                                                                                                        .isNotEmpty()
                                                                                                 ) {
-                                                                                                        val startX =
-                                                                                                                lr.getHorizontalPosition(
-                                                                                                                        formatted
-                                                                                                                                .rawToFmt[
-                                                                                                                                selStart.coerceIn(
-                                                                                                                                        0,
-                                                                                                                                        expression
-                                                                                                                                                .length
-                                                                                                                                )],
-                                                                                                                        true
-                                                                                                                )
-                                                                                                        val endX =
-                                                                                                                lr.getHorizontalPosition(
-                                                                                                                        formatted
-                                                                                                                                .rawToFmt[
-                                                                                                                                selEnd.coerceIn(
-                                                                                                                                        0,
-                                                                                                                                        expression
-                                                                                                                                                .length
-                                                                                                                                )],
-                                                                                                                        true
-                                                                                                                )
-                                                                                                        SelectionHandle(
-                                                                                                                currentX =
-                                                                                                                        startX,
-                                                                                                                modifier =
-                                                                                                                        Modifier
-                                                                                                                                .offset {
-                                                                                                                                        IntOffset(
-                                                                                                                                                (startX -
-                                                                                                                                                                10.dp.toPx())
-                                                                                                                                                        .roundToInt(),
-                                                                                                                                                (lr.size
-                                                                                                                                                                .height -
-                                                                                                                                                                10.dp.toPx())
-                                                                                                                                                        .roundToInt()
-                                                                                                                                        )
-                                                                                                                                }
+                                                                                                        val lr =
+                                                                                                                expressionLayout
+                                                                                                        if (lr !=
+                                                                                                                        null &&
+                                                                                                                        lr.layoutInput
+                                                                                                                                .text
+                                                                                                                                .text ==
+                                                                                                                                formatted
+                                                                                                                                        .text
                                                                                                         ) {
-                                                                                                                targetX
-                                                                                                                ->
-                                                                                                                val fmtOffset =
-                                                                                                                        lr.getOffsetForPosition(
-                                                                                                                                        Offset(
-                                                                                                                                                targetX.coerceAtLeast(
-                                                                                                                                                        0f
-                                                                                                                                                ),
-                                                                                                                                                lr.size
-                                                                                                                                                        .height /
-                                                                                                                                                        2f
+                                                                                                                val startX =
+                                                                                                                        lr.getHorizontalPosition(
+                                                                                                                                formatted
+                                                                                                                                        .rawToFmt[
+                                                                                                                                        selStart.coerceIn(
+                                                                                                                                                0,
+                                                                                                                                                expression
+                                                                                                                                                        .length
+                                                                                                                                        )],
+                                                                                                                                true
+                                                                                                                        )
+                                                                                                                val endX =
+                                                                                                                        lr.getHorizontalPosition(
+                                                                                                                                formatted
+                                                                                                                                        .rawToFmt[
+                                                                                                                                        selEnd.coerceIn(
+                                                                                                                                                0,
+                                                                                                                                                expression
+                                                                                                                                                        .length
+                                                                                                                                        )],
+                                                                                                                                true
+                                                                                                                        )
+                                                                                                                SelectionHandle(
+                                                                                                                        currentX =
+                                                                                                                                startX,
+                                                                                                                        modifier =
+                                                                                                                                Modifier
+                                                                                                                                        .offset {
+                                                                                                                                                IntOffset(
+                                                                                                                                                        (startX -
+                                                                                                                                                                        10.dp.toPx())
+                                                                                                                                                                .roundToInt(),
+                                                                                                                                                        (lr.size
+                                                                                                                                                                        .height -
+                                                                                                                                                                        10.dp.toPx())
+                                                                                                                                                                .roundToInt()
+                                                                                                                                                )
+                                                                                                                                        }
+                                                                                                                ) {
+                                                                                                                        targetX
+                                                                                                                        ->
+                                                                                                                        val fmtOffset =
+                                                                                                                                lr.getOffsetForPosition(
+                                                                                                                                                Offset(
+                                                                                                                                                        targetX.coerceAtLeast(
+                                                                                                                                                                0f
+                                                                                                                                                        ),
+                                                                                                                                                        lr.size
+                                                                                                                                                                .height /
+                                                                                                                                                                2f
+                                                                                                                                                )
                                                                                                                                         )
-                                                                                                                                )
-                                                                                                                                .coerceIn(
-                                                                                                                                        0,
-                                                                                                                                        formatted
-                                                                                                                                                .text
-                                                                                                                                                .length
-                                                                                                                                )
-                                                                                                                selStart =
-                                                                                                                        formatted
-                                                                                                                                        .fmtToRaw[
-                                                                                                                                        fmtOffset]
-                                                                                                                                .coerceIn(
-                                                                                                                                        0,
-                                                                                                                                        selEnd
-                                                                                                                                )
-                                                                                                        }
-                                                                                                        SelectionHandle(
-                                                                                                                currentX =
-                                                                                                                        endX,
-                                                                                                                modifier =
-                                                                                                                        Modifier
-                                                                                                                                .offset {
-                                                                                                                                        IntOffset(
-                                                                                                                                                (endX -
-                                                                                                                                                                10.dp.toPx())
-                                                                                                                                                        .roundToInt(),
-                                                                                                                                                (lr.size
-                                                                                                                                                                .height -
-                                                                                                                                                                10.dp.toPx())
-                                                                                                                                                        .roundToInt()
+                                                                                                                                        .coerceIn(
+                                                                                                                                                0,
+                                                                                                                                                formatted
+                                                                                                                                                        .text
+                                                                                                                                                        .length
                                                                                                                                         )
-                                                                                                                                }
-                                                                                                        ) {
-                                                                                                                targetX
-                                                                                                                ->
-                                                                                                                val fmtOffset =
-                                                                                                                        lr.getOffsetForPosition(
-                                                                                                                                        Offset(
-                                                                                                                                                targetX.coerceAtLeast(
-                                                                                                                                                        0f
-                                                                                                                                                ),
-                                                                                                                                                lr.size
-                                                                                                                                                        .height /
-                                                                                                                                                        2f
+                                                                                                                        selStart =
+                                                                                                                                formatted
+                                                                                                                                                .fmtToRaw[
+                                                                                                                                                fmtOffset]
+                                                                                                                                        .coerceIn(
+                                                                                                                                                0,
+                                                                                                                                                selEnd
                                                                                                                                         )
-                                                                                                                                )
-                                                                                                                                .coerceIn(
-                                                                                                                                        0,
-                                                                                                                                        formatted
-                                                                                                                                                .text
-                                                                                                                                                .length
-                                                                                                                                )
-                                                                                                                selEnd =
-                                                                                                                        formatted
-                                                                                                                                        .fmtToRaw[
-                                                                                                                                        fmtOffset]
-                                                                                                                                .coerceIn(
-                                                                                                                                        selStart,
-                                                                                                                                        expression
-                                                                                                                                                .length
-                                                                                                                                )
-                                                                                                        }
-                                                                                                }
-                                                                                        }
-                                                                                }
-                                                                        }
-                                                                }
-                                                        }
-                                                }
-                                        }
-
-                                        // Answer preview line — a RESERVED 56dp strip of
-                                        // its own, always present at the panel's bottom,
-                                        // so the answer is never pushed out or clipped.
-                                        // The line scrolls horizontally like the others
-                                        // and follows the end as the answer grows.
-                                        Box(
-                                                modifier =
-                                                        Modifier.fillMaxWidth()
-                                                                .height(56.dp)
-                                                                .padding(horizontal = 20.dp),
-                                                contentAlignment = Alignment.CenterEnd
-                                        ) {
-                                                if (finalResult == null &&
-                                                                result != "0" &&
-                                                                expression.isNotEmpty()
-                                                ) {
-                                                        val previewScrollState =
-                                                                rememberScrollState()
-                                                        LaunchedEffect(result) {
-    // FIX: preview-ও প্রথম অংশ থেকে দেখাবে।
-    previewScrollState.scrollTo(0)
-}
-                                                        Row(
-                                                                modifier =
-                                                                        Modifier.horizontalScroll(
-                                                                                previewScrollState
-                                                                        ),
-                                                                verticalAlignment =
-                                                                        Alignment.CenterVertically,
-                                                                horizontalArrangement =
-                                                                        Arrangement.End
-                                                        ) {
-                                                                Text(
-                                                                        text =
-                                                                                formatForDisplay(
-                                                                                        result
-                                                                                ),
-                                                                        fontSize = previewFontSize,
-                                                                        color =
-                                                                                MaterialTheme
-                                                                                        .colorScheme
-                                                                                        .onSurface,
-                                                                        textAlign = TextAlign.End,
-                                                                        maxLines = 1,
-                                                                        softWrap = false
-                                                                )
-                                                        }
-                                                }
-                                        }
-
-                                        Spacer(modifier = Modifier.height(24.dp))
-                                }
-
-                                // Scientific strip — ONE long pill under the panel
-                                // (√, π, ^, E) plus a SEPARATE round ANS button
-                                // beside it. Ans inserts the last answer at the
-                                // cursor. The scientific keys are no longer behind
-                                // a tap: PULL the keypad DOWN to reveal them (see
-                                // the drag detector on the keypad below), pull UP
-                                // to go back to digits.
-                                // The strip stays put when history is showing.
-                                Row(
-                                        modifier =
-                                                Modifier.fillMaxWidth()
-                                                        .padding(
-                                                                horizontal = 12.dp,
-                                                                vertical = 8.dp
-                                                        ),
-                                        verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                        Row(
-                                                modifier =
-                                                        Modifier.weight(1f)
-                                                                .clip(
-                                                                        RoundedCornerShape(
-                                                                                percent = 50
-                                                                        )
-                                                                )
-                                                                .background(
-                                                                        MaterialTheme.colorScheme
-                                                                                .surfaceVariant
-                                                                )
-                                                                .padding(vertical = 4.dp),
-                                                verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                                listOf(
-                                                                "√" to "√",
-                                                                "π" to "π",
-                                                                "^" to "^",
-                                                                "E" to "E"
-                                                        )
-                                                        .forEach { (displayText, label) ->
-                                                                Box(
-                                                                        modifier =
-                                                                                Modifier.weight(1f)
-                                                                                        .clickable {
-                                                                                                handleKeyLabel(
-                                                                                                        label
-                                                                                                )
-                                                                                        }
-                                                                                        .padding(
-                                                                                                vertical =
-                                                                                                        10.dp
-                                                                                        ),
-                                                                        contentAlignment =
-                                                                                Alignment.Center
-                                                                ) {
-                                                                        Text(
-                                                                                text = displayText,
-                                                                                fontSize = 22.sp,
-                                                                                fontWeight =
-                                                                                        FontWeight
-                                                                                                .Medium,
-                                                                                color =
-                                                                                        MaterialTheme
-                                                                                                .colorScheme
-                                                                                                .onSurface
-                                                                        )
-                                                                }
-                                                        }
-                                        }
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Box(
-                                                modifier =
-                                                        Modifier.size(52.dp)
-                                                                .clip(CircleShape)
-                                                                .background(
-                                                                        MaterialTheme.colorScheme
-                                                                                .surfaceVariant
-                                                                )
-                                                                .clickable {
-                                                                        // ANS: send the literal "Ans" label. The
-                                                                        // ViewModel inserts the "Ans" token, shows
-                                                                        // it in the display, and resolves it to
-                                                                        // the last "=" result when calculating,
-                                                                        // so "Ans+5" works. (Sending the number
-                                                                        // instead looked dead after "=", because
-                                                                        // the fresh-start rule only fires for a
-                                                                        // single digit.)
-                                                                        handleKeyLabel("Ans")
-                                                                },
-                                                contentAlignment = Alignment.Center
-                                        ) {
-                                                Text(
-                                                        text = "Ans",
-                                                        fontSize = 15.sp,
-                                                        fontWeight = FontWeight.Bold,
-                                                        color =
-                                                                MaterialTheme.colorScheme
-                                                                        .onSurface
-                                                )
-                                        }
-                                }
-
-                                // SWAP AREA — keypad ⇄ history. The keypad slides away
-                                // and the history shows RIGHT HERE, in this same area,
-                                // at full height. Page 0 = history, page 1 = keypad
-                                // (swapped so the slide follows the finger — see header).
-                                // The swipe itself is NOT the pager's any more: the
-                                // root Box detector drives it (rightward -> History,
-                                // leftward -> drawer / back to keypad).
-                                HorizontalPager(
-                                        state = pagerState,
-                                        userScrollEnabled = false,
-                                        modifier = Modifier.fillMaxWidth().weight(1f)
-                                ) { page ->
-                                        if (page == 1) {
-
-                                                // Keypad — 4 columns x 5 rows, two modes.
-                                                // NUMBER mode: round keys like the reference.
-                                                // SCIENTIFIC mode: the AC row and the right-hand
-                                                // operator column (÷, ×, −, +, ⌫, =) stay as
-                                                // round keys, and the digits are swapped for
-                                                // scientific text keys (|x| ln log /
-                                                // sin cos tan / sin⁻¹ cos⁻¹ tan⁻¹ / e eˣ).
-                                                // The rows SHARE the whole area equally and
-                                                // fill it completely, strip to bottom, exactly
-                                                // like the reference — no fixed heights, no
-                                                // dead gaps. Each entry is (display, label).
-                                                // PULL-DOWN: drag the keypad DOWN to reveal
-                                                // the scientific keys, drag UP to go back to
-                                                // digits. The keys slide down like a drawer
-                                                // when they change (slideY above).
-                                                Column(
-                                                        modifier =
-                                                                Modifier.fillMaxSize()
-                                                                        .graphicsLayer { translationY = slideY.value }
-                                                                        .padding(
-                                                                                horizontal = 12.dp
-                                                                        )
-                                                                        .pointerInput(scientificExpanded) {
-                                                                                val threshold = 40.dp.toPx()
-                                                                                detectVerticalDragGestures(
-                                                                                        onVerticalDrag = { _, dragAmount ->
-                                                                                                pullAccum += dragAmount
-                                                                                                if (pullAccum > threshold && !scientificExpanded) {
-                                                                                                        scientificExpanded = true
-                                                                                                        pullAccum = 0f
-                                                                                                } else if (pullAccum < -threshold && scientificExpanded) {
-                                                                                                        scientificExpanded = false
-                                                                                                        pullAccum = 0f
-                                                                                                }
-                                                                                        },
-                                                                                        onDragEnd = { pullAccum = 0f },
-                                                                                        onDragCancel = { pullAccum = 0f }
-                                                                                )
-                                                                        },
-                                                        verticalArrangement =
-                                                                Arrangement.spacedBy(8.dp)
-                                                ) {
-                                                        if (!scientificExpanded) {
-                                                                val buttons:
-                                                                        List<
-                                                                                List<
-                                                                                        Pair<
-                                                                                                String,
-                                                                                                String>>> =
-                                                                        listOf(
-                                                                                listOf(
-                                                                                        "AC" to
-                                                                                                "AC",
-                                                                                        "()" to
-                                                                                                "()",
-                                                                                        "%" to "%",
-                                                                                        "÷" to "÷"
-                                                                                ),
-                                                                                listOf(
-                                                                                        "7" to "7",
-                                                                                        "8" to "8",
-                                                                                        "9" to "9",
-                                                                                        "×" to "×"
-                                                                                ),
-                                                                                listOf(
-                                                                                        "4" to "4",
-                                                                                        "5" to "5",
-                                                                                        "6" to "6",
-                                                                                        "−" to "−"
-                                                                                ),
-                                                                                listOf(
-                                                                                        "1" to "1",
-                                                                                        "2" to "2",
-                                                                                        "3" to "3",
-                                                                                        "+" to "+"
-                                                                                ),
-                                                                                listOf(
-                                                                                        "0" to "0",
-                                                                                        "." to ".",
-                                                                                        "⌫" to "⌫",
-                                                                                        "=" to "="
-                                                                                )
-                                                                        )
-
-                                                                buttons.forEachIndexed { _, row ->
-                                                                        Row(
-                                                                                modifier =
-                                                                                        Modifier.fillMaxWidth()
-                                                                                                .weight(
-                                                                                                        1f
-                                                                                                ),
-                                                                                horizontalArrangement =
-                                                                                        Arrangement
-                                                                                                .spacedBy(
-                                                                                                        8.dp
-                                                                                                ),
-                                                                                verticalAlignment =
-                                                                                        Alignment
-                                                                                                .CenterVertically
-                                                                        ) {
-                                                                                row.forEach {
-                                                                                        (
-                                                                                                displayText,
-                                                                                                label)
-                                                                                        ->
-                                                                                        CalculatorButton(
-                                                                                                text =
-                                                                                                        displayText,
-                                                                                                modifier =
-                                                                                                        Modifier.weight(
-                                                                                                                        1f
-                                                                                                                )
-                                                                                                                .fillMaxHeight(),
-                                                                                                isOperator =
-                                                                                                        displayText in
-                                                                                                                listOf(
-                                                                                                                        "()",
-                                                                                                                        "%",
-                                                                                                                        "÷",
-                                                                                                                        "×",
-                                                                                                                        "−",
-                                                                                                                        "+"
-                                                                                                                ),
-                                                                                                fontScale =
-                                                                                                        keyFontScale,
-                                                                                                onLongClick =
-                                                                                                        if (displayText ==
-                                                                                                                        "="
-                                                                                                        ) {
-                                                                                                                {
-                                                                                                                        openVaultSetupIfNeeded()
                                                                                                                 }
-                                                                                                        } else
-                                                                                                                null,
-                                                                                                onClick = {
-                                                                                                        handleKeyLabel(
-                                                                                                                label
-                                                                                                        )
+                                                                                                                SelectionHandle(
+                                                                                                                        currentX =
+                                                                                                                                endX,
+                                                                                                                        modifier =
+                                                                                                                                Modifier
+                                                                                                                                        .offset {
+                                                                                                                                                IntOffset(
+                                                                                                                                                        (endX -
+                                                                                                                                                                        10.dp.toPx())
+                                                                                                                                                                .roundToInt(),
+                                                                                                                                                        (lr.size
+                                                                                                                                                                        .height -
+                                                                                                                                                                        10.dp.toPx())
+                                                                                                                                                                .roundToInt()
+                                                                                                                                                )
+                                                                                                                                        }
+                                                                                                                ) {
+                                                                                                                        targetX
+                                                                                                                        ->
+                                                                                                                        val fmtOffset =
+                                                                                                                                lr.getOffsetForPosition(
+                                                                                                                                                Offset(
+                                                                                                                                                        targetX.coerceAtLeast(
+                                                                                                                                                                0f
+                                                                                                                                                        ),
+                                                                                                                                                        lr.size
+                                                                                                                                                                .height /
+                                                                                                                                                                2f
+                                                                                                                                                )
+                                                                                                                                        )
+                                                                                                                                        .coerceIn(
+                                                                                                                                                0,
+                                                                                                                                                formatted
+                                                                                                                                                        .text
+                                                                                                                                                        .length
+                                                                                                                                        )
+                                                                                                                        selEnd =
+                                                                                                                                formatted
+                                                                                                                                                .fmtToRaw[
+                                                                                                                                                fmtOffset]
+                                                                                                                                        .coerceIn(
+                                                                                                                                                selStart,
+                                                                                                                                                expression
+                                                                                                                                                        .length
+                                                                                                                                        )
+                                                                                                                }
+                                                                                                        }
                                                                                                 }
-                                                                                        )
+                                                                                        }
                                                                                 }
                                                                         }
                                                                 }
-                                                        } else {
-                                                                // Row 1 — same key row as number
-                                                                // mode
-                                                                Row(
-                                                                        modifier =
-                                                                                Modifier.fillMaxWidth()
-                                                                                        .weight(1f),
-                                                                        horizontalArrangement =
-                                                                                Arrangement
-                                                                                        .spacedBy(
-                                                                                                8.dp
-                                                                                        ),
-                                                                        verticalAlignment =
-                                                                                Alignment
-                                                                                        .CenterVertically
-                                                                ) {
-                                                                        CalculatorButton(
-                                                                                text = "AC",
-                                                                                modifier =
-                                                                                        Modifier.weight(
-                                                                                                        1f
-                                                                                                )
-                                                                                                .fillMaxHeight(),
-                                                                                fontScale =
-                                                                                        keyFontScale,
-                                                                                onClick = {
-                                                                                        handleKeyLabel(
-                                                                                                "AC"
-                                                                                        )
-                                                                                }
-                                                                        )
-                                                                        CalculatorButton(
-                                                                                text = "()",
-                                                                                modifier =
-                                                                                        Modifier.weight(
-                                                                                                        1f
-                                                                                                )
-                                                                                                .fillMaxHeight(),
-                                                                                isOperator = true,
-                                                                                fontScale =
-                                                                                        keyFontScale,
-                                                                                onClick = {
-                                                                                        handleKeyLabel(
-                                                                                                "()"
-                                                                                        )
-                                                                                }
-                                                                        )
-                                                                        CalculatorButton(
-                                                                                text = "%",
-                                                                                modifier =
-                                                                                        Modifier.weight(
-                                                                                                        1f
-                                                                                                )
-                                                                                                .fillMaxHeight(),
-                                                                                isOperator = true,
-                                                                                fontScale =
-                                                                                        keyFontScale,
-                                                                                onClick = {
-                                                                                        handleKeyLabel(
-                                                                                                "%"
-                                                                                        )
-                                                                                }
-                                                                        )
-                                                                        CalculatorButton(
-                                                                                text = "÷",
-                                                                                modifier =
-                                                                                        Modifier.weight(
-                                                                                                        1f
-                                                                                                )
-                                                                                                .fillMaxHeight(),
-                                                                                isOperator = true,
-                                                                                fontScale =
-                                                                                        keyFontScale,
-                                                                                onClick = {
-                                                                                        handleKeyLabel(
-                                                                                                "÷"
-                                                                                        )
-                                                                                }
-                                                                        )
-                                                                }
-                                                                // Row 2 — |x| ln log as text, × as
-                                                                // a key
-                                                                Row(
-                                                                        modifier =
-                                                                                Modifier.fillMaxWidth()
-                                                                                        .weight(1f),
-                                                                        horizontalArrangement =
-                                                                                Arrangement
-                                                                                        .spacedBy(
-                                                                                                8.dp
-                                                                                        ),
-                                                                        verticalAlignment =
-                                                                                Alignment
-                                                                                        .CenterVertically
-                                                                ) {
-                                                                        ScientificTextKey(
-                                                                                text = "|x|",
-                                                                                modifier =
-                                                                                        Modifier.weight(
-                                                                                                        1f
-                                                                                                )
-                                                                                                .fillMaxHeight(),
-                                                                                fontScale =
-                                                                                        keyFontScale,
-                                                                                onClick = {
-                                                                                        handleKeyLabel(
-                                                                                                "abs"
-                                                                                        )
-                                                                                }
-                                                                        )
-                                                                        ScientificTextKey(
-                                                                                text = "ln",
-                                                                                modifier =
-                                                                                        Modifier.weight(
-                                                                                                        1f
-                                                                                                )
-                                                                                                .fillMaxHeight(),
-                                                                                fontScale =
-                                                                                        keyFontScale,
-                                                                                onClick = {
-                                                                                        handleKeyLabel(
-                                                                                                "ln"
-                                                                                        )
-                                                                                }
-                                                                        )
-                                                                        ScientificTextKey(
-                                                                                text = "log",
-                                                                                modifier =
-                                                                                        Modifier.weight(
-                                                                                                        1f
-                                                                                                )
-                                                                                                .fillMaxHeight(),
-                                                                                fontScale =
-                                                                                        keyFontScale,
-                                                                                onClick = {
-                                                                                        handleKeyLabel(
-                                                                                                "log"
-                                                                                        )
-                                                                                }
-                                                                        )
-                                                                        CalculatorButton(
-                                                                                text = "×",
-                                                                                modifier =
-                                                                                        Modifier.weight(
-                                                                                                        1f
-                                                                                                )
-                                                                                                .fillMaxHeight(),
-                                                                                isOperator = true,
-                                                                                fontScale =
-                                                                                        keyFontScale,
-                                                                                onClick = {
-                                                                                        handleKeyLabel(
-                                                                                                "×"
-                                                                                        )
-                                                                                }
-                                                                        )
-                                                                }
-                                                                // Row 3 — sin cos tan as text, − as
-                                                                // a key
-                                                                Row(
-                                                                        modifier =
-                                                                                Modifier.fillMaxWidth()
-                                                                                        .weight(1f),
-                                                                        horizontalArrangement =
-                                                                                Arrangement
-                                                                                        .spacedBy(
-                                                                                                8.dp
-                                                                                        ),
-                                                                        verticalAlignment =
-                                                                                Alignment
-                                                                                        .CenterVertically
-                                                                ) {
-                                                                        ScientificTextKey(
-                                                                                text = "sin",
-                                                                                modifier =
-                                                                                        Modifier.weight(
-                                                                                                        1f
-                                                                                                )
-                                                                                                .fillMaxHeight(),
-                                                                                fontScale =
-                                                                                        keyFontScale,
-                                                                                onClick = {
-                                                                                        handleKeyLabel(
-                                                                                                "sin"
-                                                                                        )
-                                                                                }
-                                                                        )
-                                                                        ScientificTextKey(
-                                                                                text = "cos",
-                                                                                modifier =
-                                                                                        Modifier.weight(
-                                                                                                        1f
-                                                                                                )
-                                                                                                .fillMaxHeight(),
-                                                                                fontScale =
-                                                                                        keyFontScale,
-                                                                                onClick = {
-                                                                                        handleKeyLabel(
-                                                                                                "cos"
-                                                                                        )
-                                                                                }
-                                                                        )
-                                                                        ScientificTextKey(
-                                                                                text = "tan",
-                                                                                modifier =
-                                                                                        Modifier.weight(
-                                                                                                        1f
-                                                                                                )
-                                                                                                .fillMaxHeight(),
-                                                                                fontScale =
-                                                                                        keyFontScale,
-                                                                                onClick = {
-                                                                                        handleKeyLabel(
-                                                                                                "tan"
-                                                                                        )
-                                                                                }
-                                                                        )
-                                                                        CalculatorButton(
-                                                                                text = "−",
-                                                                                modifier =
-                                                                                        Modifier.weight(
-                                                                                                        1f
-                                                                                                )
-                                                                                                .fillMaxHeight(),
-                                                                                isOperator = true,
-                                                                                fontScale =
-                                                                                        keyFontScale,
-                                                                                onClick = {
-                                                                                        handleKeyLabel(
-                                                                                                "−"
-                                                                                        )
-                                                                                }
-                                                                        )
-                                                                }
-                                                                // Row 4 — inverse trig as text, +
-                                                                // as a key
-                                                                Row(
-                                                                        modifier =
-                                                                                Modifier.fillMaxWidth()
-                                                                                        .weight(1f),
-                                                                        horizontalArrangement =
-                                                                                Arrangement
-                                                                                        .spacedBy(
-                                                                                                8.dp
-                                                                                        ),
-                                                                        verticalAlignment =
-                                                                                Alignment
-                                                                                        .CenterVertically
-                                                                ) {
-                                                                        ScientificTextKey(
-                                                                                text = "sin⁻¹",
-                                                                                modifier =
-                                                                                        Modifier.weight(
-                                                                                                        1f
-                                                                                                )
-                                                                                                .fillMaxHeight(),
-                                                                                fontScale =
-                                                                                        keyFontScale,
-                                                                                onClick = {
-                                                                                        handleKeyLabel(
-                                                                                                "asin"
-                                                                                        )
-                                                                                }
-                                                                        )
-                                                                        ScientificTextKey(
-                                                                                text = "cos⁻¹",
-                                                                                modifier =
-                                                                                        Modifier.weight(
-                                                                                                        1f
-                                                                                                )
-                                                                                                .fillMaxHeight(),
-                                                                                fontScale =
-                                                                                        keyFontScale,
-                                                                                onClick = {
-                                                                                        handleKeyLabel(
-                                                                                                "acos"
-                                                                                        )
-                                                                                }
-                                                                        )
-                                                                        ScientificTextKey(
-                                                                                text = "tan⁻¹",
-                                                                                modifier =
-                                                                                        Modifier.weight(
-                                                                                                        1f
-                                                                                                )
-                                                                                                .fillMaxHeight(),
-                                                                                fontScale =
-                                                                                        keyFontScale,
-                                                                                onClick = {
-                                                                                        handleKeyLabel(
-                                                                                                "atan"
-                                                                                        )
-                                                                                }
-                                                                        )
-                                                                        CalculatorButton(
-                                                                                text = "+",
-                                                                                modifier =
-                                                                                        Modifier.weight(
-                                                                                                        1f
-                                                                                                )
-                                                                                                .fillMaxHeight(),
-                                                                                isOperator = true,
-                                                                                fontScale =
-                                                                                        keyFontScale,
-                                                                                onClick = {
-                                                                                        handleKeyLabel(
-                                                                                                "+"
-                                                                                        )
-                                                                                }
-                                                                        )
-                                                                }
-                                                                // Row 5 — ! and eˣ as text, ⌫ and =
-                                                                // as keys
-                                                                Row(
-                                                                        modifier =
-                                                                                Modifier.fillMaxWidth()
-                                                                                        .weight(1f),
-                                                                        horizontalArrangement =
-                                                                                Arrangement
-                                                                                        .spacedBy(
-                                                                                                8.dp
-                                                                                        ),
-                                                                        verticalAlignment =
-                                                                                Alignment
-                                                                                        .CenterVertically
-                                                                ) {
-                                                                        ScientificTextKey(
-                                                                                text = "!",
-                                                                                modifier =
-                                                                                        Modifier.weight(
-                                                                                                        1f
-                                                                                                )
-                                                                                                .fillMaxHeight(),
-                                                                                fontScale =
-                                                                                        keyFontScale,
-                                                                                onClick = {
-                                                                                        handleKeyLabel("!")
-                                                                                }
-                                                                        )
-                                                                        ScientificTextKey(
-                                                                                text = "eˣ",
-                                                                                modifier =
-                                                                                        Modifier.weight(
-                                                                                                        1f
-                                                                                                )
-                                                                                                .fillMaxHeight(),
-                                                                                fontScale =
-                                                                                        keyFontScale,
-                                                                                onClick = {
-                                                                                        handleKeyLabel(
-                                                                                                "exp"
-                                                                                        )
-                                                                                }
-                                                                        )
-                                                                        CalculatorButton(
-                                                                                text = "⌫",
-                                                                                modifier =
-                                                                                        Modifier.weight(
-                                                                                                        1f
-                                                                                                )
-                                                                                                .fillMaxHeight(),
-                                                                                fontScale =
-                                                                                        keyFontScale,
-                                                                                onClick = {
-                                                                                        handleKeyLabel(
-                                                                                                "⌫"
-                                                                                        )
-                                                                                }
-                                                                        )
-                                                                        CalculatorButton(
-                                                                                text = "=",
-                                                                                modifier =
-                                                                                        Modifier.weight(
-                                                                                                        1f
-                                                                                                )
-                                                                                                .fillMaxHeight(),
-                                                                                fontScale =
-                                                                                        keyFontScale,
-                                                                                onLongClick = {
-                                                                                        openVaultSetupIfNeeded()
-                                                                                },
-                                                                                onClick = {
-                                                                                        handleKeyLabel(
-                                                                                                "="
-                                                                                        )
-                                                                                }
-                                                                        )
-                                                                }
                                                         }
                                                 }
-                                        } else {
 
-                                                // History page — fills the whole swap area.
-                                                // The day label is CENTRED and the entries are
-                                                // LEFT-aligned, like the reference's history
-                                                // mode. Tapping an entry loads its result and
-                                                // snaps back to the keypad page.
-                                                Column(
+                                                // Answer preview line — a RESERVED 56dp strip of
+                                                // its own, always present at the panel's bottom,
+                                                // so the answer is never pushed out or clipped.
+                                                // The line scrolls horizontally like the others
+                                                // and follows the end as the answer grows.
+                                                Box(
                                                         modifier =
-                                                                Modifier.fillMaxSize()
-                                                                        .padding(horizontal = 8.dp)
+                                                                Modifier.fillMaxWidth()
+                                                                        .height(56.dp)
+                                                                        .padding(horizontal = 20.dp),
+                                                        contentAlignment = Alignment.CenterEnd
                                                 ) {
-                                                        if (history.isEmpty()) {
-                                                                Box(
+                                                        if (finalResult == null &&
+                                                                        result != "0" &&
+                                                                        expression.isNotEmpty()
+                                                        ) {
+                                                                val previewScrollState =
+                                                                        rememberScrollState()
+                                                                LaunchedEffect(result) {
+            // FIX: preview-ও প্রথম অংশ থেকে দেখাবে।
+            previewScrollState.scrollTo(0)
+        }
+                                                                Row(
                                                                         modifier =
-                                                                                Modifier.fillMaxSize(),
-                                                                        contentAlignment =
-                                                                                Alignment.Center
+                                                                                Modifier.horizontalScroll(
+                                                                                        previewScrollState
+                                                                                ),
+                                                                        verticalAlignment =
+                                                                                Alignment.CenterVertically,
+                                                                        horizontalArrangement =
+                                                                                Arrangement.End
                                                                 ) {
                                                                         Text(
                                                                                 text =
-                                                                                        "No history yet",
+                                                                                        formatForDisplay(
+                                                                                                result
+                                                                                        ),
+                                                                                fontSize = previewFontSize,
                                                                                 color =
                                                                                         MaterialTheme
                                                                                                 .colorScheme
-                                                                                                .onSurfaceVariant
+                                                                                                .onSurface,
+                                                                                textAlign = TextAlign.End,
+                                                                                maxLines = 1,
+                                                                                softWrap = false
                                                                         )
                                                                 }
-                                                        } else {
-                                                                LazyColumn(
-                                                                        modifier =
-                                                                                Modifier.fillMaxSize()
-                                                                                        .padding(
-                                                                                                horizontal =
-                                                                                                        20.dp
+                                                        }
+                                                }
+
+                                                Spacer(modifier = Modifier.height(24.dp))
+                                        }
+
+                                        // TOP ROW — 4 SEPARATE ROUND keys, all static.
+                                        // √, ^, E, Ans — each its own circle, same
+                                        // surfaceVariant background as the other keys, no
+                                        // pill any more, NO π here at all: π is only
+                                        // inside, in the keypad's row 1 in scientific
+                                        // mode (replacing %). This Row is OUTSIDE the
+                                        // keypad and has NO animation modifier, so it
+                                        // never slides or shakes on a drag, in either mode.
+                                        // SAME SIZE as the keypad keys: the Row height
+                                        // is COMPUTED from the measured screen height
+                                        // (topRowHeight above), so each circle's
+                                        // diameter is exactly one keypad row tall —
+                                        // the same as every key below, on any phone.
+                                        // 8dp padding above it (plus the 24dp Spacer
+                                        // above) leaves a clear empty gap under the
+                                        // display, and pushes the whole keypad down a
+                                        // little, using the empty space below the dots.
+                                        Row(
+                                                modifier =
+                                                        Modifier.fillMaxWidth()
+                                                                .height(topRowHeight)
+                                                                .padding(start = 12.dp, top = 8.dp, end = 12.dp),
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                                TopRoundKey(
+                                                        text = "√",
+                                                        modifier = Modifier.weight(1f).fillMaxHeight(),
+                                                        onClick = { handleKeyLabel("√") }
+                                                )
+                                                TopRoundKey(
+                                                        text = "^",
+                                                        modifier = Modifier.weight(1f).fillMaxHeight(),
+                                                        onClick = { handleKeyLabel("^") }
+                                                )
+                                                TopRoundKey(
+                                                        text = "E",
+                                                        modifier = Modifier.weight(1f).fillMaxHeight(),
+                                                        onClick = { handleKeyLabel("E") }
+                                                )
+                                                TopRoundKey(
+                                                        text = "Ans",
+                                                        fontSize = 20,
+                                                        bold = true,
+                                                        modifier = Modifier.weight(1f).fillMaxHeight(),
+                                                        onClick = { handleKeyLabel("Ans") }
+                                                )
+                                        }
+
+                                        // SWAP AREA — keypad ⇄ history. The keypad slides away
+                                        // and the history shows RIGHT HERE, in this same area,
+                                        // at full height. Page 0 = history, page 1 = keypad
+                                        // (swapped so the slide follows the finger — see header).
+                                        // The swipe itself is NOT the pager's any more: the
+                                        // root Box detector drives it (rightward -> History,
+                                        // leftward -> drawer / back to keypad).
+                                        HorizontalPager(
+                                                state = pagerState,
+                                                userScrollEnabled = false,
+                                                modifier = Modifier.fillMaxWidth().weight(1f)
+                                        ) { page ->
+                                                if (page == 1) {
+
+                                                        // Keypad — 4 columns x 5 rows, two modes.
+                                                        // NUMBER mode: round keys like the reference.
+                                                        // SCIENTIFIC mode: the AC row and the right-hand
+                                                        // operator column (÷, ×, −, +, ⌫, =) stay as
+                                                        // round keys, and the digits are swapped for
+                                                        // scientific text keys (|x| ln log /
+                                                        // sin cos tan / sin⁻¹ cos⁻¹ tan⁻¹ / e eˣ).
+                                                        // The rows SHARE the whole area equally and
+                                                        // fill it completely, strip to bottom, exactly
+                                                        // like the reference — no fixed heights, no
+                                                        // dead gaps. Each entry is (display, label).
+                                                        // PULL-DOWN: drag the keypad DOWN to reveal
+                                                        // the scientific keys, drag UP to go back to
+                                                        // digits. Only SwapKey cells animate when
+                                                        // they change — the Column itself never moves.
+                                                        Column(
+                                                                modifier =
+                                                                        Modifier.fillMaxSize()
+                                                                                .padding(
+                                                                                        horizontal = 12.dp
+                                                                                )
+                                                                                .pointerInput(scientificExpanded) {
+                                                                                        val threshold = 40.dp.toPx()
+                                                                                        detectVerticalDragGestures(
+                                                                                                onVerticalDrag = { _, dragAmount ->
+                                                                                                        pullAccum += dragAmount
+                                                                                                        if (pullAccum > threshold && !scientificExpanded) {
+                                                                                                                scientificExpanded = true
+                                                                                                                pullAccum = 0f
+                                                                                                        } else if (pullAccum < -threshold && scientificExpanded) {
+                                                                                                                scientificExpanded = false
+                                                                                                                pullAccum = 0f
+                                                                                                        }
+                                                                                                },
+                                                                                                onDragEnd = { pullAccum = 0f },
+                                                                                                onDragCancel = { pullAccum = 0f }
                                                                                         )
+                                                                                },
+                                                                verticalArrangement =
+                                                                        Arrangement.spacedBy(6.dp)
+                                                        ) {
+                                                                // UNIFIED ROWS: static keys are plain
+                                                                // CalculatorButtons (NO animation modifier
+                                                                // — AC, (), ÷, ×, −, +, ⌫, = never move).
+                                                                // Only the 12 cells that change are wrapped
+                                                                // in SwapKey: row1 %↔π, rows 2-4 digits↔
+                                                                // trig/log, row5 0/.↔!/eˣ. Each SwapKey
+                                                                // fades + slides a little on its own;
+                                                                // its neighbours stay perfectly still.
+                                                                // Row 1 — AC () %/π ÷
+                                                                Row(
+                                                                        modifier = Modifier.fillMaxWidth().weight(1f),
+                                                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                                        verticalAlignment = Alignment.CenterVertically
                                                                 ) {
-                                                                        groupedEntries
-                                                                                .forEachIndexed {
-                                                                                        groupIndex,
-                                                                                        (
-                                                                                                day,
-                                                                                                dayItems)
-                                                                                        ->
-                                                                                        item(
-                                                                                                key =
-                                                                                                        "panel-header-$day"
-                                                                                        ) {
-                                                                                                Box(
-                                                                                                        modifier =
-                                                                                                                Modifier.fillMaxWidth()
-                                                                                                                        .padding(
-                                                                                                                                top =
-                                                                                                                                        10.dp,
-                                                                                                                                bottom =
-                                                                                                                                        10.dp
-                                                                                                                        )
+                                                                        CalculatorButton(text = "AC", modifier = Modifier.weight(1f).fillMaxHeight(), fontScale = keyFontScale, onClick = { handleKeyLabel("AC") })
+                                                                        CalculatorButton(text = "()", modifier = Modifier.weight(1f).fillMaxHeight(), isOperator = true, fontScale = keyFontScale, onClick = { handleKeyLabel("()") })
+                                                                        SwapKey(
+                                                                                scientificExpanded = scientificExpanded,
+                                                                                modifier = Modifier.weight(1f).fillMaxHeight(),
+                                                                                normal = { CalculatorButton(text = "%", modifier = Modifier.fillMaxSize(), isOperator = true, fontScale = keyFontScale, onClick = { handleKeyLabel("%") }) },
+                                                                                scientific = { CalculatorButton(text = "π", modifier = Modifier.fillMaxSize(), isOperator = true, fontScale = keyFontScale, onClick = { handleKeyLabel("π") }) }
+                                                                        )
+                                                                        CalculatorButton(text = "÷", modifier = Modifier.weight(1f).fillMaxHeight(), isOperator = true, fontScale = keyFontScale, onClick = { handleKeyLabel("÷") })
+                                                                }
+                                                                // Row 2 — 7/8/9 ↔ |x|/ln/log, × static
+                                                                Row(
+                                                                        modifier = Modifier.fillMaxWidth().weight(1f),
+                                                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                                        verticalAlignment = Alignment.CenterVertically
+                                                                ) {
+                                                                        SwapKey(scientificExpanded = scientificExpanded, modifier = Modifier.weight(1f).fillMaxHeight(), normal = { CalculatorButton(text = "7", modifier = Modifier.fillMaxSize(), fontScale = keyFontScale, onClick = { handleKeyLabel("7") }) }, scientific = { ScientificTextKey(text = "|x|", modifier = Modifier.fillMaxSize(), fontScale = keyFontScale, onClick = { handleKeyLabel("abs") }) })
+                                                                        SwapKey(scientificExpanded = scientificExpanded, modifier = Modifier.weight(1f).fillMaxHeight(), normal = { CalculatorButton(text = "8", modifier = Modifier.fillMaxSize(), fontScale = keyFontScale, onClick = { handleKeyLabel("8") }) }, scientific = { ScientificTextKey(text = "ln", modifier = Modifier.fillMaxSize(), fontScale = keyFontScale, onClick = { handleKeyLabel("ln") }) })
+                                                                        SwapKey(scientificExpanded = scientificExpanded, modifier = Modifier.weight(1f).fillMaxHeight(), normal = { CalculatorButton(text = "9", modifier = Modifier.fillMaxSize(), fontScale = keyFontScale, onClick = { handleKeyLabel("9") }) }, scientific = { ScientificTextKey(text = "log", modifier = Modifier.fillMaxSize(), fontScale = keyFontScale, onClick = { handleKeyLabel("log") }) })
+                                                                        CalculatorButton(text = "×", modifier = Modifier.weight(1f).fillMaxHeight(), isOperator = true, fontScale = keyFontScale, onClick = { handleKeyLabel("×") })
+                                                                }
+                                                                // Row 3 — 4/5/6 ↔ sin/cos/tan, − static
+                                                                Row(
+                                                                        modifier = Modifier.fillMaxWidth().weight(1f),
+                                                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                                        verticalAlignment = Alignment.CenterVertically
+                                                                ) {
+                                                                        SwapKey(scientificExpanded = scientificExpanded, modifier = Modifier.weight(1f).fillMaxHeight(), normal = { CalculatorButton(text = "4", modifier = Modifier.fillMaxSize(), fontScale = keyFontScale, onClick = { handleKeyLabel("4") }) }, scientific = { ScientificTextKey(text = "sin", modifier = Modifier.fillMaxSize(), fontScale = keyFontScale, onClick = { handleKeyLabel("sin") }) })
+                                                                        SwapKey(scientificExpanded = scientificExpanded, modifier = Modifier.weight(1f).fillMaxHeight(), normal = { CalculatorButton(text = "5", modifier = Modifier.fillMaxSize(), fontScale = keyFontScale, onClick = { handleKeyLabel("5") }) }, scientific = { ScientificTextKey(text = "cos", modifier = Modifier.fillMaxSize(), fontScale = keyFontScale, onClick = { handleKeyLabel("cos") }) })
+                                                                        SwapKey(scientificExpanded = scientificExpanded, modifier = Modifier.weight(1f).fillMaxHeight(), normal = { CalculatorButton(text = "6", modifier = Modifier.fillMaxSize(), fontScale = keyFontScale, onClick = { handleKeyLabel("6") }) }, scientific = { ScientificTextKey(text = "tan", modifier = Modifier.fillMaxSize(), fontScale = keyFontScale, onClick = { handleKeyLabel("tan") }) })
+                                                                        CalculatorButton(text = "−", modifier = Modifier.weight(1f).fillMaxHeight(), isOperator = true, fontScale = keyFontScale, onClick = { handleKeyLabel("−") })
+                                                                }
+                                                                // Row 4 — 1/2/3 ↔ sin⁻¹/cos⁻¹/tan⁻¹, + static
+                                                                Row(
+                                                                        modifier = Modifier.fillMaxWidth().weight(1f),
+                                                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                                        verticalAlignment = Alignment.CenterVertically
+                                                                ) {
+                                                                        SwapKey(scientificExpanded = scientificExpanded, modifier = Modifier.weight(1f).fillMaxHeight(), normal = { CalculatorButton(text = "1", modifier = Modifier.fillMaxSize(), fontScale = keyFontScale, onClick = { handleKeyLabel("1") }) }, scientific = { ScientificTextKey(text = "sin⁻¹", modifier = Modifier.fillMaxSize(), fontScale = keyFontScale, onClick = { handleKeyLabel("asin") }) })
+                                                                        SwapKey(scientificExpanded = scientificExpanded, modifier = Modifier.weight(1f).fillMaxHeight(), normal = { CalculatorButton(text = "2", modifier = Modifier.fillMaxSize(), fontScale = keyFontScale, onClick = { handleKeyLabel("2") }) }, scientific = { ScientificTextKey(text = "cos⁻¹", modifier = Modifier.fillMaxSize(), fontScale = keyFontScale, onClick = { handleKeyLabel("acos") }) })
+                                                                        SwapKey(scientificExpanded = scientificExpanded, modifier = Modifier.weight(1f).fillMaxHeight(), normal = { CalculatorButton(text = "3", modifier = Modifier.fillMaxSize(), fontScale = keyFontScale, onClick = { handleKeyLabel("3") }) }, scientific = { ScientificTextKey(text = "tan⁻¹", modifier = Modifier.fillMaxSize(), fontScale = keyFontScale, onClick = { handleKeyLabel("tan") }) })
+                                                                        CalculatorButton(text = "+", modifier = Modifier.weight(1f).fillMaxHeight(), isOperator = true, fontScale = keyFontScale, onClick = { handleKeyLabel("+") })
+                                                                }
+                                                                // Row 5 — 0/. ↔ !/eˣ, ⌫ and = static
+                                                                Row(
+                                                                        modifier = Modifier.fillMaxWidth().weight(1f),
+                                                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                                        verticalAlignment = Alignment.CenterVertically
+                                                                ) {
+                                                                        SwapKey(scientificExpanded = scientificExpanded, modifier = Modifier.weight(1f).fillMaxHeight(), normal = { CalculatorButton(text = "0", modifier = Modifier.fillMaxSize(), fontScale = keyFontScale, onClick = { handleKeyLabel("0") }) }, scientific = { ScientificTextKey(text = "!", modifier = Modifier.fillMaxSize(), fontScale = keyFontScale, onClick = { handleKeyLabel("!") }) })
+                                                                        SwapKey(scientificExpanded = scientificExpanded, modifier = Modifier.weight(1f).fillMaxHeight(), normal = { CalculatorButton(text = ".", modifier = Modifier.fillMaxSize(), fontScale = keyFontScale, onClick = { handleKeyLabel(".") }) }, scientific = { ScientificTextKey(text = "eˣ", modifier = Modifier.fillMaxSize(), fontScale = keyFontScale, onClick = { handleKeyLabel("exp") }) })
+                                                                        CalculatorButton(text = "⌫", modifier = Modifier.weight(1f).fillMaxHeight(), fontScale = keyFontScale, onClick = { handleKeyLabel("⌫") })
+                                                                        CalculatorButton(text = "=", modifier = Modifier.weight(1f).fillMaxHeight(), fontScale = keyFontScale, onLongClick = { openBlackHoleSetupIfNeeded() }, onClick = { handleKeyLabel("=") })
+                                                                }
+                                                        }
+                                                } else {
+
+                                                        // History page — fills the whole swap area.
+                                                        // The day label is CENTRED and the entries are
+                                                        // LEFT-aligned, like the reference's history
+                                                        // mode. Tapping an entry loads its result and
+                                                        // snaps back to the keypad page.
+                                                        Column(
+                                                                modifier =
+                                                                        Modifier.fillMaxSize()
+                                                                                .padding(horizontal = 8.dp)
+                                                        ) {
+                                                                if (history.isEmpty()) {
+                                                                        Box(
+                                                                                modifier =
+                                                                                        Modifier.fillMaxSize(),
+                                                                                contentAlignment =
+                                                                                        Alignment.Center
+                                                                        ) {
+                                                                                Text(
+                                                                                        text =
+                                                                                                "No history yet",
+                                                                                        color =
+                                                                                                MaterialTheme
+                                                                                                        .colorScheme
+                                                                                                        .onSurfaceVariant
+                                                                                )
+                                                                        }
+                                                                } else {
+                                                                        LazyColumn(
+                                                                                modifier =
+                                                                                        Modifier.fillMaxSize()
+                                                                                                .padding(
+                                                                                                        horizontal =
+                                                                                                                20.dp
+                                                                                                )
+                                                                        ) {
+                                                                                groupedEntries
+                                                                                        .forEachIndexed {
+                                                                                                groupIndex,
+                                                                                                (
+                                                                                                        day,
+                                                                                                        dayItems)
+                                                                                                ->
+                                                                                                item(
+                                                                                                        key =
+                                                                                                                "panel-header-$day"
                                                                                                 ) {
-                                                                                                        Text(
-                                                                                                                text =
-                                                                                                                        day,
-                                                                                                                fontSize =
-                                                                                                                        15.sp,
-                                                                                                                color =
-                                                                                                                        MaterialTheme
-                                                                                                                                .colorScheme
-                                                                                                                                .onSurfaceVariant,
+                                                                                                        Box(
                                                                                                                 modifier =
-                                                                                                                        Modifier.align(
-                                                                                                                                Alignment
-                                                                                                                                        .Center
-                                                                                                                        )
-                                                                                                        )
-                                                                                                        // Clear stays at the end of the
-                                                                                                        // first group header ("Today")
-                                                                                                        if (groupIndex ==
-                                                                                                                        0
+                                                                                                                        Modifier.fillMaxWidth()
+                                                                                                                                .padding(
+                                                                                                                                        top =
+                                                                                                                                                10.dp,
+                                                                                                                                        bottom =
+                                                                                                                                                10.dp
+                                                                                                                                )
                                                                                                         ) {
-                                                                                                                TextButton(
-                                                                                                                        onClick = {
-                                                                                                                                historyViewModel
-                                                                                                                                        .clearAll()
-                                                                                                                        },
+                                                                                                                Text(
+                                                                                                                        text =
+                                                                                                                                day,
+                                                                                                                        fontSize =
+                                                                                                                                15.sp,
+                                                                                                                        color =
+                                                                                                                                MaterialTheme
+                                                                                                                                        .colorScheme
+                                                                                                                                        .onSurfaceVariant,
                                                                                                                         modifier =
                                                                                                                                 Modifier.align(
                                                                                                                                         Alignment
-                                                                                                                                                .CenterEnd
+                                                                                                                                                .Center
                                                                                                                                 )
+                                                                                                                )
+                                                                                                                // Clear stays at the end of the
+                                                                                                                // first group header ("Today")
+                                                                                                                if (groupIndex ==
+                                                                                                                                0
                                                                                                                 ) {
-                                                                                                                        Text(
-                                                                                                                                text =
-                                                                                                                                        "Clear",
-                                                                                                                                fontSize =
-                                                                                                                                        14.sp,
-                                                                                                                                color =
-                                                                                                                                        MaterialTheme
-                                                                                                                                                .colorScheme
-                                                                                                                                                .onSurface
-                                                                                                                        )
+                                                                                                                        TextButton(
+                                                                                                                                onClick = {
+                                                                                                                                        historyViewModel
+                                                                                                                                                .clearAll()
+                                                                                                                                },
+                                                                                                                                modifier =
+                                                                                                                                        Modifier.align(
+                                                                                                                                                Alignment
+                                                                                                                                                        .CenterEnd
+                                                                                                                                        )
+                                                                                                                        ) {
+                                                                                                                                Text(
+                                                                                                                                        text =
+                                                                                                                                                "Clear",
+                                                                                                                                        fontSize =
+                                                                                                                                                14.sp,
+                                                                                                                                        color =
+                                                                                                                                                MaterialTheme
+                                                                                                                                                        .colorScheme
+                                                                                                                                                        .onSurface
+                                                                                                                                )
+                                                                                                                        }
                                                                                                                 }
                                                                                                         }
                                                                                                 }
-                                                                                        }
-                                                                                        itemsIndexed(
-                                                                                                dayItems
-                                                                                        ) { _, item
-                                                                                                ->
-                                                                                                Column(
-                                                                                                        modifier =
-                                                                                                                Modifier.fillMaxWidth()
-                                                                                                                        .clickable {
-                                                                                                                                selActive =
-                                                                                                                                        false
-                                                                                                                                viewModel
-                                                                                                                                        .onHistoryItemClick(
-                                                                                                                                                item.result
-                                                                                                                                        )
-                                                                                                                                scope
-                                                                                                                                        .launch {
-                                                                                                                                                pagerState
-                                                                                                                                                        .scrollToPage(
-                                                                                                                                                                1
-                                                                                                                                                        )
-                                                                                                                                        }
-                                                                                                                        }
-                                                                                                                        .padding(
-                                                                                                                                vertical =
-                                                                                                                                        10.dp
-                                                                                                                        ),
-                                                                                                        horizontalAlignment =
-                                                                                                                Alignment
-                                                                                                                        .Start
+                                                                                                itemsIndexed(
+                                                                                                        dayItems
+                                                                                                ) { _, item
+                                                                                                        ->
+                                                                                                        Column(
+                                                                                                                modifier =
+                                                                                                                        Modifier.fillMaxWidth()
+                                                                                                                                .clickable {
+                                                                                                                                        selActive =
+                                                                                                                                                false
+                                                                                                                                        viewModel
+                                                                                                                                                .onHistoryItemClick(
+                                                                                                                                                        item.result
+                                                                                                                                                )
+                                                                                                                                        scope
+                                                                                                                                                .launch {
+                                                                                                                                                        pagerState
+                                                                                                                                                                .scrollToPage(
+                                                                                                                                                                        1
+                                                                                                                                                                )
+                                                                                                                                                }
+                                                                                                                                }
+                                                                                                                                .padding(
+                                                                                                                                        vertical =
+                                                                                                                                                10.dp
+                                                                                                                                ),
+                                                                                                                horizontalAlignment =
+                                                                                                                        Alignment
+                                                                                                                                .Start
+                                                                                                        ) {
+                                                                                                                Text(
+            text = formatForDisplay(item.expression),
+            fontSize = 20.sp,
+            lineHeight = 26.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Start,
+            softWrap = true,
+            modifier = Modifier.fillMaxWidth()
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(
+            text = formatForDisplay(item.result),
+            fontSize = 34.sp,
+            lineHeight = 42.sp,
+            color = MaterialTheme.colorScheme.onSurface,
+            textAlign = TextAlign.Start,
+            softWrap = true,
+            modifier = Modifier.fillMaxWidth()
+        )
+                                                                                                        }
+                                                                                                }
+                                                                                                item(
+                                                                                                        key =
+                                                                                                                "panel-divider-$day"
                                                                                                 ) {
-                                                                                                        Text(
-    text = formatForDisplay(item.expression),
-    fontSize = 20.sp,
-    lineHeight = 26.sp,
-    color = MaterialTheme.colorScheme.onSurfaceVariant,
-    textAlign = TextAlign.Start,
-    softWrap = true,
-    modifier = Modifier.fillMaxWidth()
-)
-Spacer(modifier = Modifier.height(6.dp))
-Text(
-    text = formatForDisplay(item.result),
-    fontSize = 34.sp,
-    lineHeight = 42.sp,
-    color = MaterialTheme.colorScheme.onSurface,
-    textAlign = TextAlign.Start,
-    softWrap = true,
-    modifier = Modifier.fillMaxWidth()
-)
+                                                                                                        HorizontalDivider(
+                                                                                                                color =
+                                                                                                                        MaterialTheme
+                                                                                                                                .colorScheme
+                                                                                                                                .outline
+                                                                                                                                .copy(
+                                                                                                                                        alpha =
+                                                                                                                                                0.4f
+                                                                                                                                ),
+                                                                                                                modifier =
+                                                                                                                        Modifier.padding(
+                                                                                                                                vertical =
+                                                                                                                                        8.dp
+                                                                                                                        )
+                                                                                                        )
                                                                                                 }
                                                                                         }
-                                                                                        item(
-                                                                                                key =
-                                                                                                        "panel-divider-$day"
-                                                                                        ) {
-                                                                                                HorizontalDivider(
-                                                                                                        color =
-                                                                                                                MaterialTheme
-                                                                                                                        .colorScheme
-                                                                                                                        .outline
-                                                                                                                        .copy(
-                                                                                                                                alpha =
-                                                                                                                                        0.4f
-                                                                                                                        ),
-                                                                                                        modifier =
-                                                                                                                Modifier.padding(
-                                                                                                                        vertical =
-                                                                                                                                8.dp
-                                                                                                                )
-                                                                                                )
-                                                                                        }
-                                                                                }
+                                                                        }
                                                                 }
                                                         }
                                                 }
                                         }
-                                }
 
-                                // Page dots — which side of the swap area is showing
-                                Row(
-                                        modifier =
-                                                Modifier.fillMaxWidth()
-                                                        .padding(top = 4.dp, bottom = 6.dp),
-                                        horizontalArrangement = Arrangement.Center,
-                                        verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                        repeat(2) { index ->
-                                                val active = pagerState.currentPage == index
-                                                Box(
-                                                        modifier =
-                                                                Modifier.clickable {
-                                                                                        scope.launch {
-                                                                                                pagerState.animateScrollToPage(index)
+                                        // Page dots — which side of the swap area is showing
+                                        Row(
+                                                modifier =
+                                                        Modifier.fillMaxWidth()
+                                                                .padding(top = 4.dp, bottom = 6.dp),
+                                                horizontalArrangement = Arrangement.Center,
+                                                verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                                repeat(2) { index ->
+                                                        val active = pagerState.currentPage == index
+                                                        Box(
+                                                                modifier =
+                                                                        Modifier.clickable {
+                                                                                                scope.launch {
+                                                                                                        pagerState.animateScrollToPage(index)
+                                                                                                }
                                                                                         }
-                                                                                }
-                                                                        .padding(horizontal = 8.dp, vertical = 6.dp)
-                                                                        .size(
-                                                                                if (active) 7.dp
-                                                                                else 6.dp
-                                                                        )
-                                                                        .clip(CircleShape)
-                                                                        .background(
-                                                                                if (active) {
-                                                                                        MaterialTheme
-                                                                                                .colorScheme
-                                                                                                .onSurface
-                                                                                } else {
-                                                                                        MaterialTheme
-                                                                                                .colorScheme
-                                                                                                .onSurfaceVariant
-                                                                                                .copy(
-                                                                                                        alpha =
-                                                                                                                0.35f
-                                                                                                )
-                                                                                }
-                                                                        )
-                                                )
+                                                                                .padding(horizontal = 8.dp, vertical = 6.dp)
+                                                                                .size(
+                                                                                        if (active) 7.dp
+                                                                                        else 6.dp
+                                                                                )
+                                                                                .clip(CircleShape)
+                                                                                .background(
+                                                                                        if (active) {
+                                                                                                MaterialTheme
+                                                                                                        .colorScheme
+                                                                                                        .onSurface
+                                                                                        } else {
+                                                                                                MaterialTheme
+                                                                                                        .colorScheme
+                                                                                                        .onSurfaceVariant
+                                                                                                        .copy(
+                                                                                                                alpha =
+                                                                                                                        0.35f
+                                                                                                        )
+                                                                                        }
+                                                                                )
+                                                        )
+                                                }
                                         }
                                 }
                         }
@@ -2314,9 +1881,69 @@ private fun tokenRangeAt(raw: String, index: Int): Pair<Int, Int> {
         }
 }
 
-// One scientific TEXT key (scientific mode only): now with the
-// same background + border as other keys (FIX). Long labels
-// (sin⁻¹, cos⁻¹, tan⁻¹) get a smaller font so they fit the cell.
+// SwapKey: one changing cell only (SWAP FIX 2026-11-06).
+// TopRoundKey: one top-row round key, no animation.
+@Composable
+private fun SwapKey(
+        scientificExpanded: Boolean,
+        modifier: Modifier = Modifier,
+        normal: @Composable () -> Unit,
+        scientific: @Composable () -> Unit
+) {
+        // ONE changing cell only: fades + slides a little in the
+        // drag direction (down-opening: new key from above;
+        // up-closing: new key from below). Nothing outside this
+        // cell moves — no graphicsLayer on any parent.
+        AnimatedContent(
+                targetState = scientificExpanded,
+                transitionSpec = {
+                        (fadeIn(tween(180)) + slideInVertically(tween(180)) { if (targetState) -it / 3 else it / 3 }) togetherWith
+                                (fadeOut(tween(120)) + slideOutVertically(tween(120)) { if (targetState) it / 3 else -it / 3 })
+                },
+                modifier = modifier,
+                label = "swapKey"
+        ) { isSci ->
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        if (isSci) scientific() else normal()
+                }
+        }
+}
+
+@Composable
+private fun TopRoundKey(
+        text: String,
+        modifier: Modifier = Modifier,
+        fontSize: Int = 28,
+        bold: Boolean = false,
+        onClick: () -> Unit
+) {
+        // Top-row key: its own perfect circle, same look as the
+        // other keys (surfaceVariant, onSurface text). No border,
+        // no animation — the Row never moves, so this never shakes.
+        BoxWithConstraints(
+                modifier = modifier,
+                contentAlignment = Alignment.Center
+        ) {
+                val size = maxWidth.coerceAtMost(maxHeight)
+                val topInteraction = remember { MutableInteractionSource() }
+                Box(
+                        modifier =
+                                Modifier.size(size)
+                                        .clip(CircleShape)
+                                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                                        .clickable(interactionSource = topInteraction, indication = null, onClick = onClick),
+                        contentAlignment = Alignment.Center
+                ) {
+                        Text(
+                                text = text,
+                                fontSize = fontSize.sp,
+                                fontWeight = if (bold) FontWeight.Bold else FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurface
+                        )
+                }
+        }
+}
+
 @Composable
 private fun ScientificTextKey(
         text: String,
@@ -2339,11 +1966,6 @@ private fun ScientificTextKey(
                                 Modifier.size(size)
                                         .clip(CircleShape)
                                         .background(MaterialTheme.colorScheme.surfaceVariant)
-                                        .border(
-                                                1.dp,
-                                                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f),
-                                                CircleShape
-                                        )
                                         .clickable(
                                                 interactionSource = interactionSource,
                                                 indication = null,
@@ -2379,13 +2001,13 @@ fun CalculatorButton(
         // with the opposite tone (black in light mode, white
         // in dark mode). No accent colour anywhere.
         val backgroundColor =
-                if (text == "=" || text == "⌫") {
+                if (text == "=" || text == "⌫" || text == "AC") {
                         MaterialTheme.colorScheme.onSurface
                 } else {
                         MaterialTheme.colorScheme.surfaceVariant
                 }
         val contentColor =
-                if (text == "=" || text == "⌫") {
+                if (text == "=" || text == "⌫" || text == "AC") {
                         MaterialTheme.colorScheme.surface
                 } else {
                         MaterialTheme.colorScheme.onSurface

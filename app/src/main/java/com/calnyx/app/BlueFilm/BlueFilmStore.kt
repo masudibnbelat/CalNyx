@@ -1,34 +1,26 @@
 // FILE: app/src/main/java/com/calnyx/app/BlueFilm/BlueFilmStore.kt
-// FOLDERS VERSION - replace your old BlueFilmStore.kt with this file.
-// Based on V8.2. Only addition: deleteFolder() + renameFolder()
-// (see below, after createFolder). Everything else is byte-identical.
-// The DEFAULT folder ("My Blue Film") can never be deleted or
-// renamed - it is where new recordings go, and listFolders()
-// always recreates it.
-// REPLACE the V6 version. V7 changes - Play gave ZERO
-// feedback on tap (user's video: tap on Play, ripple only,
-// no note, no Toast, no player, even 1.5s later):
-//  1. resolveActivity REMOVED. On Android 11+ the manifest
-//     <queries> only declares MAIN/LAUNCHER intents, so
-//     resolveActivity() for a video VIEW intent can return
-//     null even when VLC / Gallery ARE installed - and the
-//     old code then returned "no_player" without ever
-//     calling startActivity(). Now startActivity() is
-//     called directly in try/catch: if no player exists it
-//     throws ActivityNotFoundException and that becomes
-//     "no_player". startActivity with an implicit intent is
-//     NOT blocked by package visibility, so the player
-//     chooser opens at once.
-//  2. Decrypts are SERIALIZED (synchronized). The background
-//     thumbnail prep and a Play tap used to decrypt the same
-//     file at the same time, both deleting and rewriting the
-//     SAME temp .mp4 path - the tap could wait on, or fight
-//     with, the prep. Now only one decrypt runs at a time
-//     and prepareTemp checks the cache inside the same lock,
-//     so a tap reuses a finished temp instead of starting
-//     a second decrypt.
-//  Everything else from V6 is kept: folders, cached temp,
-//  thumbnails, Rename, Delete dropping cache.
+// PLAIN VERSION (2026-11-06) - REPLACE the old BlueFilmStore.kt.
+// Based on the FOLDERS version. ENCRYPTION IS GONE:
+//  - Recordings are now plain .mp4 files in filesDir/bluefilm/,
+//    inside folders exactly as before. No .bfenc, no AES/GCM,
+//    no decrypt step anywhere: Play opens the file itself in
+//    the external player, thumbnails read the file directly,
+//    Download copies the file itself to Movies / CalNyx.
+//  - Files still live ONLY inside the app (internal storage),
+//    so they never show in the gallery or Files. The app is
+//    offline, so there is no leak path - that is why the
+//    encryption was removed, at the user's request.
+//  - ONE-TIME MIGRATION (first open after this update):
+//    ensureMigrated() converts old encrypted .bfenc videos to
+//    plain .mp4 with BlueFilmCrypto (decrypt once, delete the
+//    .bfenc on success), and renames the default folder
+//    "My Blue Film" -> "My Spy". A .bfenc that fails to decrypt
+//    (the old damaged ones) is left alone - it simply does not
+//    list. BlueFilmCrypto.kt STAYS in the project for this one
+//    migration only; no new recording is ever encrypted.
+//  - DEFAULT_FOLDER is now "My Spy" (page renamed Spy).
+//  - Everything else is unchanged: folders, New Folder, Move,
+//    Rename video/folder, Delete video/folder, sizes, dates.
 package com.calnyx.app.BlueFilm
 
 import android.content.ContentValues
@@ -50,8 +42,8 @@ import java.util.Locale
 
 object BlueFilmStore {
 
-    const val EXT = ".bfenc"
-    const val DEFAULT_FOLDER = "My Blue Film"
+    const val EXT = ".mp4"
+    const val DEFAULT_FOLDER = "My Spy"
     private const val DIR = "bluefilm"
 
     fun dir(context: Context): File =
@@ -72,17 +64,32 @@ object BlueFilmStore {
         return File(dir(context), name).apply { if (!exists()) mkdirs() }
     }
 
-    // Move loose root .bfenc files into the permanent folder.
+    // ONE-TIME MIGRATION, first open after the plain update:
+    //  (1) the default folder "My Blue Film" becomes "My Spy";
+    //  (2) loose root .bfenc files move into the default folder;
+    //  (3) every .bfenc video is decrypted ONCE to a plain .mp4
+    //      of the same name (via .tmp, then rename) and the
+    //      .bfenc is deleted only after the .mp4 is complete.
+    //  A file that fails to decrypt (old damaged recordings)
+    //  is left alone and simply does not list. Nothing here
+    //  ever throws: one bad file must not hide the rest.
     fun ensureMigrated(context: Context) {
         val root = dir(context)
+        try {
+            val oldDefault = File(root, "My Blue Film")
+            val newDefault = File(root, DEFAULT_FOLDER)
+            if (oldDefault.exists() && oldDefault.isDirectory && !newDefault.exists()) {
+                oldDefault.renameTo(newDefault)
+            }
+        } catch (_: Exception) {}
         val target = folderDir(context, DEFAULT_FOLDER)
         root.listFiles()
-            ?.filter { it.isFile && it.name.endsWith(EXT) }
+            ?.filter { it.isFile && it.name.endsWith(".bfenc") }
             ?.forEach { file ->
-                var dest = File(target, file.name)
+                var dest = File(target, file.name.removeSuffix(".bfenc") + EXT)
                 var i = 1
                 while (dest.exists()) {
-                    dest = File(target, file.name.removeSuffix(EXT) + "_$i$EXT")
+                    dest = File(target, file.name.removeSuffix(".bfenc") + "_$i$EXT")
                     i++
                 }
                 try {
@@ -91,6 +98,36 @@ object BlueFilmStore {
                         file.delete()
                     }
                 } catch (_: Exception) {}
+            }
+        // Decrypt old .bfenc videos to plain .mp4, in place.
+        root.listFiles()
+            ?.filter { it.isDirectory }
+            ?.forEach { folder ->
+                folder.listFiles()
+                    ?.filter { it.isFile && it.name.endsWith(".bfenc") }
+                    ?.forEach { enc ->
+                        val dest = File(folder, enc.name.removeSuffix(".bfenc") + EXT)
+                        if (dest.exists()) {
+                            try { enc.delete() } catch (_: Exception) {}
+                            return@forEach
+                        }
+                        val tmpDest = File(folder, dest.name + ".tmp")
+                        try {
+                            if (tmpDest.exists()) tmpDest.delete()
+                            BlueFilmCrypto.decryptFile(context, enc, tmpDest)
+                            if (tmpDest.exists() && tmpDest.length() > 0) {
+                                if (tmpDest.renameTo(dest)) {
+                                    enc.delete()
+                                } else {
+                                    tmpDest.delete()
+                                }
+                            } else {
+                                tmpDest.delete()
+                            }
+                        } catch (_: Exception) {
+                            try { tmpDest.delete() } catch (_: Exception) {}
+                        }
+                    }
             }
     }
 
@@ -111,7 +148,7 @@ object BlueFilmStore {
 
     fun listVideosInFolder(context: Context, folder: String): List<File> {
         val files = folderDir(context, folder).listFiles()
-            ?.filter { it.isFile && it.name.endsWith(EXT) && it.length() > 28 }
+            ?.filter { it.isFile && it.name.endsWith(EXT) && it.length() > 0 }
             ?: emptyList()
         return files.sortedByDescending { it.lastModified() }
     }
@@ -137,8 +174,8 @@ object BlueFilmStore {
     // Delete a whole folder with every video inside it. The
     // DEFAULT folder can never be deleted - it is where new
     // recordings go, and listFolders always recreates it.
-    // Cached decrypted temps + thumbnails of its videos are
-    // dropped too, so no stale preview survives the folder.
+    // Cached thumbnails of its videos are dropped too, so
+    // no stale preview survives the folder.
     fun deleteFolder(context: Context, folder: String): Boolean {
         val name = sanitizeName(folder) ?: return false
         if (name == DEFAULT_FOLDER) return false
@@ -220,8 +257,8 @@ object BlueFilmStore {
         else String.format(Locale.US, "%d KB", bytes / 1024)
     }
 
-    // Drops the cached decrypted temp + thumbnail too, so a
-    // deleted video never leaves a stale preview behind.
+    // Drops the cached thumbnail too, so a deleted video
+    // never leaves a stale preview behind.
     fun deleteVideo(context: Context, file: File): Boolean {
         return try {
             dropCache(context, file)
@@ -255,65 +292,24 @@ object BlueFilmStore {
         }
     }
 
-    private fun tempFile(context: Context, encrypted: File): File =
-        File(context.cacheDir, displayName(encrypted) + ".mp4")
+    private fun thumbFile(context: Context, video: File): File =
+        File(context.cacheDir, "thumb_" + displayName(video) + ".jpg")
 
-    private fun thumbFile(context: Context, encrypted: File): File =
-        File(context.cacheDir, "thumb_" + displayName(encrypted) + ".jpg")
-
-    private fun decryptedTemp(context: Context, encrypted: File): File? {
-        if (!encrypted.exists() || encrypted.length() <= 28) return null
-        // One decrypt at a time: the background thumbnail prep
-        // and a Play tap must never decrypt the same file into
-        // the same temp path concurrently.
-        synchronized(this) {
-            return try {
-                val tmp = tempFile(context, encrypted)
-                if (tmp.exists()) tmp.delete()
-                BlueFilmCrypto.decryptFile(context, encrypted, tmp)
-                if (!tmp.exists() || tmp.length() <= 0) null else tmp
-            } catch (_: Exception) {
-                null
-            }
-        }
+    // PLAIN: there is no decrypted temp any more - the stored
+    // file IS the .mp4. prepareTemp just returns the file
+    // itself when it is readable, so Play / thumbnails find
+    // it already ready. Kept under the old name so the Screen
+    // needs no call-site change.
+    fun prepareTemp(context: Context, video: File): File? {
+        return if (video.exists() && video.length() > 0) video else null
     }
 
-    // The real decrypt exception, for an honest error note.
-    fun decryptError(context: Context, encrypted: File): String? {
-        if (!encrypted.exists() || encrypted.length() <= 28) return "file_too_short"
-        return try {
-            val tmp = File(context.cacheDir, "check_" + displayName(encrypted) + ".mp4")
-            if (tmp.exists()) tmp.delete()
-            BlueFilmCrypto.decryptFile(context, encrypted, tmp)
-            tmp.delete()
-            null
-        } catch (e: Exception) {
-            e.javaClass.simpleName
-        }
-    }
-
-    // Reuse the decrypted temp if it is newer than the .bfenc,
-    // otherwise decrypt once. Called in the background when
-    // the page opens, so a later tap finds it already ready.
-    // The cache check is inside the same lock as the decrypt,
-    // so a tap never starts a second decrypt while the
-    // background prep is still writing the temp.
-    fun prepareTemp(context: Context, encrypted: File): File? {
-        synchronized(this) {
-            val tmp = tempFile(context, encrypted)
-            if (tmp.exists() && tmp.length() > 0 && tmp.lastModified() >= encrypted.lastModified()) {
-                return tmp
-            }
-            return decryptedTemp(context, encrypted)
-        }
-    }
-
-    fun prepareThumbnail(context: Context, encrypted: File): File? {
-        val thumb = thumbFile(context, encrypted)
-        if (thumb.exists() && thumb.length() > 0 && thumb.lastModified() >= encrypted.lastModified()) {
+    fun prepareThumbnail(context: Context, video: File): File? {
+        val thumb = thumbFile(context, video)
+        if (thumb.exists() && thumb.length() > 0 && thumb.lastModified() >= video.lastModified()) {
             return thumb
         }
-        val tmp = prepareTemp(context, encrypted) ?: return null
+        val tmp = prepareTemp(context, video) ?: return null
         return try {
             val retriever = MediaMetadataRetriever()
             try {
@@ -340,8 +336,9 @@ object BlueFilmStore {
     }
 
     // External player only. Returns null on success, otherwise
-    // one of: "no_file", "decrypt_failed", "no_fileprovider",
-    // "no_player", "start_failed".
+    // one of: "no_file", "no_fileprovider", "no_player",
+    // "start_failed". PLAIN: the stored .mp4 itself is handed
+    // to the player through FileProvider - no decrypt, no temp.
     // No resolveActivity() check: on Android 11+ it can return
     // null for a video intent even when players ARE installed
     // (package visibility - the manifest <queries> does not
@@ -349,11 +346,10 @@ object BlueFilmStore {
     // without ever trying. startActivity() is called directly;
     // if truly no player exists it throws
     // ActivityNotFoundException and that becomes "no_player".
-    fun playVideoError(context: Context, encrypted: File): String? {
-        if (!encrypted.exists() || encrypted.length() <= 28) return "no_file"
-        val tmp = prepareTemp(context, encrypted) ?: return "decrypt_failed"
+    fun playVideoError(context: Context, video: File): String? {
+        if (!video.exists() || video.length() <= 0) return "no_file"
         val uri = try {
-            FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", tmp)
+            FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", video)
         } catch (_: Exception) {
             return "no_fileprovider"
         }
@@ -372,13 +368,12 @@ object BlueFilmStore {
         }
     }
 
-    fun playVideo(context: Context, encrypted: File): Boolean =
-        playVideoError(context, encrypted) == null
+    fun playVideo(context: Context, video: File): Boolean =
+        playVideoError(context, video) == null
 
-    fun exportToGallery(context: Context, encrypted: File): Boolean {
+    fun exportToGallery(context: Context, video: File): Boolean {
         return try {
-            val tmp = prepareTemp(context, encrypted) ?: return false
-            val fileName = displayName(encrypted) + ".mp4"
+            val fileName = displayName(video) + ".mp4"
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 val values = ContentValues().apply {
                     put(MediaStore.Video.Media.DISPLAY_NAME, fileName)
@@ -390,7 +385,7 @@ object BlueFilmStore {
                 val uri = resolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values)
                     ?: return false
                 resolver.openOutputStream(uri)?.use { out ->
-                    FileInputStream(tmp).use { input -> input.copyTo(out) }
+                    FileInputStream(video).use { input -> input.copyTo(out) }
                 }
                 values.clear()
                 values.put(MediaStore.Video.Media.IS_PENDING, 0)
@@ -403,7 +398,7 @@ object BlueFilmStore {
                     "CalNyx"
                 ).apply { if (!exists()) mkdirs() }
                 val dest = File(movies, fileName)
-                FileInputStream(tmp).use { input ->
+                FileInputStream(video).use { input ->
                     FileOutputStream(dest).use { output -> input.copyTo(output) }
                 }
                 context.sendBroadcast(Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE, Uri.fromFile(dest)))

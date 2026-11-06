@@ -1,25 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- FILE: app/src/main/res/xml/file_paths.xml -->
-<!-- FIXED VERSION - replace your old file_paths.xml with this. -->
-<!-- Your pasted file had the same entries 2-3 times each: -->
-<!--   "vault" files-path x3, "bluefilm" cache-path x2, -->
-<!--   "vault_preview" cache-path x2. Duplicates are now removed — -->
-<!--   every name appears exactly once. Nothing was deleted: all -->
-<!--   6 unique entries are kept. -->
-<!--   - cache-path "updates": app update APKs (cacheDir/updates/) -->
-<!--   - files-path "vault": the vault itself (filesDir/vault/) -->
-<!--   - cache-path "vault_preview": decrypted previews VaultOpener -->
-<!--     shares with external players (cacheDir/vault_preview/) -->
-<!--   - cache-path "vault_thumbs": streaming thumbnail temp files -->
-<!--   - cache-path "bluefilm": Blue Film temp mp4 for playback -->
-<!--     (cacheDir root, path=".") -->
-<!--   - files-path "bluefilm_files": Blue Film encrypted files -->
-<!--     (filesDir/bluefilm/) -->
+
 <paths>
     <cache-path name="updates" path="updates/" />
-    <files-path name="vault" path="vault/" />
-    <cache-path name="vault_preview" path="vault_preview/" />
-    <cache-path name="vault_thumbs" path="vault_thumbs/" />
     <cache-path name="bluefilm" path="." />
     <files-path name="bluefilm_files" path="bluefilm/" />
+    <cache-path name="bluefilm" path="." />
+    <cache-path name="blackhole_preview" path="blackhole_preview/" />
+    <cache-path name="blackhole_thumbs" path="blackhole_thumbs/" />
+    <files-path name="blackhole" path="blackhole/" />
 </paths>
+
+

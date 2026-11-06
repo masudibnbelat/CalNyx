@@ -1,22 +1,24 @@
-// FILE: app/src/main/java/com/calnyx/app/vault/VaultManager.kt
-// OPENFIX VERSION - replace your old VaultManager.kt with this file.
-// Based on ENCRYPTED. Only 2 functions changed (see VaultOpener.kt):
-// decodeSampledBitmap now streams via VaultOpener (no RAM load),
-// openWithExternalViewer is now SUSPEND and delegates to VaultOpener.
-// Keep the file name VaultManager.kt, do not keep both files,
-// otherwise you will get a duplicate class error.
-// Also add the new file VaultCrypto.kt in the same folder.
+// FILE: app/src/main/java/com/calnyx/app/blackhole/BlackHoleManager.kt
+// OPENFIX 4 VERSION (2026-11-06) - replace your old BlackHoleManager.kt
+// with this file. ENCRYPTION REMOVED by the user's choice: files are
+// stored PLAIN in app internal storage (still hidden from gallery /
+// Files, still deleted from the gallery on import, still protected
+// by the app lock) — so opening is instant, no decrypt, no preview
+// copy, no loading. Keep the file name BlackHoleManager.kt, do not keep
+// both files, otherwise you will get a duplicate class error.
+// BlackHoleCrypto.kt stays in the project ONLY for the one-time
+// migrateEncryptedFilesToPlain() below (old encrypted files -> plain).
 //
-// What changed vs your old file (everything else is unchanged):
-// 1. importUri: copies the picked file ENCRYPTED, not plain.
-// 2. restoreFile: decrypts while restoring to the CalNyx folder.
-// 3. openWithExternalViewer: decrypts to app cache (vault_preview),
-//    opens that, never opens the encrypted file directly. The cache
-//    file is cleared on the next open, and it is never in gallery.
-// 4. New helpers: decodeSampledBitmap, migratePlainFilesToEncrypted,
-//    clearPreviewCache.
+// What changed vs the OPENFIX 3 file:
+// 1. importUri: PLAIN copy now (was encrypted), still with progress
+//    and the .tmp-then-rename rule (one upload = one file).
+// 2. restoreFile / downloadFile: plain copy out (old encrypted files
+//    are decrypted on the way out via copyOut()).
+// 3. New: migrateEncryptedFilesToPlain() — converts old encrypted
+//    files to plain once (replaces migratePlainFilesToEncrypted).
+// 4. listFiles still hides .tmp + 0-byte files (OPENFIX 3).
 // 5. Delete / resolve / MediaStore logic is exactly as before.
-package com.calnyx.app.vault
+package com.calnyx.app.blackhole
 
 import android.app.RecoverableSecurityException
 import android.content.ContentUris
@@ -42,23 +44,41 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.resume
 
-enum class VaultCategory(val folder: String, val title: String, val pickerMime: String) {
+enum class BlackHoleCategory(val folder: String, val title: String, val pickerMime: String) {
     PHOTOS("photos", "Photos", "image/*"),
     VIDEOS("videos", "Videos", "video/*"),
     DOCUMENTS("documents", "Documents", "*/*"),
     AUDIO("audio", "Audio", "audio/*")
 }
 
-object VaultPrefs {
-    private const val PREFS = "vault_prefs"
-    private const val KEY_SECRET = "vault_secret"
-    private const val KEY_SET = "vault_secret_set"
+object BlackHolePrefs {
+    private const val PREFS = "blackhole_prefs"
+    private const val KEY_SECRET = "blackhole_secret"
+    private const val KEY_SET = "blackhole_secret_set"
     private const val KEY_ICON = "theme_icon"
 
     const val DEFAULT_SECRET = "112233"
 
-    private fun prefs(context: Context) =
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    // RENAME MIGRATION (2026-11-06): the secret used to live in
+    // "vault_prefs". First time the new prefs are empty, copy the
+    // secret / set-flag / theme icon over from the old file once,
+    // so the user's own secret keeps working and no file is lost.
+    // After that the old file is never read again.
+    private const val OLD_PREFS = "vault_prefs"
+    private fun prefs(context: Context): android.content.SharedPreferences {
+        val fresh = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        if (!fresh.contains(KEY_SECRET)) {
+            val old = context.getSharedPreferences(OLD_PREFS, Context.MODE_PRIVATE)
+            if (old.contains(KEY_SECRET)) {
+                fresh.edit()
+                    .putString(KEY_SECRET, old.getString(KEY_SECRET, null))
+                    .putBoolean(KEY_SET, old.getBoolean(KEY_SET, false))
+                    .putString(KEY_ICON, old.getString(KEY_ICON, null))
+                    .apply()
+            }
+        }
+        return fresh
+    }
 
     fun getSecret(context: Context): String? =
         prefs(context).getString(KEY_SECRET, null)
@@ -98,16 +118,44 @@ sealed interface DeleteStatus {
 }
 
 data class ImportResult(
-    val vaultFile: File?,
+    val blackHoleFile: File?,
     val deleteStatus: DeleteStatus?,
     val error: String? = null,
     val mediaUri: Uri? = null
 )
 
-object VaultManager {
+object BlackHoleManager {
 
-    fun vaultDir(context: Context, category: VaultCategory): File {
-        val root = File(context.filesDir, "vault")
+    // RENAME MIGRATION (2026-11-06): files used to live in
+    // filesDir/vault/. Move the whole old folder to blackhole on
+    // first use (or merge it in, if blackhole already exists), so
+    // every photo / video / document / audio survives the rename.
+    private fun blackHoleRoot(context: Context): File {
+        val oldRoot = File(context.filesDir, "vault")
+        val newRoot = File(context.filesDir, "blackhole")
+        if (oldRoot.exists()) {
+            if (!newRoot.exists()) {
+                oldRoot.renameTo(newRoot)
+            } else {
+                oldRoot.listFiles()?.forEach { child ->
+                    val dest = File(newRoot, child.name)
+                    if (!dest.exists()) {
+                        child.renameTo(dest)
+                    } else if (child.isDirectory) {
+                        child.listFiles()?.forEach { f -> f.renameTo(File(dest, f.name)) }
+                        try { child.delete() } catch (_: Exception) {}
+                    } else {
+                        try { child.delete() } catch (_: Exception) {}
+                    }
+                }
+                try { oldRoot.delete() } catch (_: Exception) {}
+            }
+        }
+        return newRoot
+    }
+
+    fun blackHoleDir(context: Context, category: BlackHoleCategory): File {
+        val root = blackHoleRoot(context)
         val dir = File(root, category.folder)
         if (!dir.exists()) dir.mkdirs()
         val nomedia = File(root, ".nomedia")
@@ -115,8 +163,16 @@ object VaultManager {
         return dir
     }
 
-    fun listFiles(context: Context, category: VaultCategory): List<File> =
-        vaultDir(context, category).listFiles()
+    // OPENFIX 3: ".tmp" files and 0-byte files are NEVER listed.
+    // Import writes to a .tmp file first (see importUri) and the
+    // migration also leaves .tmp files behind if the app is killed
+    // mid-migration — those used to show up in the grid as extra
+    // "videos" that opened to nothing. A half-written import used
+    // to appear the same way. Both are hidden now; only finished
+    // files are shown.
+    fun listFiles(context: Context, category: BlackHoleCategory): List<File> =
+        blackHoleDir(context, category).listFiles()
+            ?.filter { !it.name.endsWith(".tmp") && it.length() > 0 }
             ?.sortedByDescending { it.lastModified() } ?: emptyList()
 
     fun fileSizeString(file: File): String {
@@ -181,7 +237,7 @@ object VaultManager {
         }
     } catch (_: Exception) { null }
 
-    private fun resolveToMediaStoreUri(context: Context, pickerUri: Uri, category: VaultCategory): Uri {
+    private fun resolveToMediaStoreUri(context: Context, pickerUri: Uri, category: BlackHoleCategory): Uri {
         val authority = pickerUri.authority ?: ""
         val path = pickerUri.path ?: ""
 
@@ -233,17 +289,17 @@ object VaultManager {
         return findMediaStoreUriByName(context, displayName, category) ?: pickerUri
     }
 
-    private fun mediaStoreCollection(category: VaultCategory): Uri = when (category) {
-        VaultCategory.PHOTOS    -> MediaStore.Images.Media.EXTERNAL_CONTENT_URI
-        VaultCategory.VIDEOS    -> MediaStore.Video.Media.EXTERNAL_CONTENT_URI
-        VaultCategory.AUDIO     -> MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
-        VaultCategory.DOCUMENTS -> MediaStore.Files.getContentUri("external")
+    private fun mediaStoreCollection(category: BlackHoleCategory): Uri = when (category) {
+        BlackHoleCategory.PHOTOS    -> MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+        BlackHoleCategory.VIDEOS    -> MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+        BlackHoleCategory.AUDIO     -> MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+        BlackHoleCategory.DOCUMENTS -> MediaStore.Files.getContentUri("external")
     }
 
     private fun findMediaStoreUriByName(
         context: Context,
         displayName: String,
-        category: VaultCategory
+        category: BlackHoleCategory
     ): Uri? {
         val collection = mediaStoreCollection(category)
         return try {
@@ -292,25 +348,68 @@ object VaultManager {
         } catch (_: Exception) { null }
     }
 
-    // ── ENCRYPTED IMPORT ──────────────────────────────────────────
-    suspend fun importUri(context: Context, uri: Uri, category: VaultCategory): ImportResult =
+    // ── IMPORT (plain copy now — OPENFIX 4, no encryption) ────────
+    // OPENFIX 3: (1) encrypts into "name.tmp" first and renames to
+    // the real name only when the copy is COMPLETE — a half-written
+    // import can no longer appear in the grid (listFiles hides
+    // .tmp), so one upload can never show as two files with one
+    // opening to nothing. (2) onProgress reports 0f..1f so the
+    // Screen shows a real "Importing... 47%" bar.
+    suspend fun importUri(
+        context: Context,
+        uri: Uri,
+        category: BlackHoleCategory,
+        onProgress: (Float) -> Unit = {}
+    ): ImportResult =
         withContext(Dispatchers.IO) {
-            val dir = vaultDir(context, category)
+            val dir = blackHoleDir(context, category)
             val originalName = displayNameFromUri(context, uri)
                 ?: "imported_${System.currentTimeMillis()}"
             val target = uniqueFile(dir, originalName)
+            val tmp = File(dir, target.name + ".tmp")
 
-            // Step 1: vault-এ ENCRYPT করে copy করো (আগে plain copy ছিল)
+            // Total size for the progress bar (-1 = unknown, then
+            // the bar shows indeterminate instead of a wrong %).
+            val total = try {
+                context.contentResolver.openFileDescriptor(uri, "r")
+                    ?.use { it.statSize } ?: -1L
+            } catch (_: Exception) { -1L }
+
+            // Step 1: OPENFIX 4 — PLAIN copy now, NO encryption.
+            // The user removed encryption (2026-11-06): files only
+            // need to stay hidden inside the app, not encrypted.
+            // A plain copy opens instantly later. Progress still
+            // reports so the "Importing... %" bar works.
             try {
                 val input = context.contentResolver.openInputStream(uri)
                     ?: return@withContext ImportResult(null, null, "File khola jayni")
                 input.use { src ->
-                    FileOutputStream(target).use { dst ->
-                        VaultCrypto.encryptStream(src, dst)
+                    FileOutputStream(tmp).use { dst ->
+                        var written = 0L
+                        val buf = ByteArray(65536)
+                        while (true) {
+                            val r = src.read(buf)
+                            if (r == -1) break
+                            dst.write(buf, 0, r)
+                            written += r
+                            if (total > 0) {
+                                onProgress((written.toFloat() / total).coerceIn(0f, 1f))
+                            }
+                        }
                     }
                 }
+                if (tmp.length() <= 0) {
+                    try { tmp.delete() } catch (_: Exception) {}
+                    return@withContext ImportResult(null, null, "Copy hoyni: khali file")
+                }
+                // Only now does the file become visible in the grid.
+                if (!tmp.renameTo(target)) {
+                    tmp.copyTo(target, overwrite = false)
+                    tmp.delete()
+                }
+                onProgress(1f)
             } catch (e: Exception) {
-                try { target.delete() } catch (_: Exception) {}
+                try { tmp.delete() } catch (_: Exception) {}
                 return@withContext ImportResult(null, null, "Copy hoyni: ${e.message}")
             }
 
@@ -324,7 +423,7 @@ object VaultManager {
                 }
             }
 
-            ImportResult(vaultFile = target, deleteStatus = status, mediaUri = mediaUri)
+            ImportResult(blackHoleFile = target, deleteStatus = status, mediaUri = mediaUri)
         }
 
     suspend fun retryDelete(context: Context, uri: Uri): Boolean =
@@ -333,58 +432,66 @@ object VaultManager {
             catch (_: Exception) { false }
         }
 
-    // ── ENCRYPTED PHOTO PREVIEW (memory only) ─────────────────────
-    // VaultScreen-এর পুরনো decodeSampled() এর বদলে এটা ব্যবহার করবে।
-    // ফাইলটা ডিক্রিপ্ট করে memory-তে Bitmap বানায়, ফোনে কোনো
-    // plain ফাইল তৈরি করে না।
-    // OPENFIX: streaming thumbnail — decrypts to a temp FILE and
-    // decodes sampled FROM the file. RAM is only the final bitmap.
-    // The old version loaded the WHOLE file into RAM twice
-    // (decryptToBytes + readBytes) — OOM on large photos / low RAM.
+    // ── PHOTO PREVIEW ─────────────────────────────────────────────
+    // BlackHoleScreen-এর পুরনো decodeSampled() এর বদলে এটা ব্যবহার করবে।
+    // OPENFIX 4: plain files decode straight from the blackhole file
+    // (see BlackHoleOpener.decodeSampledBitmap). Old encrypted files
+    // still go through the streaming-decrypt temp file path.
     fun decodeSampledBitmap(file: File, reqSize: Int): Bitmap? {
-        return VaultOpener.decodeSampledBitmap(file, reqSize)
+        return BlackHoleOpener.decodeSampledBitmap(file, reqSize)
     }
 
-    // ── ONE-TIME MIGRATION: পুরনো plain -> encrypted ─────────────
-    // VaultScreen খোলার সময় একবার চালাও (patch ফাইলে দেওয়া আছে)।
-    // Already encrypted ফাইল ছোঁয়া হবে না, শুধু plain ফাইল
-    // এনক্রিপ্ট হবে। ফেরত দেয় কয়টা ফাইল migrate হলো।
-    suspend fun migratePlainFilesToEncrypted(context: Context): Int =
+    // ── ONE-TIME MIGRATION: old encrypted -> plain ───────────────
+    // OPENFIX 4 (2026-11-06): the user removed encryption. This runs
+    // once when the blackhole opens (LaunchedEffect(Unit) in the Screen)
+    // and converts every still-encrypted file to plain, so it opens
+    // instantly afterwards. Already-plain files are untouched.
+    // How it tells them apart: it tries to decrypt each file once.
+    // Decrypt succeeds = was encrypted (replace with the plain
+    // copy). Decrypt throws (bad GCM tag) = already plain (leave it).
+    // A false positive is cryptographically negligible (128-bit tag).
+    // Returns how many files were converted.
+    suspend fun migrateEncryptedFilesToPlain(context: Context): Int =
         withContext(Dispatchers.IO) {
             var migrated = 0
-            for (cat in VaultCategory.entries) {
+            for (cat in BlackHoleCategory.entries) {
                 for (file in listFiles(context, cat)) {
                     val temp = File(file.parentFile, "${file.name}.tmp")
-                    // 1. Decrypt চেষ্টা করো — সফল হলে already encrypted
-                    val alreadyEncrypted = try {
-                        FileInputStream(file).use { src ->
-                            FileOutputStream(temp).use { dst ->
-                                VaultCrypto.decryptStream(src, dst)
-                            }
-                        }
-                        true
-                    } catch (_: Exception) { false }
-                    try { temp.delete() } catch (_: Exception) {}
-                    if (alreadyEncrypted) continue
-                    // 2. Plain হলে encrypt করে replace করো
                     try {
                         FileInputStream(file).use { src ->
                             FileOutputStream(temp).use { dst ->
-                                VaultCrypto.encryptStream(src, dst)
+                                BlackHoleCrypto.decryptStream(src, dst)
                             }
                         }
-                        if (file.delete() && temp.renameTo(file)) migrated++
-                        else try { temp.delete() } catch (_: Exception) {}
                     } catch (_: Exception) {
+                        // Already plain — leave it alone.
                         try { temp.delete() } catch (_: Exception) {}
+                        continue
                     }
+                    if (temp.length() <= 0) {
+                        try { temp.delete() } catch (_: Exception) {}
+                        continue
+                    }
+                    if (file.delete() && temp.renameTo(file)) migrated++
+                    else try { temp.delete() } catch (_: Exception) {}
                 }
             }
             migrated
         }
 
-    // ── ENCRYPTED RESTORE ─────────────────────────────────────────
-    suspend fun restoreFile(context: Context, file: File, category: VaultCategory): Boolean =
+    // OPENFIX 4: copy a blackhole file OUT (Restore / Download).
+    // Plain files copy as-is; old encrypted files are decrypted on
+    // the way out. Used by restoreViaMediaStore / restoreViaLegacy.
+    private fun copyOut(file: File, input: java.io.InputStream, output: java.io.OutputStream) {
+        if (BlackHoleOpener.looksPlain(file)) {
+            input.copyTo(output, 65536)
+        } else {
+            BlackHoleCrypto.decryptStream(input, output)
+        }
+    }
+
+    // ── RESTORE (plain copy now, decrypt only for old files) ──────
+    suspend fun restoreFile(context: Context, file: File, category: BlackHoleCategory): Boolean =
         withContext(Dispatchers.IO) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 restoreViaMediaStore(context, file, category)
@@ -393,18 +500,31 @@ object VaultManager {
             }
         }
 
+    // OPENFIX 2: Download = export a decrypted copy to the public
+    // folder AND KEEP the blackhole file. Restore (above) deletes the
+    // blackhole file after exporting; Download does not.
+    suspend fun downloadFile(context: Context, file: File, category: BlackHoleCategory): Boolean =
+        withContext(Dispatchers.IO) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                restoreViaMediaStore(context, file, category, deleteAfter = false)
+            } else {
+                restoreViaLegacy(context, file, category, deleteAfter = false)
+            }
+        }
+
     private fun restoreViaMediaStore(
-        context: Context, file: File, category: VaultCategory
+        context: Context, file: File, category: BlackHoleCategory,
+        deleteAfter: Boolean = true
     ): Boolean {
         return try {
             val (collection, relativePath) = when (category) {
-                VaultCategory.PHOTOS    -> MediaStore.Images.Media.EXTERNAL_CONTENT_URI to
+                BlackHoleCategory.PHOTOS    -> MediaStore.Images.Media.EXTERNAL_CONTENT_URI to
                         "${Environment.DIRECTORY_PICTURES}/CalNyx"
-                VaultCategory.VIDEOS    -> MediaStore.Video.Media.EXTERNAL_CONTENT_URI to
+                BlackHoleCategory.VIDEOS    -> MediaStore.Video.Media.EXTERNAL_CONTENT_URI to
                         "${Environment.DIRECTORY_MOVIES}/CalNyx"
-                VaultCategory.AUDIO     -> MediaStore.Audio.Media.EXTERNAL_CONTENT_URI to
+                BlackHoleCategory.AUDIO     -> MediaStore.Audio.Media.EXTERNAL_CONTENT_URI to
                         "${Environment.DIRECTORY_MUSIC}/CalNyx"
-                VaultCategory.DOCUMENTS -> MediaStore.Downloads.EXTERNAL_CONTENT_URI to
+                BlackHoleCategory.DOCUMENTS -> MediaStore.Downloads.EXTERNAL_CONTENT_URI to
                         "${Environment.DIRECTORY_DOWNLOADS}/CalNyx"
             }
             val values = ContentValues().apply {
@@ -416,7 +536,7 @@ object VaultManager {
             try {
                 context.contentResolver.openOutputStream(uri)?.use { out ->
                     FileInputStream(file).use { src ->
-                        VaultCrypto.decryptStream(src, out)
+                        copyOut(file, src, out)
                     }
                 } ?: return false
             } catch (_: Exception) {
@@ -424,27 +544,28 @@ object VaultManager {
                 try { context.contentResolver.delete(uri, null, null) } catch (_: Exception) {}
                 return false
             }
-            file.delete()
+            if (deleteAfter) file.delete()
             true
         } catch (_: Exception) { false }
     }
 
     private suspend fun restoreViaLegacy(
-        context: Context, file: File, category: VaultCategory
+        context: Context, file: File, category: BlackHoleCategory,
+        deleteAfter: Boolean = true
     ): Boolean {
         return try {
             val publicDir = when (category) {
-                VaultCategory.PHOTOS    -> Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
-                VaultCategory.VIDEOS    -> Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES)
-                VaultCategory.AUDIO     -> Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC)
-                VaultCategory.DOCUMENTS -> Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+                BlackHoleCategory.PHOTOS    -> Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
+                BlackHoleCategory.VIDEOS    -> Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES)
+                BlackHoleCategory.AUDIO     -> Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC)
+                BlackHoleCategory.DOCUMENTS -> Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
             }
             val destDir = File(publicDir, "CalNyx").also { it.mkdirs() }
             val dest = File(destDir, file.name)
             try {
                 FileInputStream(file).use { src ->
                     FileOutputStream(dest).use { dst ->
-                        VaultCrypto.decryptStream(src, dst)
+                        copyOut(file, src, dst)
                     }
                 }
             } catch (_: Exception) {
@@ -458,7 +579,7 @@ object VaultManager {
                     arrayOf(mimeFor(file))
                 ) { _, _ -> cont.resume(Unit) }
             }
-            file.delete()
+            if (deleteAfter) file.delete()
             true
         } catch (_: Exception) { false }
     }
@@ -480,21 +601,25 @@ object VaultManager {
 
     fun clearPreviewCache(context: Context) {
         try {
+            File(context.cacheDir, "blackhole_preview").deleteRecursively()
+        } catch (_: Exception) {}
+        try {
             File(context.cacheDir, "vault_preview").deleteRecursively()
         } catch (_: Exception) {}
     }
 
-    // ── ENCRYPTED OPEN (video / audio / document) ─────────────────
-    // Encrypted ফাইল সরাসরি FileProvider দিয়ে খোলা যাবে না, তাই
-    // cache-এ ডিক্রিপ্ট করে সেটা খোলা হয়। Cache ফোনের internal
-    // জায়গা, gallery / Files-এ দেখা যাবে না। পরের বার খুললে
-    // আগের preview মুছে যাবে।
-    // OPENFIX: SUSPEND now — decrypt/copy runs on Dispatchers.IO
-    // inside VaultOpener, NEVER on the main thread. The old version
-    // ran here synchronously: a large video blocked the main thread
-    // for 10-60s = ANR = Android killed the app. It also deleted ALL
-    // previews first, breaking a player still reading one.
-    suspend fun openWithExternalViewer(context: Context, file: File): Boolean {
-        return VaultOpener.openExternal(context, file) is VaultOpenResult.Opened
+    // ── OPEN (video / audio / document) ───────────────────────────
+    // OPENFIX 4: plain files open instantly — BlackHoleOpener hands the
+    // blackhole file itself to the player via FileProvider. Old encrypted
+    // files still go through the decrypt-preview path (once, until
+    // the one-time migration converts them to plain).
+    // OPENFIX 3: onProgress reports 0f..1f of the decrypt, so the
+    // Screen shows a real "Opening... 47%" bar.
+    suspend fun openWithExternalViewer(
+        context: Context,
+        file: File,
+        onProgress: (Float) -> Unit = {}
+    ): Boolean {
+        return BlackHoleOpener.openExternal(context, file, onProgress) is BlackHoleOpenResult.Opened
     }
 }
