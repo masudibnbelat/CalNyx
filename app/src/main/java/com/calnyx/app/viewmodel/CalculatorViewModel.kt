@@ -480,6 +480,40 @@ class CalculatorViewModel(application: Application) : AndroidViewModel(applicati
                     insertAtCursor("%")
                 }
             }
+            "." -> {
+                // DECIMAL FIX (2026-11-07): one dot per number -
+                // "5...6" must be impossible. Scan the number
+                // being typed on BOTH sides of the caret: back
+                // over digits/dots/an E-exponent, forward over
+                // digits/dots. If it already has a dot, or the
+                // dot would land inside an E-exponent (2E3.),
+                // ignore the key. "5+6." works, "5.6" + "." does
+                // not, and mid-number caret works too (5|.6).
+                val current = _expression.value
+                val pos = _cursorPosition.value.coerceIn(0, current.length)
+                var hasDot = false
+                var hasE = false
+                var i = pos - 1
+                while (i >= 0) {
+                    val c = current[i]
+                    if (c.isDigit() || c == '.') {
+                        if (c == '.') hasDot = true
+                        i--
+                    } else if (c == 'E') {
+                        hasE = true
+                        i--
+                    } else break
+                }
+                var j = pos
+                while (j < current.length) {
+                    val c = current[j]
+                    if (c.isDigit() || c == '.') {
+                        if (c == '.') hasDot = true
+                        j++
+                    } else break
+                }
+                if (!hasDot && !hasE) insertAtCursor(".")
+            }
             "nPr" -> insertAtCursor("P")
             "nCr" -> insertAtCursor("C")
             "Rand" -> {

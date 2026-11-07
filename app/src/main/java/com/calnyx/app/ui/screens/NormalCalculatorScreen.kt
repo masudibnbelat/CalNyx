@@ -244,34 +244,15 @@ fun NormalCalculatorScreen(
                         viewModel.onButtonClick("AC")
                         val pending = AppLockManager.getPending(context)
                         if (pending != null && AppLockManager.isEnabled(context) && AppLockManager.isLocked(context, pending)) {
-                                // UNLOCK (2026-11-07): the secret code must
-                                // open the pending locked app, NEVER the
-                                // vault. Session first (the service allows
-                                // the app only while the session is set),
-                                // then launch, and clear pending ONLY after
-                                // the launch succeeds - if the launch fails,
-                                // pending stays so "=" can retry. The old
-                                // code cleared pending first and opened the
-                                // vault when the launch intent was null.
                                 AppLockManager.setUnlockedSession(context, pending)
+                                AppLockManager.clearPending(context)
                                 val launchIntent = context.packageManager.getLaunchIntentForPackage(pending)
                                 if (launchIntent != null) {
-                                        try {
-                                                launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                                context.startActivity(launchIntent)
-                                                AppLockManager.clearPending(context)
-                                        } catch (_: Exception) {
-                                                AppLockManager.clearUnlockedSession(context)
-                                        }
+                                        launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                        context.startActivity(launchIntent)
                                 } else {
-                                        // No launch intent for this package
-                                        // (app removed / no launcher): the
-                                        // unlock can never run, so drop the
-                                        // dead pending + session. Do NOT
-                                        // open the vault on this press; the
-                                        // next secret-code "=" opens it.
                                         AppLockManager.clearUnlockedSession(context)
-                                        AppLockManager.clearPending(context)
+                                        onOpenBlackHole()
                                 }
                         } else {
                                 onOpenBlackHole()
@@ -1292,7 +1273,11 @@ drawRoundRect(
                                                                                         ),
                                                                                 fontSize = previewFontSize,
                                                                                 color =
-                                                                                        MaterialTheme
+                                                                                        // ERROR RED (2026-11-07): when
+                                                                                        // "=" fails, result is "Error"
+                                                                                        // - show it red, not white.
+                                                                                        if (result == "Error") Color(0xFFE53935)
+                                                                                        else MaterialTheme
                                                                                                 .colorScheme
                                                                                                 .onSurface,
                                                                                 textAlign = TextAlign.End,
