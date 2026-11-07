@@ -2,7 +2,7 @@
 // NEW FILE - first-run introduction. Shows once, on the very first
 // open after install (NavGraph gates on OnboardingPrefs.isDone).
 // 7 steps, swipe is off - move with Next / Back / Skip only:
-//   0 Welcome - app logo + name, developer introduction.
+//   0 Welcome - app logo + name, what the app is.
 //   1 Calculators - Normal, Scientific, CalTape, Converter,
 //     Number System, ICT, Notepad, and how to use them.
 //   2 Black Hole + App Lock - the hidden vault and locked apps.
@@ -15,6 +15,13 @@
 //   6 All set - Start opens the calculator.
 // English only, black / white only. The permission list comes from
 // OnboardingPermissions - the same list the About dialog shows.
+// % ONLY (2026-11-07): every size is a % of the window (windowW /
+// windowH / minDim from BoxWithConstraints) - no fixed dp/sp
+// anywhere except 1.dp hairline borders.
+// WEBSITE (2026-11-07): the developer intro on the Welcome page
+// is gone - it now introduces the APP instead. The developer
+// email is removed everywhere; the About dialog links the
+// website masudibnbelat.vercel.app instead (see NavGraph.kt).
 package com.calnyx.app.ui.screens
 
 import android.app.Activity
@@ -27,6 +34,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -87,6 +95,7 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowInsetsControllerCompat
@@ -96,6 +105,9 @@ import com.calnyx.app.onboarding.AppPermission
 import com.calnyx.app.onboarding.OnboardingPermissions
 import com.calnyx.app.onboarding.PermissionKind
 import kotlinx.coroutines.launch
+
+// % base for the whole intro: minDim = the window's short side.
+private data class IntroDims(val minDim: Dp, val windowW: Dp, val windowH: Dp)
 
 private const val PAGE_COUNT = 7
 private const val PAGE_PERMISSIONS = 5
@@ -172,26 +184,31 @@ fun OnboardingScreen(darkTheme: Boolean, onFinish: () -> Unit) {
         }
     }
 
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val windowW = maxWidth
+        val windowH = maxHeight
+        val minDim = minOf(windowW, windowH)
+        val d = IntroDims(minDim, windowW, windowH)
     Column(
         modifier = Modifier.fillMaxSize()
             .background(pageBg)
             .statusBarsPadding()
             .navigationBarsPadding()
-            .padding(horizontal = 20.dp)
+            .padding(horizontal = d.windowW * 0.056f)
     ) {
         // Top row: page dots on the left, Skip on the right.
         Row(
-            modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+            modifier = Modifier.fillMaxWidth().padding(top = d.windowH * 0.019f),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Row(
                 modifier = Modifier.weight(1f),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                horizontalArrangement = Arrangement.spacedBy(d.windowW * 0.017f),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 repeat(PAGE_COUNT) { index ->
                     Box(
-                        modifier = Modifier.size(if (index == page) 10.dp else 7.dp)
+                        modifier = Modifier.size(if (index == page) d.minDim * 0.028f else d.minDim * 0.019f)
                             .clip(CircleShape)
                             .background(
                                 if (index == page) onPageColor
@@ -203,10 +220,10 @@ fun OnboardingScreen(darkTheme: Boolean, onFinish: () -> Unit) {
             if (page != PAGE_DONE) {
                 Text(
                     text = "Skip",
-                    fontSize = 15.sp,
+                    fontSize = (d.minDim * 0.042f).value.sp,
                     fontWeight = FontWeight.Medium,
                     color = onPageColor,
-                    modifier = Modifier.clickable { onFinish() }.padding(8.dp)
+                    modifier = Modifier.clickable { onFinish() }.padding(d.minDim * 0.022f)
                 )
             }
         }
@@ -219,15 +236,15 @@ fun OnboardingScreen(darkTheme: Boolean, onFinish: () -> Unit) {
             Column(
                 modifier = Modifier.fillMaxSize()
                     .verticalScroll(rememberScrollState())
-                    .padding(vertical = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                    .padding(vertical = d.windowH * 0.025f),
+                verticalArrangement = Arrangement.spacedBy(d.windowH * 0.019f)
             ) {
                 when (pagerPage) {
-                    0 -> WelcomePage(onPageColor, thumbBg, cardBg, cardBorder)
-                    1 -> CalculatorsPage(onPageColor, thumbBg)
-                    2 -> BlackHolePage(onPageColor, thumbBg)
-                    3 -> SoundHardwarePage(onPageColor, thumbBg)
-                    4 -> SpyClipboardPage(onPageColor, thumbBg)
+                    0 -> WelcomePage(onPageColor, thumbBg, cardBg, cardBorder, d)
+                    1 -> CalculatorsPage(onPageColor, thumbBg, d)
+                    2 -> BlackHolePage(onPageColor, thumbBg, d)
+                    3 -> SoundHardwarePage(onPageColor, thumbBg, d)
+                    4 -> SpyClipboardPage(onPageColor, thumbBg, d)
                     5 -> PermissionsPage(
                         onPageColor = onPageColor,
                         cardBg = cardBg,
@@ -235,35 +252,36 @@ fun OnboardingScreen(darkTheme: Boolean, onFinish: () -> Unit) {
                         permStates = permStates,
                         allRequiredDone = allRequiredDone,
                         onGrant = ::grant,
-                        onToggle = ::toggle
+                        onToggle = ::toggle,
+                        d = d
                     )
-                    6 -> DonePage(onPageColor, thumbBg)
+                    6 -> DonePage(onPageColor, thumbBg, d)
                 }
             }
         }
 
         // Bottom row: Back + Next / Start.
         Row(
-            modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
+            modifier = Modifier.fillMaxWidth().padding(vertical = d.windowH * 0.019f),
             verticalAlignment = Alignment.CenterVertically
         ) {
             if (page > 0) {
                 Row(
                     modifier = Modifier.clickable {
                         scope.launch { pagerState.animateScrollToPage(page - 1) }
-                    }.padding(8.dp),
+                    }.padding(d.minDim * 0.022f),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
                         Icons.Default.ArrowBack,
                         contentDescription = null,
                         tint = onPageColor,
-                        modifier = Modifier.size(20.dp)
+                        modifier = Modifier.size(d.minDim * 0.056f)
                     )
-                    Spacer(modifier = Modifier.width(4.dp))
+                    Spacer(modifier = Modifier.width(d.windowW * 0.011f))
                     Text(
                         text = "Back",
-                        fontSize = 15.sp,
+                        fontSize = (d.minDim * 0.042f).value.sp,
                         fontWeight = FontWeight.Medium,
                         color = onPageColor
                     )
@@ -273,7 +291,7 @@ fun OnboardingScreen(darkTheme: Boolean, onFinish: () -> Unit) {
             }
             Spacer(modifier = Modifier.weight(1f))
             Box(
-                modifier = Modifier.clip(RoundedCornerShape(16.dp))
+                modifier = Modifier.clip(RoundedCornerShape(d.minDim * 0.044f))
                     .background(
                         if (nextEnabled) onPageColor
                         else onPageColor.copy(alpha = 0.25f)
@@ -285,26 +303,27 @@ fun OnboardingScreen(darkTheme: Boolean, onFinish: () -> Unit) {
                             scope.launch { pagerState.animateScrollToPage(page + 1) }
                         }
                     }
-                    .padding(horizontal = 24.dp, vertical = 14.dp),
+                    .padding(horizontal = d.windowW * 0.067f, vertical = d.windowH * 0.022f),
                 contentAlignment = Alignment.Center
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = if (page == PAGE_DONE) "Start" else "Next",
-                        fontSize = 16.sp,
+                        fontSize = (d.minDim * 0.044f).value.sp,
                         fontWeight = FontWeight.Bold,
                         color = pageBg
                     )
-                    Spacer(modifier = Modifier.width(6.dp))
+                    Spacer(modifier = Modifier.width(d.windowW * 0.017f))
                     Icon(
                         Icons.Default.ArrowForward,
                         contentDescription = null,
                         tint = pageBg,
-                        modifier = Modifier.size(20.dp)
+                        modifier = Modifier.size(d.minDim * 0.056f)
                     )
                 }
             }
         }
+    }
     }
 }
 
@@ -350,89 +369,89 @@ private fun AppIconImage(size: androidx.compose.ui.unit.Dp, bgColor: Color, fgCo
 }
 
 @Composable
-private fun PageTitle(text: String, color: Color) {
+private fun PageTitle(text: String, color: Color, d: IntroDims) {
     Text(
         text = text,
-        fontSize = 26.sp,
+        fontSize = (d.minDim * 0.072f).value.sp,
         fontWeight = FontWeight.Bold,
         color = color
     )
 }
 
 @Composable
-private fun PageSubtitle(text: String, color: Color) {
+private fun PageSubtitle(text: String, color: Color, d: IntroDims) {
     Text(
         text = text,
-        fontSize = 15.sp,
+        fontSize = (d.minDim * 0.042f).value.sp,
         color = color.copy(alpha = 0.75f)
     )
 }
 
 @Composable
-private fun FeatureRow(icon: ImageVector, title: String, text: String, onPageColor: Color, thumbBg: Color) {
+private fun FeatureRow(icon: ImageVector, title: String, text: String, onPageColor: Color, thumbBg: Color, d: IntroDims) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
-            modifier = Modifier.size(52.dp).clip(CircleShape).background(thumbBg),
+            modifier = Modifier.size(d.minDim * 0.144f).clip(CircleShape).background(thumbBg),
             contentAlignment = Alignment.Center
         ) {
-            Icon(icon, contentDescription = null, tint = onPageColor, modifier = Modifier.size(26.dp))
+            Icon(icon, contentDescription = null, tint = onPageColor, modifier = Modifier.size(d.minDim * 0.072f))
         }
-        Spacer(modifier = Modifier.width(12.dp))
+        Spacer(modifier = Modifier.width(d.windowW * 0.033f))
         Column(modifier = Modifier.weight(1f)) {
-            Text(text = title, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = onPageColor)
-            Text(text = text, fontSize = 14.sp, color = onPageColor.copy(alpha = 0.75f))
+            Text(text = title, fontSize = (d.minDim * 0.044f).value.sp, fontWeight = FontWeight.Bold, color = onPageColor)
+            Text(text = text, fontSize = (d.minDim * 0.039f).value.sp, color = onPageColor.copy(alpha = 0.75f))
         }
     }
 }
 
 @Composable
-private fun WelcomePage(onPageColor: Color, thumbBg: Color, cardBg: Color, cardBorder: Color) {
+private fun WelcomePage(onPageColor: Color, thumbBg: Color, cardBg: Color, cardBorder: Color, d: IntroDims) {
     Column(
         modifier = Modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        verticalArrangement = Arrangement.spacedBy(d.windowH * 0.019f)
     ) {
-        Spacer(modifier = Modifier.height(24.dp))
-        AppIconImage(size = 96.dp, bgColor = onPageColor, fgColor = cardBg)
+        Spacer(modifier = Modifier.height(d.windowH * 0.038f))
+        AppIconImage(size = d.minDim * 0.267f, bgColor = onPageColor, fgColor = cardBg)
         Text(
             text = "Welcome to CalNyx",
-            fontSize = 28.sp,
+            fontSize = (d.minDim * 0.078f).value.sp,
             fontWeight = FontWeight.Bold,
             color = onPageColor,
             textAlign = TextAlign.Center
         )
         Text(
             text = "Your all-in-one calculator",
-            fontSize = 16.sp,
+            fontSize = (d.minDim * 0.044f).value.sp,
             color = onPageColor.copy(alpha = 0.75f),
             textAlign = TextAlign.Center
         )
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(d.windowH * 0.013f))
         Column(
             modifier = Modifier.fillMaxWidth()
-                .clip(RoundedCornerShape(16.dp))
+                .clip(RoundedCornerShape(d.minDim * 0.044f))
                 .background(cardBg)
-                .border(1.dp, cardBorder, RoundedCornerShape(16.dp))
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+                .border(1.dp, cardBorder, RoundedCornerShape(d.minDim * 0.044f))
+                .padding(d.minDim * 0.044f),
+            verticalArrangement = Arrangement.spacedBy(d.windowH * 0.013f)
         ) {
             Text(
-                text = "Made by Masud Ibn Belat",
-                fontSize = 16.sp,
+                text = "What is CalNyx?",
+                fontSize = (d.minDim * 0.044f).value.sp,
                 fontWeight = FontWeight.Bold,
                 color = onPageColor
             )
             Text(
-                text = "Freelance full-stack developer from Sirajganj, Bangladesh. CalNyx is a calculator, a hidden private vault, an app lock, sound and hardware controls, a floating ball, a secret camera recorder and a clipboard history - in one app.",
-                fontSize = 14.sp,
+                text = "CalNyx is a calculator that does more than calculate. Behind the everyday calculator it hides a private vault, an app lock, sound and hardware controls, a floating ball, a secret camera recorder and a clipboard history - everything in one app, made to stay private.",
+                fontSize = (d.minDim * 0.039f).value.sp,
                 color = onPageColor.copy(alpha = 0.8f)
             )
             Text(
                 text = "Everything works offline and stays on this phone.",
-                fontSize = 14.sp,
+                fontSize = (d.minDim * 0.039f).value.sp,
                 fontWeight = FontWeight.Medium,
                 color = onPageColor
             )
@@ -441,77 +460,77 @@ private fun WelcomePage(onPageColor: Color, thumbBg: Color, cardBg: Color, cardB
 }
 
 @Composable
-private fun CalculatorsPage(onPageColor: Color, thumbBg: Color) {
-    PageTitle("Calculators", onPageColor)
-    PageSubtitle("Seven calculators in one place. Tap one in the menu to open it.", onPageColor)
-    FeatureRow(Icons.Default.Calculate, "Normal", "Everyday calculator with history and Ans. Swipe right for History.", onPageColor, thumbBg)
-    FeatureRow(Icons.Default.Functions, "Scientific", "Advanced functions. Pull the keypad down to reveal them.", onPageColor, thumbBg)
-    FeatureRow(Icons.Default.ReceiptLong, "CalTape", "A tape with sheets and totals. Swipe left on it to open the menu.", onPageColor, thumbBg)
-    FeatureRow(Icons.Default.SwapHoriz, "Converter", "Length, weight, volume and more.", onPageColor, thumbBg)
-    FeatureRow(Icons.Default.Numbers, "Number System", "Binary, decimal, octal and hex.", onPageColor, thumbBg)
-    FeatureRow(Icons.Default.Computer, "ICT", "Binary arithmetic for ICT study.", onPageColor, thumbBg)
-    FeatureRow(Icons.Default.NoteAlt, "Notepad", "Notes with calculations.", onPageColor, thumbBg)
-    PageSubtitle("Tip: swipe left anywhere to open the menu.", onPageColor)
+private fun CalculatorsPage(onPageColor: Color, thumbBg: Color, d: IntroDims) {
+    PageTitle("Calculators", onPageColor, d)
+    PageSubtitle("Seven calculators in one place. Tap one in the menu to open it.", onPageColor, d)
+    FeatureRow(Icons.Default.Calculate, "Normal", "Everyday calculator with history and Ans. Swipe right for History.", onPageColor, thumbBg, d)
+    FeatureRow(Icons.Default.Functions, "Scientific", "Advanced functions. Pull the keypad down to reveal them.", onPageColor, thumbBg, d)
+    FeatureRow(Icons.Default.ReceiptLong, "CalTape", "A tape with sheets and totals. Swipe left on it to open the menu.", onPageColor, thumbBg, d)
+    FeatureRow(Icons.Default.SwapHoriz, "Converter", "Length, weight, volume and more.", onPageColor, thumbBg, d)
+    FeatureRow(Icons.Default.Numbers, "Number System", "Binary, decimal, octal and hex.", onPageColor, thumbBg, d)
+    FeatureRow(Icons.Default.Computer, "ICT", "Binary arithmetic for ICT study.", onPageColor, thumbBg, d)
+    FeatureRow(Icons.Default.NoteAlt, "Notepad", "Notes with calculations.", onPageColor, thumbBg, d)
+    PageSubtitle("Tip: swipe left anywhere to open the menu.", onPageColor, d)
 }
 
 @Composable
-private fun BlackHolePage(onPageColor: Color, thumbBg: Color) {
-    PageTitle("Black Hole & App Lock", onPageColor)
-    PageSubtitle("Your private space, hidden inside the calculator.", onPageColor)
-    FeatureRow(Icons.Default.Lock, "Black Hole vault", "Photos, videos, documents and audio, hidden from the gallery and the Files app. Nothing leaves this phone.", onPageColor, thumbBg)
-    FeatureRow(Icons.Default.Calculate, "How to open it", "Type your secret calculation, then tap =. Long-press = to set or change the secret.", onPageColor, thumbBg)
-    FeatureRow(Icons.Default.Lock, "App Lock", "Lock any app. Opening it shows the calculator instead, until you type the secret code and tap =.", onPageColor, thumbBg)
-    PageSubtitle("The vault closes itself the moment you leave the app.", onPageColor)
+private fun BlackHolePage(onPageColor: Color, thumbBg: Color, d: IntroDims) {
+    PageTitle("Black Hole & App Lock", onPageColor, d)
+    PageSubtitle("Your private space, hidden inside the calculator.", onPageColor, d)
+    FeatureRow(Icons.Default.Lock, "Black Hole vault", "Photos, videos, documents and audio, hidden from the gallery and the Files app. Nothing leaves this phone.", onPageColor, thumbBg, d)
+    FeatureRow(Icons.Default.Calculate, "How to open it", "Type your secret calculation, then tap =. Long-press = to set or change the secret.", onPageColor, thumbBg, d)
+    FeatureRow(Icons.Default.Lock, "App Lock", "Lock any app. Opening it shows the calculator instead, until you type the secret code and tap =.", onPageColor, thumbBg, d)
+    PageSubtitle("The vault closes itself the moment you leave the app.", onPageColor, d)
 }
 
 @Composable
-private fun SoundHardwarePage(onPageColor: Color, thumbBg: Color) {
-    PageTitle("Sound & Hardware", onPageColor)
-    PageSubtitle("Your phone's controls, from inside the calculator.", onPageColor)
-    FeatureRow(Icons.Default.VolumeUp, "Sound", "Ringer modes and Media, Ringtone, Alarm and Call volumes.", onPageColor, thumbBg)
-    FeatureRow(Icons.Default.PowerSettingsNew, "Hardware", "Power menu, Lock screen, Network switcher and screen orientation.", onPageColor, thumbBg)
-    FeatureRow(Icons.Default.Calculate, "Floating Ball", "A white ball on top of every app: call, power, lock, flashlight, screenshot and more.", onPageColor, thumbBg)
-    PageSubtitle("The ball never opens the app by itself - tap it and only its small panel opens.", onPageColor)
+private fun SoundHardwarePage(onPageColor: Color, thumbBg: Color, d: IntroDims) {
+    PageTitle("Sound & Hardware", onPageColor, d)
+    PageSubtitle("Your phone's controls, from inside the calculator.", onPageColor, d)
+    FeatureRow(Icons.Default.VolumeUp, "Sound", "Ringer modes and Media, Ringtone, Alarm and Call volumes.", onPageColor, thumbBg, d)
+    FeatureRow(Icons.Default.PowerSettingsNew, "Hardware", "Power menu, Lock screen, Network switcher and screen orientation.", onPageColor, thumbBg, d)
+    FeatureRow(Icons.Default.Calculate, "Floating Ball", "A white ball on top of every app: call, power, lock, flashlight, screenshot and more.", onPageColor, thumbBg, d)
+    PageSubtitle("The ball never opens the app by itself - tap it and only its small panel opens.", onPageColor, d)
 }
 
 @Composable
-private fun SpyClipboardPage(onPageColor: Color, thumbBg: Color) {
-    PageTitle("Spy & Clipboard", onPageColor)
-    PageSubtitle("Two quiet tools that work in the background.", onPageColor)
-    FeatureRow(Icons.Default.Videocam, "Spy", "Secret camera recording with the front or back camera. Videos stay inside the app, never in the gallery.", onPageColor, thumbBg)
-    FeatureRow(Icons.Default.ContentPaste, "Clipboard", "Everything you copy is saved offline - text and images. Open it from the menu any time.", onPageColor, thumbBg)
-    PageSubtitle("Both work fully offline.", onPageColor)
+private fun SpyClipboardPage(onPageColor: Color, thumbBg: Color, d: IntroDims) {
+    PageTitle("Spy & Clipboard", onPageColor, d)
+    PageSubtitle("Two quiet tools that work in the background.", onPageColor, d)
+    FeatureRow(Icons.Default.Videocam, "Spy", "Secret camera recording with the front or back camera. Videos stay inside the app, never in the gallery.", onPageColor, thumbBg, d)
+    FeatureRow(Icons.Default.ContentPaste, "Clipboard", "Everything you copy is saved offline - text and images. Open it from the menu any time.", onPageColor, thumbBg, d)
+    PageSubtitle("Both work fully offline.", onPageColor, d)
 }
 
 @Composable
-private fun DonePage(onPageColor: Color, thumbBg: Color) {
+private fun DonePage(onPageColor: Color, thumbBg: Color, d: IntroDims) {
     Column(
         modifier = Modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        verticalArrangement = Arrangement.spacedBy(d.windowH * 0.019f)
     ) {
-        Spacer(modifier = Modifier.height(32.dp))
+        Spacer(modifier = Modifier.height(d.windowH * 0.05f))
         Box(
-            modifier = Modifier.size(96.dp).clip(CircleShape).background(onPageColor),
+            modifier = Modifier.size(d.minDim * 0.267f).clip(CircleShape).background(onPageColor),
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 Icons.Default.Check,
                 contentDescription = null,
                 tint = thumbBg,
-                modifier = Modifier.size(48.dp)
+                modifier = Modifier.size(d.minDim * 0.133f)
             )
         }
         Text(
             text = "You're all set",
-            fontSize = 28.sp,
+            fontSize = (d.minDim * 0.078f).value.sp,
             fontWeight = FontWeight.Bold,
             color = onPageColor,
             textAlign = TextAlign.Center
         )
         Text(
             text = "CalNyx is ready. Tap Start to open your calculator.",
-            fontSize = 16.sp,
+            fontSize = (d.minDim * 0.044f).value.sp,
             color = onPageColor.copy(alpha = 0.75f),
             textAlign = TextAlign.Center
         )
@@ -526,12 +545,14 @@ private fun PermissionsPage(
     permStates: Map<String, Boolean>,
     allRequiredDone: Boolean,
     onGrant: (AppPermission) -> Unit,
-    onToggle: (AppPermission, Boolean) -> Unit
+    onToggle: (AppPermission, Boolean) -> Unit,
+    d: IntroDims
 ) {
-    PageTitle("Permissions", onPageColor)
+    PageTitle("Permissions", onPageColor, d)
     PageSubtitle(
         "CalNyx needs these to work. Grant each one - Next unlocks when everything required is granted. You can check this list later in About this app.",
-        onPageColor
+        onPageColor,
+        d
     )
     var notificationsKeptOn by remember { mutableStateOf(false) }
     OnboardingPermissions.all().forEach { permission ->
@@ -540,18 +561,18 @@ private fun PermissionsPage(
         val isToggle = permission.kind == PermissionKind.TOGGLE
         Column(
             modifier = Modifier.fillMaxWidth()
-                .clip(RoundedCornerShape(16.dp))
+                .clip(RoundedCornerShape(d.minDim * 0.044f))
                 .background(cardBg)
-                .border(1.dp, cardBorder, RoundedCornerShape(16.dp))
-                .padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+                .border(1.dp, cardBorder, RoundedCornerShape(d.minDim * 0.044f))
+                .padding(d.minDim * 0.033f),
+            verticalArrangement = Arrangement.spacedBy(d.windowH * 0.013f)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Box(
-                    modifier = Modifier.size(44.dp).clip(CircleShape)
+                    modifier = Modifier.size(d.minDim * 0.122f).clip(CircleShape)
                         .background(if (granted) onPageColor else cardBorder),
                     contentAlignment = Alignment.Center
                 ) {
@@ -560,31 +581,31 @@ private fun PermissionsPage(
                             Icons.Default.Check,
                             contentDescription = null,
                             tint = cardBg,
-                            modifier = Modifier.size(24.dp)
+                            modifier = Modifier.size(d.minDim * 0.067f)
                         )
                     } else {
                         Icon(
                             permission.icon,
                             contentDescription = null,
                             tint = onPageColor,
-                            modifier = Modifier.size(24.dp)
+                            modifier = Modifier.size(d.minDim * 0.067f)
                         )
                     }
                 }
-                Spacer(modifier = Modifier.width(12.dp))
+                Spacer(modifier = Modifier.width(d.windowW * 0.033f))
                 Column(modifier = Modifier.weight(1f)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             text = permission.title,
-                            fontSize = 15.sp,
+                            fontSize = (d.minDim * 0.042f).value.sp,
                             fontWeight = FontWeight.Bold,
                             color = onPageColor
                         )
                         if (permission.optional) {
-                            Spacer(modifier = Modifier.width(6.dp))
+                            Spacer(modifier = Modifier.width(d.windowW * 0.017f))
                             Text(
                                 text = "Optional",
-                                fontSize = 11.sp,
+                                fontSize = (d.minDim * 0.031f).value.sp,
                                 fontWeight = FontWeight.Medium,
                                 color = onPageColor.copy(alpha = 0.6f)
                             )
@@ -592,7 +613,7 @@ private fun PermissionsPage(
                     }
                     Text(
                         text = permission.description,
-                        fontSize = 13.sp,
+                        fontSize = (d.minDim * 0.036f).value.sp,
                         color = onPageColor.copy(alpha = 0.75f)
                     )
                 }
@@ -606,7 +627,7 @@ private fun PermissionsPage(
                 ) {
                     Text(
                         text = if (granted) "Hidden" else "Showing",
-                        fontSize = 13.sp,
+                        fontSize = (d.minDim * 0.036f).value.sp,
                         fontWeight = FontWeight.Medium,
                         color = onPageColor.copy(alpha = 0.75f),
                         modifier = Modifier.weight(1f)
@@ -625,15 +646,15 @@ private fun PermissionsPage(
             }
             if (!granted && !isStop && !isToggle) {
                 Box(
-                    modifier = Modifier.fillMaxWidth().height(44.dp)
-                        .clip(RoundedCornerShape(12.dp))
+                    modifier = Modifier.fillMaxWidth().height(d.windowH * 0.069f)
+                        .clip(RoundedCornerShape(d.minDim * 0.033f))
                         .background(onPageColor)
                         .clickable { onGrant(permission) },
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
                         text = "Grant",
-                        fontSize = 15.sp,
+                        fontSize = (d.minDim * 0.042f).value.sp,
                         fontWeight = FontWeight.Bold,
                         color = cardBg
                     )
@@ -642,32 +663,32 @@ private fun PermissionsPage(
             if (isStop && !granted) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(d.windowW * 0.022f)
                 ) {
                     Box(
-                        modifier = Modifier.weight(1f).height(44.dp)
-                            .clip(RoundedCornerShape(12.dp))
+                        modifier = Modifier.weight(1f).height(d.windowH * 0.069f)
+                            .clip(RoundedCornerShape(d.minDim * 0.033f))
                             .background(onPageColor)
                             .clickable { onGrant(permission) },
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
                             text = "Turn off",
-                            fontSize = 15.sp,
+                            fontSize = (d.minDim * 0.042f).value.sp,
                             fontWeight = FontWeight.Bold,
                             color = cardBg
                         )
                     }
                     Box(
-                        modifier = Modifier.weight(1f).height(44.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .border(1.dp, onPageColor, RoundedCornerShape(12.dp))
+                        modifier = Modifier.weight(1f).height(d.windowH * 0.069f)
+                            .clip(RoundedCornerShape(d.minDim * 0.033f))
+                            .border(1.dp, onPageColor, RoundedCornerShape(d.minDim * 0.033f))
                             .clickable { notificationsKeptOn = true },
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
                             text = "Keep on",
-                            fontSize = 15.sp,
+                            fontSize = (d.minDim * 0.042f).value.sp,
                             fontWeight = FontWeight.Medium,
                             color = onPageColor
                         )
@@ -677,7 +698,7 @@ private fun PermissionsPage(
             if (isStop && notificationsKeptOn && !granted) {
                 Text(
                     text = "Notifications stay on. You can turn them off later from About this app.",
-                    fontSize = 13.sp,
+                    fontSize = (d.minDim * 0.036f).value.sp,
                     color = onPageColor.copy(alpha = 0.75f)
                 )
             }
@@ -686,7 +707,7 @@ private fun PermissionsPage(
     if (allRequiredDone) {
         Text(
             text = "All required permissions granted - tap Next.",
-            fontSize = 14.sp,
+            fontSize = (d.minDim * 0.039f).value.sp,
             fontWeight = FontWeight.Medium,
             color = onPageColor,
             textAlign = TextAlign.Center,
@@ -695,7 +716,7 @@ private fun PermissionsPage(
     } else {
         Text(
             text = "Grant the remaining permissions to continue, or tap Skip to finish the introduction.",
-            fontSize = 14.sp,
+            fontSize = (d.minDim * 0.039f).value.sp,
             color = onPageColor.copy(alpha = 0.75f),
             textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth()

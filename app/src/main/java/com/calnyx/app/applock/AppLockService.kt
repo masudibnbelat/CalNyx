@@ -1,25 +1,30 @@
 // FILE: app/src/main/java/com/calnyx/app/applock/AppLockService.kt
-// PANEL6-FIXED3 VERSION (PANEL6 + the 30s-lock fix) - replace your old AppLockService.kt with this file.
-// This is PANEL6 (companion requestPowerDialog / requestLockScreen /
-// requestOfficialScreenshot + OrientationGuard hook) WITH the FIXED3
-// changes below. Do NOT use the plain FIXED2 file for this service -
-// it has no companion functions, and BallPanelActivity /
-// MoanControlScreen will not compile without them (that is the build
-// error you just saw).
-// Based on PANEL2 (FIXED2 session logic unchanged). Only change:
-// screenshot now uses the phone's OFFICIAL screenshot via
-// GLOBAL_ACTION_TAKE_SCREENSHOT (Android 9+). The system shows
-// its own screenshot preview, so the user can see it, share it
-// and edit it. The old custom takeScreenshot() + save-to-file
-// path is removed - it only showed a toast and the user could
-// not tell if a screenshot was taken.
-// Based on MOAN (FIXED2 + power/lock). Only addition: screenshot
-// for the floating-ball mini panel. All FIXED2 session logic
-// unchanged. Screenshot uses takeScreenshot() (Android 11+ only)
-// and saves to Pictures/CalNyx. Needs canTakeScreenshot=true in
-// app_lock_service_config.xml and Accessibility on. On Android
-// 9/10 it returns false and the panel shows a note.
-// Apply TOGETHER with AppLockManager-FIXED2.kt and NavGraph-FIXED2.kt.
+// LOCK-ON-EXIT + HOME-FIX VERSION - replace your old
+// AppLockService.kt with this file.
+// This is the LOCK-ON-EXIT version (PANEL6-FIXED3, no timer,
+// Recents is an exit, screen off ends the session) WITH the
+// HOME FIX below. Companion requestPowerDialog /
+// requestLockScreen / requestOfficialScreenshot + OrientationGuard
+// hook unchanged. Do NOT use the plain FIXED2 file for this
+// service - it has no companion functions, and BallPanelActivity /
+// MoanControlScreen will not compile without them.
+// HOME FIX (2026-11-07) - the real reason Home never locked:
+// hasLauncher() uses getLaunchIntentForPackage(), which only
+// looks for CATEGORY_INFO / CATEGORY_LAUNCHER activities - and a
+// home launcher's main activity declares CATEGORY_HOME instead,
+// so it returns null for the home screen. The service then hit
+// the "not a launchable app - ignore" branch below and NEVER
+// ended the session on going Home. The session stayed alive
+// forever (until screen off / the 10-min stale guard / switching
+// to another launchable app / manually opening CalNyx) - that is
+// why the 30s timer "sometimes" locked and why lock-on-exit
+// still did not lock after Home. Fix: isHomePackage() resolves
+// the default home with ACTION_MAIN + CATEGORY_HOME, and the
+// home screen now counts as a real app switch, so going Home
+// ends the session at once.
+// Apply TOGETHER with AppLockManager.kt (LOCK-ON-EXIT) and
+// AppLockScreen.kt from the lock-on-exit folder - those two are
+// unchanged, only this Service file is new here.
 // NormalCalculatorScreen (UNLOCK / LIFTED) stays as-is.
 //
 // WHY MIDUSEFIX STILL LOCKED MID-USE - the 3 holes found in your pasted code:
@@ -49,16 +54,16 @@
 // 3. CalNyx foreground is handled HERE, not in NavGraph:
 //    - pending != null (decoy launch to block) -> ignore, do not end.
 //    - pending == null + session != null (user manually opened CalNyx)
-//      -> real exit, end session, grace starts.
+//      -> real exit, end session (now locks at once, no grace).
 // 4. Dialog / popup window events (className contains Dialog/Popup)
 //    are ignored - they are not an app switch.
-// FIXED3 - the 30s lock sometimes never locks. TWO holes, one cause:
+// FIXED3 - the lock sometimes never locked. TWO holes, one cause:
 // the session only ended when the Service SAW an exit, so an exit it
 // never saw left the session alive forever and the app never locked:
 // 1. Screen off: locking the phone (power button, screen timeout)
 //    inside a locked app fires NO window event. The session stayed
 //    alive for hours - next open went straight in, no lock.
-//    Fix: a screen-off receiver ends the session (grace starts).
+//    Fix: a screen-off receiver ends the session.
 // 2. Ghost session: service killed (battery / OEM) or reboot while a
 //    session is alive. The switch away was missed, the session is
 //    still in prefs, next open is allowed. Fix: the session now has
@@ -68,6 +73,8 @@
 //    really in use, window events keep refreshing lastSeen, and a
 //    service restart mid-use has only a seconds-long gap - so neither
 //    fix can ever fire mid-use. The mid-use rule is untouched.
+// LOCK-ON-EXIT: there is no grace any more, so "ends the session"
+// above now means "locks immediately" - no free re-entry window.
 // Debug: adb logcat -s CalNyxAppLock  (filter by pid for clean log)
 package com.calnyx.app.applock
 
@@ -79,6 +86,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.PackageManager
 import android.os.Build
 import android.provider.Settings
 import android.util.Log
@@ -134,12 +142,13 @@ class AppLockService : AccessibilityService() {
 
     // A session unseen for longer than this is stale - the user left
     // the app through an exit the Service never saw. 10 minutes: far
-    // longer than the 30s lock time, so normal use never trips it.
+    // longer than any real pause inside the app, so normal use never
+    // trips it.
     private val STALE_SESSION_MS = 10L * 60L * 1000L
 
     // FIXED3: the screen going off is an exit the window events never
-    // show. Screen off ends the session and starts the normal grace
-    // (30s): back within 30s it reopens freely, after 30s it locks.
+    // show. Screen off ends the session - and with no grace any more,
+    // opening the app after screen off always locks.
     private val screenOffReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action != Intent.ACTION_SCREEN_OFF) return
@@ -247,6 +256,23 @@ class AppLockService : AccessibilityService() {
         }
     }
 
+    // HOME FIX: the default home launcher is a real app switch,
+    // even though hasLauncher() says false for it (see the header
+    // note). Resolved the standard way, with ACTION_MAIN +
+    // CATEGORY_HOME - no manifest change, no new permission.
+    private fun isHomePackage(packageName: String): Boolean {
+        return try {
+            val homeIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+            val info = packageManager.resolveActivity(
+                homeIntent,
+                PackageManager.MATCH_DEFAULT_ONLY
+            )
+            info?.activityInfo?.packageName == packageName
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     private fun currentImePkg(): String? {
         return try {
             val ime = Settings.Secure.getString(
@@ -316,6 +342,26 @@ class AppLockService : AccessibilityService() {
             return
         }
 
+        // LOCK-ON-EXIT: Recents is an exit. Swiping up to Recents (or
+        // the Recents button) shows a SystemUI window, which used to
+        // be ignored - so minimising to Recents and tapping the same
+        // app back left it unlocked. Now it ends the session, so
+        // minimising locks too. The notification shade is NOT Recents
+        // (its class is StatusBar / NotificationPanel), so pulling the
+        // shade down still never ends a session.
+        val clsName = event.className?.toString() ?: ""
+        if (clsName.contains("Recents", ignoreCase = true)) {
+            if (session != null) {
+                Log.d("CalNyxAppLock", "recents, ending session $session")
+                try {
+                    AppLockManager.endUnlockedSession(this)
+                } catch (_: Exception) {
+                }
+            }
+            setLastForeground(pkg)
+            return
+        }
+
         // FIXED2: transient overlay - keyboard, permission dialog,
         // share sheet, picker, GMS dialog. Never change lastForeground,
         // never end a session, never block. This was hole #1.
@@ -325,7 +371,11 @@ class AppLockService : AccessibilityService() {
         }
 
         // Not a launchable app (SystemUI etc. without launcher) - ignore.
-        if (!hasLauncher(pkg)) {
+        // EXCEPT the home screen: going Home is a real exit (it ends
+        // the session in the switch block below). hasLauncher() says
+        // false for the home launcher, so without this check the
+        // service ignored every Home exit and the session never ended.
+        if (!hasLauncher(pkg) && !isHomePackage(pkg)) {
             Log.d("CalNyxAppLock", "overlay ignored pkg=$pkg last=$lastForegroundPkg")
             return
         }
@@ -336,7 +386,7 @@ class AppLockService : AccessibilityService() {
         // here. This is the whole mid-use rule. ONE exception: a STALE
         // session (see the FIXED3 note at the top of this file). A ghost
         // session is cleared and the normal lock check below runs
-        // (grace is long expired, so it blocks). While the app is
+        // (no session, so it blocks). While the app is
         // really in use, window events keep refreshing lastSeen, so
         // this can never fire mid-use.
         if (session != null && pkg == session) {
@@ -375,7 +425,8 @@ class AppLockService : AccessibilityService() {
             return
         }
 
-        // Real app switch. This is the ONLY place a session ends here.
+        // Real app switch. A session ends here (and on screen off,
+        // Recents, or a manual CalNyx open above).
         val previous = lastForegroundPkg
         setLastForeground(pkg)
 
@@ -392,18 +443,9 @@ class AppLockService : AccessibilityService() {
             return
         }
 
-        // Grace return: within auto-lock time after a real exit.
-        if (AppLockManager.isAllowed(this, pkg)) {
-            Log.d("CalNyxAppLock", "grace allow, restarting session pkg=$pkg")
-            try {
-                AppLockManager.setUnlockedSession(this, pkg)
-                AppLockManager.clearAllowed(this)
-            } catch (_: Exception) {
-            }
-            return
-        }
-
-        // Locked, no session, no grace: block.
+        // Locked, no session: block. There is no grace return any
+        // more - every exit locks, so a locked app with no live
+        // session always shows the decoy calculator.
         Log.d("CalNyxAppLock", "BLOCK pkg=$pkg previous=$previous session=$session")
         AppLockManager.setPending(this, pkg)
         try {

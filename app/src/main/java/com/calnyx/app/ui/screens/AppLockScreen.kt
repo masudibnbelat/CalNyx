@@ -17,16 +17,16 @@
 // 2. Icons are no longer loaded together, each row loads its
 //    own icon, and a bad one shows only a letter in that row.
 // 3. Icons are scaled to 96x96, so they use less memory.
-// B/W AUDIT (2026-11-06): app-theme fix — this screen now takes
-// darkTheme: Boolean = isSystemInDarkTheme() and uses it instead
-// of reading the system theme, so the app's own theme toggle
-// controls it. The "🔒" emoji in the App Lock card is now a
-// Material Lock icon. Both Switches get B/W SwitchDefaults.colors
-// and every OutlinedTextField (search, duration, custom time) gets
-// explicit B/W OutlinedTextFieldDefaults.colors, because the theme
-// defaults would paint the focused border / checked track in the
-// theme's primary colour. CircularProgressIndicator is onPageColor.
-// No primary / error colour remains anywhere on this screen.
+// % ONLY (2026-11-07): every size on this screen is a % of the
+// window (windowW / windowH / minDim from BoxWithConstraints) -
+// no fixed dp/sp anywhere except 1.dp hairline borders.
+// LOCK-ON-EXIT (2026-11-07): the "Auto-lock after" time setting is
+// removed completely - a locked app now locks the instant you leave
+// it (Home, Recents, another app, screen off), every time, with no
+// timer and no free re-entry window. So this screen has no duration
+// picker and no Custom time dialog any more; the space is freed.
+// No design change otherwise: same black/white, English only,
+// title only.
 // NO DRAWER SWIPE on this screen: it is a hidden screen —
 // NavGraph deliberately hides the drawer and top bar on the
 // AppLock route, and the vault must stay hidden with no menu
@@ -45,8 +45,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -65,6 +63,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.calnyx.app.applock.AppLockManager
@@ -101,7 +100,7 @@ private object AppIconCache {
 }
 
 @Composable
-private fun AppIcon(packageName: String, label: String) {
+private fun AppIcon(packageName: String, label: String, minDim: Dp) {
     val context = LocalContext.current
     var bitmap by remember(packageName) { mutableStateOf(AppIconCache.get(packageName)) }
     var failed by remember(packageName) { mutableStateOf(AppIconCache.isFailed(packageName)) }
@@ -123,21 +122,15 @@ private fun AppIcon(packageName: String, label: String) {
         Image(
             bitmap = bmp.asImageBitmap(),
             contentDescription = null,
-            modifier = Modifier.fillMaxSize().padding(6.dp)
+            modifier = Modifier.fillMaxSize().padding(minDim * 0.017f)
         )
     } else {
         Text(
             label.firstOrNull()?.uppercase() ?: "?",
-            fontSize = 22.sp,
+            fontSize = (minDim * 0.061f).value.sp,
             fontWeight = FontWeight.Bold
         )
     }
-}
-
-private fun formatDurationMs(ms: Long): String = when {
-    ms < 60_000L -> "${ms / 1000L} sec"
-    ms % 60_000L == 0L -> "${ms / 60_000L} min"
-    else -> "${ms / 1000L} sec"
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -154,9 +147,9 @@ fun AppLockScreen(
     val onPageColor = if (isDark) Color(0xFFF6F4EF) else Color(0xFF0E0E0E)
     val thumbBg = if (isDark) Color(0xFF262626) else Color(0xFFEFEDE8)
 
-    // B/W colours for every OutlinedTextField on this screen
-    // (search, duration, custom time): the theme defaults would
-    // paint the focused border in the theme's primary colour.
+    // B/W colours for the search OutlinedTextField on this screen:
+    // the theme defaults would paint the focused border in the
+    // theme's primary colour.
     val fieldColors = OutlinedTextFieldDefaults.colors(
         focusedBorderColor = onPageColor,
         unfocusedBorderColor = cardBorderColor,
@@ -184,12 +177,6 @@ fun AppLockScreen(
     var loading by remember { mutableStateOf(true) }
 
     val accessibilityOn = AppLockManager.isAccessibilityEnabled(context)
-    var unlockDuration by remember { mutableStateOf(AppLockManager.getUnlockDurationMs(context)) }
-    val durationPresets = listOf(30_000L to "30 sec", 60_000L to "1 min", 300_000L to "5 min")
-    var durationMenuExpanded by remember { mutableStateOf(false) }
-    var showCustomDialog by remember { mutableStateOf(false) }
-    var customAmount by remember { mutableStateOf("") }
-    var customIsMinutes by remember { mutableStateOf(true) }
 
     LaunchedEffect(Unit) {
         val list = withContext(Dispatchers.IO) {
@@ -238,13 +225,17 @@ fun AppLockScreen(
         color = pageBg,
         contentColor = onPageColor
     ) {
+        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+            val windowW = maxWidth
+            val windowH = maxHeight
+            val minDim = minOf(windowW, windowH)
         Column(
             modifier = Modifier.fillMaxSize().statusBarsPadding()
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth()
-                    .padding(start = 4.dp, end = 8.dp, top = 4.dp, bottom = 4.dp)
+                    .padding(start = windowW * 0.011f, end = windowW * 0.022f, top = windowH * 0.006f, bottom = windowH * 0.006f)
             ) {
                 IconButton(onClick = onBack) {
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -262,21 +253,21 @@ fun AppLockScreen(
             }
 
             Column(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                modifier = Modifier.fillMaxWidth().padding(horizontal = windowW * 0.044f),
+                verticalArrangement = Arrangement.spacedBy(windowH * 0.019f)
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth()
-                        .shadow(10.dp, RoundedCornerShape(24.dp))
-                        .clip(RoundedCornerShape(24.dp))
+                        .shadow(minDim * 0.028f, RoundedCornerShape(minDim * 0.067f))
+                        .clip(RoundedCornerShape(minDim * 0.067f))
                         .background(cardBg)
-                        .border(1.dp, cardBorderColor, RoundedCornerShape(24.dp))
-                        .padding(16.dp),
+                        .border(1.dp, cardBorderColor, RoundedCornerShape(minDim * 0.067f))
+                        .padding(minDim * 0.044f),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Box(
-                        modifier = Modifier.size(52.dp)
-                            .clip(RoundedCornerShape(14.dp))
+                        modifier = Modifier.size(minDim * 0.144f)
+                            .clip(RoundedCornerShape(minDim * 0.039f))
                             .background(thumbBg),
                         contentAlignment = Alignment.Center
                     ) {
@@ -284,10 +275,10 @@ fun AppLockScreen(
                             Icons.Filled.Lock,
                             contentDescription = null,
                             tint = onPageColor,
-                            modifier = Modifier.size(24.dp)
+                            modifier = Modifier.size(minDim * 0.067f)
                         )
                     }
-                    Spacer(Modifier.width(14.dp))
+                    Spacer(Modifier.width(windowW * 0.039f))
                     Text(
                         "App Lock",
                         fontWeight = FontWeight.SemiBold,
@@ -304,131 +295,6 @@ fun AppLockScreen(
                     )
                 }
 
-                // AUTO-LOCK TIME — title only, no description.
-                // Small input box: tap it for suggestions, then Custom time.
-                Row(
-                    modifier = Modifier.fillMaxWidth()
-                        .shadow(8.dp, RoundedCornerShape(24.dp))
-                        .clip(RoundedCornerShape(24.dp))
-                        .background(cardBg)
-                        .border(1.dp, cardBorderColor, RoundedCornerShape(24.dp))
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        "Auto-lock after",
-                        fontWeight = FontWeight.SemiBold,
-                        style = MaterialTheme.typography.bodyLarge,
-                        modifier = Modifier.weight(1f)
-                    )
-                    ExposedDropdownMenuBox(
-                        expanded = durationMenuExpanded,
-                        onExpandedChange = { durationMenuExpanded = it }
-                    ) {
-                        OutlinedTextField(
-                            value = formatDurationMs(unlockDuration),
-                            onValueChange = {},
-                            readOnly = true,
-                            trailingIcon = {
-                                ExposedDropdownMenuDefaults.TrailingIcon(expanded = durationMenuExpanded)
-                            },
-                            shape = RoundedCornerShape(12.dp),
-                            singleLine = true,
-                            colors = fieldColors,
-                            modifier = Modifier.width(150.dp).menuAnchor()
-                        )
-                        ExposedDropdownMenu(
-                            expanded = durationMenuExpanded,
-                            onDismissRequest = { durationMenuExpanded = false }
-                        ) {
-                            durationPresets.forEach { (ms, label) ->
-                                DropdownMenuItem(
-                                    text = { Text(label) },
-                                    onClick = {
-                                        unlockDuration = ms
-                                        AppLockManager.setUnlockDurationMs(context, ms)
-                                        durationMenuExpanded = false
-                                    }
-                                )
-                            }
-                            DropdownMenuItem(
-                                text = { Text("Custom time...") },
-                                onClick = {
-                                    durationMenuExpanded = false
-                                    if (unlockDuration % 60_000L == 0L) {
-                                        customIsMinutes = true
-                                        customAmount = (unlockDuration / 60_000L).toString()
-                                    } else {
-                                        customIsMinutes = false
-                                        customAmount = (unlockDuration / 1000L).toString()
-                                    }
-                                    showCustomDialog = true
-                                }
-                            )
-                        }
-                    }
-                }
-
-                if (showCustomDialog) {
-                    val customValid = run {
-                        val amount = customAmount.toLongOrNull() ?: return@run false
-                        if (customIsMinutes) amount in 1..1440 else amount in 1..86400
-                    }
-                    AlertDialog(
-                        onDismissRequest = { showCustomDialog = false },
-                        title = { Text("Custom time") },
-                        text = {
-                            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                                OutlinedTextField(
-                                    value = customAmount,
-                                    onValueChange = { if (it.all { c -> c.isDigit() }) customAmount = it },
-                                    label = { Text("Time") },
-                                    singleLine = true,
-                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                    colors = fieldColors,
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    listOf("Seconds" to false, "Minutes" to true).forEach { (unitLabel, isMinutes) ->
-                                        val selected = customIsMinutes == isMinutes
-                                        Box(
-                                            modifier = Modifier
-                                                .clip(RoundedCornerShape(percent = 50))
-                                                .background(if (selected) onPageColor else cardBg)
-                                                .border(1.dp, cardBorderColor, RoundedCornerShape(percent = 50))
-                                                .clickable { customIsMinutes = isMinutes }
-                                                .padding(horizontal = 14.dp, vertical = 8.dp),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Text(
-                                                unitLabel,
-                                                fontSize = 14.sp,
-                                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-                                                color = if (selected) pageBg else onPageColor
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        },
-                        confirmButton = {
-                            TextButton(
-                                enabled = customValid,
-                                onClick = {
-                                    val amount = customAmount.toLongOrNull() ?: return@TextButton
-                                    val ms = if (customIsMinutes) amount * 60_000L else amount * 1000L
-                                    unlockDuration = ms
-                                    AppLockManager.setUnlockDurationMs(context, ms)
-                                    showCustomDialog = false
-                                }
-                            ) { Text("Save") }
-                        },
-                        dismissButton = {
-                            TextButton(onClick = { showCustomDialog = false }) { Text("Cancel") }
-                        }
-                    )
-                }
-
                 if (isEnabled && !accessibilityOn) {
                     // FIXED2: Android 13+ Restricted Settings.
                     // If the app was installed from an APK (not Play Store),
@@ -437,12 +303,12 @@ fun AppLockScreen(
                     val needsRestricted = remember { AppLockManager.needsRestrictedSetting(context) }
                     Column(
                         modifier = Modifier.fillMaxWidth()
-                            .shadow(10.dp, RoundedCornerShape(24.dp))
-                            .clip(RoundedCornerShape(24.dp))
+                            .shadow(minDim * 0.028f, RoundedCornerShape(minDim * 0.067f))
+                            .clip(RoundedCornerShape(minDim * 0.067f))
                             .background(cardBg)
-                            .border(1.dp, cardBorderColor, RoundedCornerShape(24.dp))
-                            .padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                            .border(1.dp, cardBorderColor, RoundedCornerShape(minDim * 0.067f))
+                            .padding(minDim * 0.044f),
+                        verticalArrangement = Arrangement.spacedBy(windowH * 0.013f)
                     ) {
                         Text(
                             "Accessibility is off",
@@ -466,7 +332,7 @@ fun AppLockScreen(
                                     } catch (_: Exception) {
                                     }
                                 },
-                                shape = RoundedCornerShape(12.dp),
+                                shape = RoundedCornerShape(minDim * 0.033f),
                                 colors = ButtonDefaults.buttonColors(containerColor = onPageColor, contentColor = pageBg)
                             ) { Text("Open App Info") }
                         }
@@ -476,7 +342,7 @@ fun AppLockScreen(
                                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                                 context.startActivity(intent)
                             },
-                            shape = RoundedCornerShape(12.dp),
+                            shape = RoundedCornerShape(minDim * 0.033f),
                             colors = ButtonDefaults.buttonColors(containerColor = onPageColor, contentColor = pageBg)
                         ) { Text("Open Accessibility Settings") }
                         Text(
@@ -489,7 +355,7 @@ fun AppLockScreen(
 
             }
 
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(windowH * 0.019f))
 
             OutlinedTextField(
                 value = search,
@@ -497,19 +363,19 @@ fun AppLockScreen(
                 singleLine = true,
                 placeholder = { Text("Search app") },
                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                shape = RoundedCornerShape(14.dp),
+                shape = RoundedCornerShape(minDim * 0.039f),
                 colors = fieldColors,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
+                modifier = Modifier.fillMaxWidth().padding(horizontal = windowW * 0.044f)
             )
 
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(windowH * 0.019f))
 
                 if (loading) {
-                    Box(Modifier.weight(1f).fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                    Box(Modifier.weight(1f).fillMaxWidth().padding(minDim * 0.067f), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(color = onPageColor)
                     }
                 } else if (filtered.isEmpty()) {
-                    Box(Modifier.weight(1f).fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                    Box(Modifier.weight(1f).fillMaxWidth().padding(minDim * 0.067f), contentAlignment = Alignment.Center) {
                         Text("No apps found", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 } else {
@@ -520,30 +386,30 @@ fun AppLockScreen(
                     // and contentPadding keeps the last row from hiding
                     // under the navigation bar. No animation, just smooth scroll.
                     LazyColumn(
-                        modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 16.dp),
-                        contentPadding = PaddingValues(bottom = 24.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                        modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = windowW * 0.044f),
+                        contentPadding = PaddingValues(bottom = windowH * 0.038f),
+                        verticalArrangement = Arrangement.spacedBy(windowH * 0.013f)
                     ) {
                         items(filtered, key = { it.packageName }) { app ->
                             val locked = app.packageName in lockedSet
                             Row(
                                 modifier = Modifier.fillMaxWidth()
-                                    .shadow(4.dp, RoundedCornerShape(16.dp))
-                                    .clip(RoundedCornerShape(16.dp))
+                                    .shadow(minDim * 0.011f, RoundedCornerShape(minDim * 0.044f))
+                                    .clip(RoundedCornerShape(minDim * 0.044f))
                                     .background(cardBg)
-                                    .border(1.dp, cardBorderColor, RoundedCornerShape(16.dp))
-                                    .padding(14.dp),
+                                    .border(1.dp, cardBorderColor, RoundedCornerShape(minDim * 0.044f))
+                                    .padding(minDim * 0.039f),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Box(
-                                    modifier = Modifier.size(52.dp)
-                                        .clip(RoundedCornerShape(14.dp))
+                                    modifier = Modifier.size(minDim * 0.144f)
+                                        .clip(RoundedCornerShape(minDim * 0.039f))
                                         .background(thumbBg),
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    AppIcon(packageName = app.packageName, label = app.label)
+                                    AppIcon(packageName = app.packageName, label = app.label, minDim = minDim)
                                 }
-                                Spacer(Modifier.width(14.dp))
+                                Spacer(Modifier.width(windowW * 0.039f))
                                 Column(Modifier.weight(1f)) {
                                     Text(
                                         app.label,
@@ -551,7 +417,7 @@ fun AppLockScreen(
                                         overflow = TextOverflow.Ellipsis,
                                         fontWeight = FontWeight.Medium
                                     )
-                                    Spacer(Modifier.height(2.dp))
+                                    Spacer(Modifier.height(windowH * 0.003f))
                                     Text(
                                         app.packageName,
                                         maxLines = 1,
@@ -572,6 +438,7 @@ fun AppLockScreen(
                         }
                     }
                 }
+        }
         }
     }
 }

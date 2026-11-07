@@ -48,8 +48,8 @@
 //     itself: app icon + CalNyx + version on top,
 //     a Check for updates button (opens the existing
 //     UpdateDialog), a description of the app, and below
-//     it Contact Developer with the developer's name and
-//     email - tap that row to send an email.
+//     it a Website row - tap it to open
+//     masudibnbelat.vercel.app in the browser.
 // FILE: app/src/main/java/com/calnyx/app/navigation/NavGraph.kt
 // DRAWER-THEME VERSION (2026-11-06) - replace your old NavGraph.kt
 // with this file. Based on CLIPBOARD. ONLY two drawer changes:
@@ -57,8 +57,8 @@
 //     sun/moon circle — tap it and the theme changes at once
 //     (Moon in light mode -> dark, Sun in dark mode -> light).
 //  2. Bottom: the Dark/Light mode toggle is GONE. In its place is
-//     "Contact Developer" — tap it and an email to the developer
-//     opens (DEVELOPER_EMAIL below, from the user's CV).
+//     "About this app" - tap it and the About modal opens
+//     (WEBSITE_URL below, the developer's website).
 //  Everything else is unchanged (drawer items, swipe, privacy,
 //  reopen rule, Clipboard, Blue Film folders).
 //  1. New drawer item LAST: Clipboard (ContentPaste icon).
@@ -162,7 +162,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.DarkMode
-import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Functions
@@ -361,11 +361,10 @@ private val NavThumbDark = Color(0xFF262626)
 // Red is the ONLY extra colour, for specialty only. See header.
 private val NavRed = Color(0xFFC62828)
 
-// Developer's email for the drawer's "Contact Developer" item
-// (2026-11-06). Taken from the user's own CV. To change it, edit
-// this one line — the mail intent below uses it.
-private const val DEVELOPER_EMAIL = "masudibnbelat@gmail.com"
-private const val DEVELOPER_NAME = "Masud Ibn Belat"
+// Website shown in the About dialog (2026-11-07): the developer
+// email was removed and replaced with this link. To change it,
+// edit this one line - the browser intent below uses it.
+private const val WEBSITE_URL = "https://masudibnbelat.vercel.app"
 
 // PRIVACY (2026-11-07): "was backgrounded" flag, PERSISTED in
 // SharedPreferences (not just remember) so it survives a process
@@ -1336,8 +1335,8 @@ private fun TopBarCircleButton(
 // "About this app" item. Black / white only, English only.
 // Top: app icon + CalNyx + version. Then a Check for updates
 // button (opens the existing UpdateDialog - no new update
-// mechanism), a description of the app, and Contact Developer
-// with the developer's name + email (tap the row to email).
+// mechanism), a description of the app, and a Website row
+// (tap it to open masudibnbelat.vercel.app in the browser).
 @Composable
 private fun AboutDialog(
         appVersion: String,
@@ -1579,9 +1578,9 @@ private fun AboutDialog(
                     }
                 }
                 HorizontalDivider(color = border)
-                // Contact Developer: name + email, tap to email.
+                // Website: tap to open it in the browser.
                 Text(
-                        text = "Contact Developer",
+                        text = "Website",
                         fontSize = fHead,
                         fontWeight = FontWeight.Bold,
                         color = onPageColor
@@ -1593,41 +1592,31 @@ private fun AboutDialog(
                                 .clickable {
                                     try {
                                         context.startActivity(
-                                                Intent.createChooser(
-                                                        Intent(
-                                                                Intent.ACTION_SENDTO,
-                                                                Uri.parse("mailto:$DEVELOPER_EMAIL")
-                                                        ),
-                                                        "Contact developer"
+                                                Intent(
+                                                        Intent.ACTION_VIEW,
+                                                        Uri.parse(WEBSITE_URL)
                                                 )
                                         )
                                     } catch (_: Exception) {
-                                        Toast.makeText(context, "No email app found", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(context, "Could not open the website", Toast.LENGTH_SHORT).show()
                                     }
                                 }
                                 .padding(dlgGap),
                         verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
-                            Icons.Default.Email,
+                            Icons.Default.Language,
                             contentDescription = null,
                             tint = onPageColor,
                             modifier = Modifier.size(dlgIconLg)
                     )
                     Spacer(modifier = Modifier.width(dlgGap))
-                    Column {
-                        Text(
-                                text = DEVELOPER_NAME,
-                                fontSize = fBtn,
-                                fontWeight = FontWeight.SemiBold,
-                                color = onPageColor
-                        )
-                        Text(
-                                text = DEVELOPER_EMAIL,
-                                fontSize = fSub,
-                                color = Color.Gray
-                        )
-                    }
+                    Text(
+                            text = WEBSITE_URL.removePrefix("https://"),
+                            fontSize = fBtn,
+                            fontWeight = FontWeight.SemiBold,
+                            color = onPageColor
+                    )
                 }
                 // Close (black / white filled button, same as
                 // Check for updates above: background onPageColor,

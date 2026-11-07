@@ -1,5 +1,9 @@
 // FILE: app/src/main/java/com/calnyx/app/ui/screens/BlackHoleScreen.kt
 // % -BASED RESPONSIVE MODERN VERSION (2026-11-07) - REPLACE BlackHoleScreen.kt.
+// MULTI-SELECT IMPORT (2026-11-07): GetContent() -> GetMultipleContents(),
+// one file or many in one batch, one delete-confirm dialog at the end.
+// Apply TOGETHER with BlackHoleManager.kt from this same folder
+// (it adds the list version of createDeleteRequestSender).
 // Based on the OPENFIX version (Black Hole names: com.calnyx.app.blackhole,
 // BlackHoleManager / BlackHoleCategory / BlackHolePrefs / BlackHoleOpener /
 // BlackHolePickerGuard / DeleteStatus). All logic is UNCHANGED, only the
@@ -122,12 +126,19 @@ private val categoryInfo = mapOf(
 )
 
 // Import এর পরে delete confirm এর জন্য state
+// MULTI-SELECT (2026-11-07): এক ব্যাচে অনেক ফাইল এলে একটাই
+// ডায়ালগ — সব ফাইলের নামের বদলে সংখ্যা, আর delete-এর জন্য
+// URI-র লিস্ট। NeedsConfirmation গুলো একটাই সিস্টেম রিকোয়েস্টে
+// যায় (MediaStore.createDeleteRequest লিস্ট নেয়), Failed
+// গুলো সরাসরি retry হয়।
 private data class PendingDelete(
-    val originalUri: Uri,
-    val fileName: String,
-    val deleteStatus: DeleteStatus,
-    // FIX: সিস্টেম পারমিশন এই URI-র জন্য, picker URI-র জন্য না।
-    val mediaUri: Uri
+    val fileNames: List<String>,
+    // System confirm dialog লাগবে এমন আসল MediaStore URI
+    val confirmUris: List<Uri>,
+    // Import-এ direct delete ব্যর্থ — সরাসরি retry করার URI
+    val retryUris: List<Uri>,
+    // Import-এর সময়ই সরাসরি মুছে গেছে এমন ফাইলের সংখ্যা
+    val alreadyDeleted: Int
 )
 
 @Composable
@@ -170,6 +181,8 @@ fun BlackHoleScreen(
     // disabled and a second picker result is ignored, so one tap
     // can never start two imports of the same video.
     var importingProgress by remember { mutableStateOf<Float?>(null) }
+    // MULTI-SELECT: ব্যাচে কত নম্বর ফাইল চলছে — "3 of 12" দেখাবে।
+    var importingCount by remember { mutableStateOf<Pair<Int, Int>?>(null) }
     // OPENFIX: open from the modal. scope.launch returns instantly,
     // so the tap never freezes; the suspend open runs on
     // Dispatchers.IO inside BlackHoleOpener. Boolean false = NoViewer
@@ -202,8 +215,11 @@ fun BlackHoleScreen(
 
     // Import এর পরে delete confirm dialog
     var pendingDelete by remember { mutableStateOf<PendingDelete?>(null) }
-    // System permission dialog (Android 11+ video/audio)
-    var pendingSystemDeleteUri by remember { mutableStateOf<Uri?>(null) }
+    // System permission dialog (Android 11+ video/audio) — ব্যাচের
+    // সব NeedsConfirmation URI একটাই রিকোয়েস্টে যাবে।
+    var pendingSystemDeleteUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
+    // সিস্টেম ডায়ালগের পরে সরাসরি retry করার URI (Failed গুলো)
+    var pendingRetryDeleteUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
 
     var settingsSaveKey by remember { mutableStateOf(0) }
 
@@ -249,63 +265,108 @@ fun BlackHoleScreen(
     }
 
     // Android 11+ system permission dialog result
+    // MULTI-SELECT: এক ব্যাচের সব URI-র হিসাব একসাথে।
     val systemDeleteLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartIntentSenderForResult()
     ) { result ->
         // IMPORT FIX: the system delete-confirm dialog is over —
         // the privacy close may fire again from now on.
         BlackHolePickerGuard.end()
-        val uri = pendingSystemDeleteUri ?: return@rememberLauncherForActivityResult
-        pendingSystemDeleteUri = null
+        val uris = pendingSystemDeleteUris
+        val retries = pendingRetryDeleteUris
+        pendingSystemDeleteUris = emptyList()
+        pendingRetryDeleteUris = emptyList()
+        if (uris.isEmpty() && retries.isEmpty()) return@rememberLauncherForActivityResult
         scope.launch {
             // FIX2: createDeleteRequest-এর ক্ষেত্রে সিস্টেম নিজেই
             // Confirm চাপলে মুছে দেয়, তাই retry 0 ফেরত দিলেও
             // URI-টা আর না থাকলে সেটাই সফল ধরা হবে।
-            val ok = if (result.resultCode == Activity.RESULT_OK) {
-                val retried = BlackHoleManager.retryDelete(context, uri)
-                retried || !BlackHoleManager.mediaUriExists(context, uri)
-            } else false
+            var okCount = 0
+            var total = 0
+            if (result.resultCode == Activity.RESULT_OK) {
+                for (uri in uris) {
+                    total++
+                    if (BlackHoleManager.retryDelete(context, uri) ||
+                        !BlackHoleManager.mediaUriExists(context, uri)
+                    ) okCount++
+                }
+            } else {
+                for (uri in uris) {
+                    total++
+                    if (!BlackHoleManager.mediaUriExists(context, uri)) okCount++
+                }
+            }
+            for (uri in retries) {
+                total++
+                if (BlackHoleManager.retryDelete(context, uri) ||
+                    !BlackHoleManager.mediaUriExists(context, uri)
+                ) okCount++
+            }
             Toast.makeText(
                 context,
-                if (ok) "Deleted from gallery" else "Could not delete — please delete it from the gallery yourself",
+                if (okCount == total) "Deleted from gallery"
+                else "Deleted $okCount of $total — please delete the rest from the gallery yourself",
                 Toast.LENGTH_LONG
             ).show()
         }
     }
 
     // File picker
+    // MULTI-SELECT (2026-11-07): GetContent() একটাই ফাইল নিত —
+    // GetMultipleContents() একটা বা অনেকগুলো, দুটোই নেয়। একটা
+    // সিলেক্ট করলে আগের মতোই একটাই আসে (list-এ 1টা), অনেকগুলো
+    // সিলেক্ট করলে সবগুলো একে একে import হয় — এনক্রিপশন নেই বলে
+    // plain copy, তাই ব্যাচও দ্রুত শেষ হয়। সব ফাইলের জন্য শেষে
+    // একটাই delete-confirm ডায়ালগ আসে।
     // OPENFIX 3: an import already running ignores a second picker
     // result, and the progress bar shows the real % while it runs.
     val pickerLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.GetContent()
-    ) { uri ->
+        ActivityResultContracts.GetMultipleContents()
+    ) { uris ->
         // IMPORT FIX: the picker is closed (picked or cancelled) —
         // clear the guard FIRST, before anything can return early.
         BlackHolePickerGuard.end()
-        if (uri == null) return@rememberLauncherForActivityResult
+        if (uris.isEmpty()) return@rememberLauncherForActivityResult
         if (importingProgress != null) return@rememberLauncherForActivityResult
         val cat = pendingImportCategory ?: selectedCategory
             ?: return@rememberLauncherForActivityResult
         scope.launch {
             importingProgress = 0f
+            importingCount = 0 to uris.size
+            val importedNames = mutableListOf<String>()
+            val confirmUris = mutableListOf<Uri>()
+            val retryUris = mutableListOf<Uri>()
+            var alreadyDeleted = 0
+            var failed = 0
             try {
-                val result = BlackHoleManager.importUri(context, uri, cat) { p ->
-                    importingProgress = p
+                uris.forEachIndexed { index, uri ->
+                    val result = BlackHoleManager.importUri(context, uri, cat) { p ->
+                        importingProgress = (index + p) / uris.size
+                    }
+                    importingCount = (index + 1) to uris.size
+                    if (result.blackHoleFile == null) {
+                        failed++
+                    } else {
+                        importedNames += result.blackHoleFile.name
+                        when (val status = result.deleteStatus) {
+                            is DeleteStatus.Deleted -> alreadyDeleted++
+                            is DeleteStatus.NeedsConfirmation -> confirmUris += (result.mediaUri ?: uri)
+                            is DeleteStatus.Failed -> retryUris += (result.mediaUri ?: uri)
+                            null -> {}
+                        }
+                    }
                 }
-                if (result.blackHoleFile == null) {
-                    Toast.makeText(context, result.error ?: "Import failed", Toast.LENGTH_LONG).show()
-                    return@launch
-                }
-                // Import successful — now ask user about deleting original
-                val fileName = result.blackHoleFile.name
-                val status = result.deleteStatus
-                if (status != null) {
-                    pendingDelete = PendingDelete(uri, fileName, status, result.mediaUri ?: uri)
-                }
-                // ENCRYPTED UPDATE: DEBUG toast মুছে দেওয়া হয়েছে।
                 refreshKey++
+                if (failed > 0) {
+                    Toast.makeText(context, "$failed file(s) could not be imported", Toast.LENGTH_LONG).show()
+                }
+                // Import successful — now ask user about deleting originals
+                if (importedNames.isNotEmpty()) {
+                    pendingDelete = PendingDelete(importedNames, confirmUris, retryUris, alreadyDeleted)
+                }
             } finally {
                 importingProgress = null
+                importingCount = null
             }
         }
     }
@@ -798,19 +859,19 @@ fun BlackHoleScreen(
                 onDismissRequest = { pendingDelete = null },
                 shape = RoundedCornerShape(dialogCorner),
                 title = {
-                    Text("Delete original file?", fontWeight = FontWeight.Bold, fontSize = folderNameFont, color = onPageColor)
+                    Text("Delete original files?", fontWeight = FontWeight.Bold, fontSize = folderNameFont, color = onPageColor)
                 },
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(gapCardH)) {
                         Text(
-                            "\"${pd.fileName}\" saved to Black Hole",
+                            "${pd.fileNames.size} file(s) saved to Black Hole",
                             fontWeight = FontWeight.Medium,
                             fontSize = bodyFont,
                             color = onPageColor
                         )
                         Spacer(Modifier.height(gapTinyH))
                         Text(
-                            "Delete the original from Gallery / Files as well?",
+                            "Delete the originals from Gallery / Files as well?",
                             fontSize = bodyFont,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -819,50 +880,70 @@ fun BlackHoleScreen(
                 confirmButton = {
                     Button(
                         onClick = {
-                            val status = pd.deleteStatus
-                            // FIX: আগের বাগ এখানে ছিল — pd.originalUri (picker URI)
-                            // দিয়ে retry হতো, তাই সিস্টেম পারমিশন কাজ করত না।
-                            // এখন আসল MediaStore URI দিয়ে retry হবে।
-                            val uri = pd.mediaUri
+                            val confirms = pd.confirmUris
+                            val retries = pd.retryUris
                             pendingDelete = null
-                            when (status) {
-                                is DeleteStatus.Deleted -> {
-                                    // Already deleted during import
-                                    Toast.makeText(context, "Deleted ✓", Toast.LENGTH_SHORT).show()
-                                }
-                                is DeleteStatus.NeedsConfirmation -> {
-                                    // Android 11+ — launch system permission dialog
-                                    pendingSystemDeleteUri = uri
+                            if (confirms.isNotEmpty()) {
+                                // Android 11+ — ONE system permission dialog for the whole batch
+                                val sender = BlackHoleManager.createDeleteRequestSender(context, confirms)
+                                if (sender != null) {
+                                    pendingSystemDeleteUris = confirms
+                                    pendingRetryDeleteUris = retries
                                     // IMPORT FIX: same guard — the system
                                     // confirm dialog must not close the blackhole.
                                     BlackHolePickerGuard.begin()
                                     systemDeleteLauncher.launch(
-                                        IntentSenderRequest.Builder(status.sender).build()
+                                        IntentSenderRequest.Builder(sender).build()
                                     )
-                                }
-                                is DeleteStatus.Failed -> {
-                                    // Try one more time with resolved URI
+                                } else {
+                                    // No system dialog available — direct retry of everything
                                     scope.launch {
-                                        val ok = BlackHoleManager.retryDelete(context, uri)
+                                        var okCount = 0
+                                        var total = 0
+                                        for (uri in confirms + retries) {
+                                            total++
+                                            if (BlackHoleManager.retryDelete(context, uri) ||
+                                                !BlackHoleManager.mediaUriExists(context, uri)
+                                            ) okCount++
+                                        }
                                         Toast.makeText(
                                             context,
-                                            if (ok) "Deleted ✓"
-                                            else "Could not delete — please delete it from the gallery yourself",
+                                            if (okCount == total) "Deleted from gallery"
+                                            else "Deleted $okCount of $total — please delete the rest from the gallery yourself",
                                             Toast.LENGTH_LONG
                                         ).show()
                                     }
                                 }
+                            } else if (retries.isNotEmpty()) {
+                                // No system dialog needed — direct retry
+                                scope.launch {
+                                    var okCount = 0
+                                    for (uri in retries) {
+                                        if (BlackHoleManager.retryDelete(context, uri) ||
+                                            !BlackHoleManager.mediaUriExists(context, uri)
+                                        ) okCount++
+                                    }
+                                    Toast.makeText(
+                                        context,
+                                        if (okCount == retries.size) "Deleted from gallery"
+                                        else "Deleted $okCount of ${retries.size} — please delete the rest from the gallery yourself",
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                }
+                            } else {
+                                // Everything was already deleted during import
+                                Toast.makeText(context, "Deleted ✓", Toast.LENGTH_SHORT).show()
                             }
                         },
                         shape = RoundedCornerShape(btnCorner),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.error
                         )
-                    ) { Text("Delete original", fontSize = bodyFont) }
+                    ) { Text("Delete originals", fontSize = bodyFont) }
                 },
                 dismissButton = {
                     TextButton(onClick = { pendingDelete = null }) {
-                        Text("Keep original", fontSize = bodyFont)
+                        Text("Keep originals", fontSize = bodyFont)
                     }
                 }
             )
@@ -1053,8 +1134,10 @@ fun BlackHoleScreen(
                             color = onPageColor
                         )
                         Spacer(Modifier.height(gapCardH))
+                        val count = importingCount
                         Text(
-                            "${(imp * 100).toInt()}% — please wait, do not close the app",
+                            if (count != null) "${count.first} of ${count.second} — ${(imp * 100).toInt()}%"
+                            else "${(imp * 100).toInt()}% — please wait, do not close the app",
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             fontSize = smallFont
                         )

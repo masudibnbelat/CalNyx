@@ -338,15 +338,23 @@ object BlackHoleManager {
         } catch (_: Exception) { false }
     }
 
-    fun createDeleteRequestSender(context: Context, uri: Uri): IntentSender? {
+    // MULTI-SELECT (2026-11-07): one system delete request for a
+    // whole batch — MediaStore.createDeleteRequest takes a list,
+    // so the user confirms once for all files instead of once
+    // per file. The single-URI version now just delegates here.
+    fun createDeleteRequestSender(context: Context, uris: List<Uri>): IntentSender? {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return null
+        if (uris.isEmpty()) return null
         return try {
             val pending = MediaStore.createDeleteRequest(
-                context.contentResolver, listOf(uri)
+                context.contentResolver, uris
             )
             pending.intentSender
         } catch (_: Exception) { null }
     }
+
+    fun createDeleteRequestSender(context: Context, uri: Uri): IntentSender? =
+        createDeleteRequestSender(context, listOf(uri))
 
     // ── IMPORT (plain copy now — OPENFIX 4, no encryption) ────────
     // OPENFIX 3: (1) encrypts into "name.tmp" first and renames to

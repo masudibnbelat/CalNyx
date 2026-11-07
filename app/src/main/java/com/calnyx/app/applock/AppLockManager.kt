@@ -1,28 +1,25 @@
 // FILE: app/src/main/java/com/calnyx/app/applock/AppLockManager.kt
-// FIXED2 VERSION - replace your old AppLockManager.kt with this file.
-// Apply TOGETHER with AppLockService-FIXED2.kt and NavGraph-FIXED2.kt.
-// NormalCalculatorScreen (UNLOCK / LIFTED) that sets the session stays as-is.
-//
-// Changes vs MIDUSEFIX (only these lines changed, everything else same):
-// 1. setUnlockedSession() now also stores session start time and clears
-//    the old intervened flag + grace. So a resume that happens during
-//    the unlock handoff can never kill a just-created session.
-// 2. NEW: decoy flag. Service sets it before launching CalNyx as decoy.
-//    NavGraph / Service can tell "CalNyx was launched to block" apart
-//    from "user manually opened CalNyx". Only the manual open is an exit.
-// 3. NEW: needsRestrictedSetting() + isSideloaded(). Android 13+ blocks
-//    Accessibility for sideloaded apps until the user does
-//    App info > 3 dots > Allow restricted settings. This helper lets
-//    AppLockScreen show that exact help only when it applies.
-// 4. endUnlockedSession() also clears session start time.
-// FIXED3 (30s lock sometimes never locks): NEW session last-seen time.
-// The session only ended when the Service SAW an exit, so an exit it
-// never saw (screen off, service killed, reboot) left the session
-// alive forever. setUnlockedSession() now stamps lastSeen, the Service
-// refreshes it on every session-allow event, and clearUnlockedSession()
-// removes it. See AppLockService STALE_SESSION_MS.
-// Old intervened helpers are kept (for migration) but FIXED2 Service
-// no longer depends on them - session allow is unconditional now.
+// LOCK-ON-EXIT VERSION - replace your old AppLockManager.kt with this file.
+// Based on FIXED2 (session lastSeen + decoy flag + restricted-settings
+// helpers, all unchanged). Only change: the timer is GONE.
+// 1. endUnlockedSession() now ONLY clears the session - no grace
+//    window is started, so the app locks the instant you leave it.
+// 2. The whole grace machinery is removed: setAllowed / isAllowed /
+//    clearAllowed, KEY_ALLOWED_PKG / KEY_ALLOWED_UNTIL, and the
+//    unlock-duration setting (KEY_UNLOCK_DURATION_MS,
+//    getUnlockDurationMs / setUnlockDurationMs) are deleted.
+// 3. Behaviour from now on: unlock a locked app, use it as long as
+//    you like (mid-use rule untouched - staying in the same app never
+//    locks), and the moment you leave it - Home, Recents, another app,
+//    manual CalNyx open, screen off - it is locked again. Next open
+//    always shows the decoy calculator.
+// 4. The stale-session guard is KEPT: a session unseen for 10 minutes
+//    that outlived a service restart / reboot is still a ghost and is
+//    cleared by the Service, so an exit the Service never saw can no
+//    longer leave an app unlocked forever.
+// Apply TOGETHER with AppLockService.kt and AppLockScreen.kt from
+// this same folder. NormalCalculatorScreen (UNLOCK / LIFTED) stays
+// as-is - it only uses setUnlockedSession / clearUnlockedSession.
 package com.calnyx.app.applock
 
 import android.content.Context
@@ -36,9 +33,6 @@ object AppLockManager {
     private const val KEY_ENABLED = "app_lock_enabled"
     private const val KEY_LOCKED = "locked_packages"
     private const val KEY_PENDING = "pending_package"
-    private const val KEY_ALLOWED_PKG = "allowed_package"
-    private const val KEY_ALLOWED_UNTIL = "allowed_until"
-    private const val KEY_UNLOCK_DURATION_MS = "unlock_duration_ms"
     private const val KEY_SESSION_PKG = "unlocked_session_package"
     private const val KEY_SESSION_STARTED_AT = "unlocked_session_started_at"
     private const val KEY_SESSION_LAST_SEEN = "unlocked_session_last_seen"
@@ -59,8 +53,6 @@ object AppLockManager {
             edit.remove(KEY_SESSION_STARTED_AT)
             edit.remove(KEY_SESSION_LAST_SEEN)
             edit.remove(KEY_CALNYX_INTERVENED)
-            edit.remove(KEY_ALLOWED_PKG)
-            edit.remove(KEY_ALLOWED_UNTIL)
             edit.remove(KEY_LAST_FOREGROUND)
             edit.remove(KEY_DECOY_LAUNCH)
         }
@@ -126,8 +118,6 @@ object AppLockManager {
             .putLong(KEY_SESSION_STARTED_AT, System.currentTimeMillis())
             .putLong(KEY_SESSION_LAST_SEEN, System.currentTimeMillis())
             .remove(KEY_CALNYX_INTERVENED)
-            .remove(KEY_ALLOWED_PKG)
-            .remove(KEY_ALLOWED_UNTIL)
             .apply()
     }
 
@@ -167,40 +157,11 @@ object AppLockManager {
         setCalNyxIntervened(context, false)
     }
 
+    // LOCK-ON-EXIT: ending a session only clears it. No grace window
+    // is started any more, so there is no "back within X seconds"
+    // free pass - the next open of this app always locks.
     fun endUnlockedSession(context: Context) {
-        val session = getUnlockedSession(context) ?: return
         clearUnlockedSession(context)
-        setAllowed(context, session, getUnlockDurationMs(context))
-    }
-
-    fun setAllowed(context: Context, packageName: String, durationMs: Long = 30_000L) {
-        prefs(context).edit()
-            .putString(KEY_ALLOWED_PKG, packageName)
-            .putLong(KEY_ALLOWED_UNTIL, System.currentTimeMillis() + durationMs)
-            .apply()
-    }
-
-    fun isAllowed(context: Context, packageName: String): Boolean {
-        val p = prefs(context)
-        val allowedPkg = p.getString(KEY_ALLOWED_PKG, null)
-        val until = p.getLong(KEY_ALLOWED_UNTIL, 0L)
-        if (allowedPkg != packageName) return false
-        if (System.currentTimeMillis() >= until) return false
-        return true
-    }
-
-    fun getUnlockDurationMs(context: Context): Long =
-        prefs(context).getLong(KEY_UNLOCK_DURATION_MS, 30_000L)
-
-    fun setUnlockDurationMs(context: Context, durationMs: Long) {
-        prefs(context).edit().putLong(KEY_UNLOCK_DURATION_MS, durationMs).apply()
-    }
-
-    fun clearAllowed(context: Context) {
-        prefs(context).edit()
-            .remove(KEY_ALLOWED_PKG)
-            .remove(KEY_ALLOWED_UNTIL)
-            .apply()
     }
 
     fun isAccessibilityEnabled(context: Context): Boolean {

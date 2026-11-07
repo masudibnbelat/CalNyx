@@ -132,6 +132,12 @@
 //  landscape split, selection overlay - kichu bodlayni, shudhu size % -e.
 // FILE: app/src/main/java/com/calnyx/app/ui/screens/NormalCalculatorScreen.kt
 // REPLACE the whole file.
+// DECOY BACK FIX (2026-11-07): Back on the decoy calculator used to
+// finish into the blocked app underneath, so the Service blocked it
+// again and the calculator came back forever. Now Back on a decoy
+// (pending block exists) clears the block and goes Home, and after
+// a successful unlock the decoy finishes itself, so Back inside
+// the unlocked app goes Home instead of back to the calculator.
 package com.calnyx.app.ui.screens
 
 import androidx.compose.animation.*
@@ -182,6 +188,10 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.activity.compose.BackHandler
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import android.content.Intent
 import android.app.Activity
 import com.calnyx.app.applock.AppLockManager
@@ -233,6 +243,40 @@ fun NormalCalculatorScreen(
                 controller.isAppearanceLightNavigationBars = !darkTheme
             }
         }
+        // DECOY BACK (2026-11-07): when this calculator is showing
+        // as the decoy for a blocked app, Back must NOT finish into
+        // the blocked app - that is the loop in the user's video:
+        // Back -> blocked app comes forward -> Service blocks it
+        // again -> calculator again, forever. Instead Back closes
+        // BOTH: forget the blocked app and go Home. The blocked
+        // app stays only in Recents (Android does not let one app
+        // force-close another); tapping it again blocks it again.
+        // Enabled only while a block is pending, so normal Back
+        // (no block) behaves exactly as before. ON_RESUME refresh:
+        // the decoy is launched with SINGLE_TOP, so a reused
+        // activity does not always recompose - resume re-reads it.
+        var isDecoy by remember { mutableStateOf(AppLockManager.getPending(context) != null) }
+        val decoyLifecycleOwner = LocalLifecycleOwner.current
+        DisposableEffect(decoyLifecycleOwner) {
+                val observer = LifecycleEventObserver { _, event ->
+                        if (event == Lifecycle.Event.ON_RESUME) {
+                                isDecoy = AppLockManager.getPending(context) != null
+                        }
+                }
+                decoyLifecycleOwner.lifecycle.addObserver(observer)
+                onDispose { decoyLifecycleOwner.lifecycle.removeObserver(observer) }
+        }
+        BackHandler(enabled = isDecoy) {
+                AppLockManager.clearPending(context)
+                AppLockManager.clearDecoyLaunch(context)
+                try {
+                        val homeIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+                        homeIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        context.startActivity(homeIntent)
+                } catch (_: Exception) {
+                }
+                (context as? Activity)?.finish()
+        }
         var selActive by remember { mutableStateOf(false) }
         var selStart by remember { mutableIntStateOf(0) }
         var selEnd by remember { mutableIntStateOf(0) }
@@ -245,12 +289,25 @@ fun NormalCalculatorScreen(
                         val pending = AppLockManager.getPending(context)
                         if (pending != null && AppLockManager.isEnabled(context) && AppLockManager.isLocked(context, pending)) {
                                 AppLockManager.setUnlockedSession(context, pending)
-                                AppLockManager.clearPending(context)
                                 val launchIntent = context.packageManager.getLaunchIntentForPackage(pending)
                                 if (launchIntent != null) {
                                         launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                        context.startActivity(launchIntent)
+                                        try {
+                                                context.startActivity(launchIntent)
+                                                AppLockManager.clearPending(context)
+                                                // DECOY DONE (2026-11-07): the locked app is open
+                                                // in its own task now. Finish this decoy
+                                                // calculator, so Back inside the unlocked app
+                                                // goes Home instead of bringing the calculator
+                                                // back. Clearing pending only after a
+                                                // successful launch is also the privacy fix:
+                                                // a failed launch must not lose the pending app.
+                                                (context as? Activity)?.finish()
+                                        } catch (_: Exception) {
+                                                AppLockManager.clearUnlockedSession(context)
+                                        }
                                 } else {
+                                        AppLockManager.clearPending(context)
                                         AppLockManager.clearUnlockedSession(context)
                                         onOpenBlackHole()
                                 }
