@@ -164,6 +164,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.calnyx.app.R
@@ -331,8 +332,12 @@ fun HardcoreScreen(
     // drag anywhere on this screen opens the app drawer.
     // Rightward drags are not consumed here. A tap (no real
     // movement) does nothing, so buttons still work.
-    val drawerSwipe = Modifier.pointerInput(Unit) {
-        val thresholdPx = 24.dp.toPx()
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val windowW = maxWidth
+        val windowH = maxHeight
+        val minDim = minOf(windowW, windowH)
+        val drawerSwipe = Modifier.pointerInput(minDim) {
+            val thresholdPx = (minDim * 0.067f).toPx()
         var totalDx = 0f
         var done = false
         detectHorizontalDragGestures(
@@ -356,9 +361,9 @@ fun HardcoreScreen(
             if (note != null) {
                 Text(
                     text = note ?: "",
-                    fontSize = 13.sp,
+                    fontSize = (minDim * 0.036f).value.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = windowW * 0.044f, vertical = windowH * 0.01f)
                 )
             }
             ControlTab(
@@ -367,9 +372,11 @@ fun HardcoreScreen(
                 cardBorder = cardBorder,
                 onPageColor = onPageColor,
                 thumbBg = thumbBg,
+                minDim = minDim,
                 onNote = { note = it }
             )
         }
+    }
     }
 }
 
@@ -404,8 +411,12 @@ fun MoanScreen(
     // drag anywhere on this screen opens the app drawer.
     // Rightward drags are not consumed here. A tap (no real
     // movement) does nothing, so buttons still work.
-    val drawerSwipe = Modifier.pointerInput(Unit) {
-        val thresholdPx = 24.dp.toPx()
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val windowW = maxWidth
+        val windowH = maxHeight
+        val minDim = minOf(windowW, windowH)
+        val drawerSwipe = Modifier.pointerInput(minDim) {
+            val thresholdPx = (minDim * 0.067f).toPx()
         var totalDx = 0f
         var done = false
         detectHorizontalDragGestures(
@@ -429,9 +440,9 @@ fun MoanScreen(
             if (note != null) {
                 Text(
                     text = note ?: "",
-                    fontSize = 13.sp,
+                    fontSize = (minDim * 0.036f).value.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = windowW * 0.044f, vertical = windowH * 0.01f)
                 )
             }
             SoundTab(
@@ -439,9 +450,11 @@ fun MoanScreen(
                 cardBorder = cardBorder,
                 onPageColor = onPageColor,
                 thumbBg = thumbBg,
+                minDim = minDim,
                 onNote = { note = it }
             )
         }
+    }
     }
 }
 
@@ -452,6 +465,7 @@ private fun ControlTab(
     cardBorder: Color,
     onPageColor: Color,
     thumbBg: Color,
+    minDim: Dp,
     onNote: (String?) -> Unit
 ) {
     val context = LocalContext.current
@@ -507,8 +521,8 @@ private fun ControlTab(
     }
 
     Column(
-        modifier = Modifier.fillMaxSize().verticalScroll(scroll).padding(start = 12.dp, end = 12.dp, bottom = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+        modifier = Modifier.fillMaxSize().verticalScroll(scroll).padding(start = minDim * 0.033f, end = minDim * 0.033f, bottom = minDim * 0.033f),
+        verticalArrangement = Arrangement.spacedBy(minDim * 0.022f)
     ) {
         // HEADER - big title with icon, like Blue Film.
         Row(
@@ -516,22 +530,22 @@ private fun ControlTab(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
-                modifier = Modifier.size(52.dp).clip(CircleShape).background(thumbBg),
+                modifier = Modifier.size(minDim * 0.144f).clip(CircleShape).background(thumbBg),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(Icons.Default.PowerSettingsNew, contentDescription = null, modifier = Modifier.size(28.dp), tint = onPageColor)
+                Icon(Icons.Default.PowerSettingsNew, contentDescription = null, modifier = Modifier.size(minDim * 0.078f), tint = onPageColor)
             }
-            Spacer(modifier = Modifier.width(12.dp))
-            Text("Hardware", fontWeight = FontWeight.Bold, fontSize = 28.sp, color = onPageColor)
+            Spacer(modifier = Modifier.width(minDim * 0.033f))
+            Text("Hardware", fontWeight = FontWeight.Bold, fontSize = (minDim * 0.078f).value.sp, color = onPageColor)
         }
         // POWER
-        Text("Power", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color.Gray)
+        Text("Power", fontSize = (minDim * 0.033f).value.sp, fontWeight = FontWeight.SemiBold, color = Color.Gray)
         // POWER - three square cards now: Power Menu, Lock Screen
         // and Network Switcher (moved up from its own wide row
         // below). IntrinsicSize.Max + fillMaxHeight keep all
         // three cards the same height even though "Network
         // Switcher" wraps to two lines.
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Max)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(minDim * 0.022f), modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Max)) {
             PowerCard(
                 title = "Power Menu",
                 icon = Icons.Default.PowerSettingsNew,
@@ -539,6 +553,7 @@ private fun ControlTab(
                 cardBorder = cardBorder,
                 onPageColor = onPageColor,
                 thumbBg = thumbBg,
+                minDim = minDim,
                 modifier = Modifier.weight(1f).fillMaxHeight(),
                 onClick = {
                     if (!accessibilityOn) {
@@ -557,6 +572,7 @@ private fun ControlTab(
                 cardBorder = cardBorder,
                 onPageColor = onPageColor,
                 thumbBg = thumbBg,
+                minDim = minDim,
                 modifier = Modifier.weight(1f).fillMaxHeight(),
                 onClick = {
                     if (!accessibilityOn) {
@@ -575,6 +591,7 @@ private fun ControlTab(
                 cardBorder = cardBorder,
                 onPageColor = onPageColor,
                 thumbBg = thumbBg,
+                minDim = minDim,
                 modifier = Modifier.weight(1f).fillMaxHeight(),
                 onClick = { openNetworkSwitcher(context, onNote) }
             )
@@ -582,19 +599,19 @@ private fun ControlTab(
         // Screen Orientation - small buttons, compact.
         Column(
             modifier = Modifier.fillMaxWidth()
-                .clip(RoundedCornerShape(16.dp))
+                .clip(RoundedCornerShape(minDim * 0.044f))
                 .background(cardBg)
-                .border(1.dp, cardBorder, RoundedCornerShape(16.dp))
-                .padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+                .border(1.dp, cardBorder, RoundedCornerShape(minDim * 0.044f))
+                .padding(minDim * 0.033f),
+            verticalArrangement = Arrangement.spacedBy(minDim * 0.022f)
         ) {
-            Text("Screen Orientation", fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            Text("Screen Orientation", fontWeight = FontWeight.SemiBold, fontSize = (minDim * 0.044f).value.sp)
+            Row(horizontalArrangement = Arrangement.spacedBy(minDim * 0.022f), modifier = Modifier.fillMaxWidth()) {
                 listOf("up" to "Up 0°", "down" to "Down 180°", "auto" to "Auto").forEach { (mode, label) ->
                     val selected = orientation == mode
                     Box(
                         modifier = Modifier.weight(1f)
-                            .clip(RoundedCornerShape(12.dp))
+                            .clip(RoundedCornerShape(minDim * 0.033f))
                             .background(if (selected) onPageColor else thumbBg)
                             .clickable {
                                 // One call does everything: saves the
@@ -613,14 +630,14 @@ private fun ControlTab(
                                     onNote("Orientation saved but not enforced - allow overlay permission (Floating Ball) or Modify system settings for CalNyx.")
                                 }
                             }
-                            .padding(vertical = 10.dp),
+                            .padding(vertical = minDim * 0.028f),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
                             label,
                             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
                             color = if (selected) if (darkTheme) Color(0xFF0E0E0E) else Color(0xFFF6F4EF) else onPageColor,
-                            fontSize = 14.sp
+                            fontSize = (minDim * 0.039f).value.sp
                         )
                     }
                 }
@@ -634,21 +651,21 @@ private fun ControlTab(
         // inside the input field. Black / white only.
         Column(
             modifier = Modifier.fillMaxWidth()
-                .clip(RoundedCornerShape(16.dp))
+                .clip(RoundedCornerShape(minDim * 0.044f))
                 .background(cardBg)
-                .border(1.dp, cardBorder, RoundedCornerShape(16.dp))
-                .padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+                .border(1.dp, cardBorder, RoundedCornerShape(minDim * 0.044f))
+                .padding(minDim * 0.033f),
+            verticalArrangement = Arrangement.spacedBy(minDim * 0.022f)
         ) {
-            Text("Open in WhatsApp", fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+            Text("Open in WhatsApp", fontWeight = FontWeight.SemiBold, fontSize = (minDim * 0.044f).value.sp)
             Text(
                 "Type a number to open its WhatsApp chat directly.",
-                fontSize = 13.sp,
+                fontSize = (minDim * 0.036f).value.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(minDim * 0.022f),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 OutlinedTextField(
@@ -659,13 +676,13 @@ private fun ControlTab(
                         Icon(
                             painter = painterResource(R.drawable.ic_whatsapp),
                             contentDescription = null,
-                            modifier = Modifier.size(22.dp)
+                            modifier = Modifier.size(minDim * 0.061f)
                         )
                     },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.weight(1f).height(56.dp),
-                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.weight(1f).height(minDim * 0.156f),
+                    shape = RoundedCornerShape(minDim * 0.033f),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = onPageColor,
                         unfocusedBorderColor = cardBorder,
@@ -673,7 +690,7 @@ private fun ControlTab(
                     )
                 )
                 Box(
-                    modifier = Modifier.size(56.dp).clip(CircleShape).background(onPageColor)
+                    modifier = Modifier.size(minDim * 0.156f).clip(CircleShape).background(onPageColor)
                         .clickable {
                             if (WhatsAppHelper.openChat(context, waNumber)) {
                                 onNote(null)
@@ -686,7 +703,7 @@ private fun ControlTab(
                     Icon(
                         imageVector = Icons.Default.Send,
                         contentDescription = "Open in WhatsApp",
-                        modifier = Modifier.size(26.dp),
+                        modifier = Modifier.size(minDim * 0.072f),
                         tint = cardBg
                     )
                 }
@@ -696,14 +713,14 @@ private fun ControlTab(
         // and shorter sliders, so the card takes less height.
         Column(
             modifier = Modifier.fillMaxWidth()
-                .clip(RoundedCornerShape(16.dp))
+                .clip(RoundedCornerShape(minDim * 0.044f))
                 .background(cardBg)
-                .border(1.dp, cardBorder, RoundedCornerShape(16.dp))
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
+                .border(1.dp, cardBorder, RoundedCornerShape(minDim * 0.044f))
+                .padding(horizontal = minDim * 0.033f, vertical = minDim * 0.022f),
+            verticalArrangement = Arrangement.spacedBy(minDim * 0.011f)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                Text("Floating Ball", fontWeight = FontWeight.SemiBold, fontSize = 16.sp, modifier = Modifier.weight(1f))
+                Text("Floating Ball", fontWeight = FontWeight.SemiBold, fontSize = (minDim * 0.044f).value.sp, modifier = Modifier.weight(1f))
                 Switch(
                     checked = ballOn,
                     colors = SwitchDefaults.colors(
@@ -743,8 +760,8 @@ private fun ControlTab(
                 )
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Opacity", modifier = Modifier.weight(1f), fontSize = 15.sp)
-                Text("$ballOpacity%", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                Text("Opacity", modifier = Modifier.weight(1f), fontSize = (minDim * 0.042f).value.sp)
+                Text("$ballOpacity%", fontWeight = FontWeight.SemiBold, fontSize = (minDim * 0.042f).value.sp)
             }
             Slider(
                 value = ballOpacity.toFloat(),
@@ -763,11 +780,11 @@ private fun ControlTab(
                     activeTrackColor = if (darkTheme) Color(0xFFF6F4EF) else Color(0xFF0E0E0E),
                     inactiveTrackColor = if (darkTheme) Color(0xFF3A3A3A) else Color(0xFFD8D5CE)
                 ),
-                modifier = Modifier.fillMaxWidth().height(24.dp)
+                modifier = Modifier.fillMaxWidth().height(minDim * 0.067f)
             )
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Ball Size", modifier = Modifier.weight(1f), fontSize = 15.sp)
-                Text("$ballSize dp", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                Text("Ball Size", modifier = Modifier.weight(1f), fontSize = (minDim * 0.042f).value.sp)
+                Text("$ballSize dp", fontWeight = FontWeight.SemiBold, fontSize = (minDim * 0.042f).value.sp)
             }
             Slider(
                 value = ballSize.toFloat(),
@@ -786,15 +803,15 @@ private fun ControlTab(
                     activeTrackColor = if (darkTheme) Color(0xFFF6F4EF) else Color(0xFF0E0E0E),
                     inactiveTrackColor = if (darkTheme) Color(0xFF3A3A3A) else Color(0xFFD8D5CE)
                 ),
-                modifier = Modifier.fillMaxWidth().height(24.dp)
+                modifier = Modifier.fillMaxWidth().height(minDim * 0.067f)
             )
             Text(
                 "Tap the ball to open the panel. Drag it to move.",
-                fontSize = 13.sp,
+                fontSize = (minDim * 0.036f).value.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(minDim * 0.022f))
     }
 }
 
@@ -806,27 +823,28 @@ private fun PowerCard(
     cardBorder: Color,
     onPageColor: Color,
     thumbBg: Color,
+    minDim: Dp,
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
     Column(
         modifier = modifier
-            .clip(RoundedCornerShape(16.dp))
+            .clip(RoundedCornerShape(minDim * 0.044f))
             .background(cardBg)
-            .border(1.dp, cardBorder, RoundedCornerShape(16.dp))
+            .border(1.dp, cardBorder, RoundedCornerShape(minDim * 0.044f))
             .clickable(onClick = onClick)
-            .padding(vertical = 10.dp),
+            .padding(vertical = minDim * 0.028f),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically)
+        verticalArrangement = Arrangement.spacedBy(minDim * 0.022f, Alignment.CenterVertically)
     ) {
         Box(
-            modifier = Modifier.size(44.dp).clip(CircleShape)
+            modifier = Modifier.size(minDim * 0.122f).clip(CircleShape)
                 .background(thumbBg),
             contentAlignment = Alignment.Center
         ) {
-            Icon(icon, contentDescription = title, modifier = Modifier.size(22.dp))
+            Icon(icon, contentDescription = title, modifier = Modifier.size(minDim * 0.061f))
         }
-        Text(title, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = onPageColor, textAlign = TextAlign.Center)
+        Text(title, fontWeight = FontWeight.SemiBold, fontSize = (minDim * 0.036f).value.sp, color = onPageColor, textAlign = TextAlign.Center)
     }
 }
 
@@ -836,6 +854,7 @@ private fun SoundTab(
     cardBorder: Color,
     onPageColor: Color,
     thumbBg: Color,
+    minDim: Dp,
     onNote: (String?) -> Unit
 ) {
     val context = LocalContext.current
@@ -870,8 +889,8 @@ private fun SoundTab(
     }
 
     Column(
-        modifier = Modifier.fillMaxSize().verticalScroll(scroll).padding(start = 12.dp, end = 12.dp, bottom = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+        modifier = Modifier.fillMaxSize().verticalScroll(scroll).padding(start = minDim * 0.033f, end = minDim * 0.033f, bottom = minDim * 0.033f),
+        verticalArrangement = Arrangement.spacedBy(minDim * 0.022f)
     ) {
         // HEADER - big title with icon, like Blue Film.
         Row(
@@ -879,16 +898,16 @@ private fun SoundTab(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
-                modifier = Modifier.size(52.dp).clip(CircleShape).background(thumbBg),
+                modifier = Modifier.size(minDim * 0.144f).clip(CircleShape).background(thumbBg),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(Icons.Default.MusicNote, contentDescription = null, modifier = Modifier.size(28.dp), tint = onPageColor)
+                Icon(Icons.Default.MusicNote, contentDescription = null, modifier = Modifier.size(minDim * 0.078f), tint = onPageColor)
             }
-            Spacer(modifier = Modifier.width(12.dp))
-            Text("Sound", fontWeight = FontWeight.Bold, fontSize = 28.sp, color = onPageColor)
+            Spacer(modifier = Modifier.width(minDim * 0.033f))
+            Text("Sound", fontWeight = FontWeight.Bold, fontSize = (minDim * 0.078f).value.sp, color = onPageColor)
         }
-        Text("Ringer Profile", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color.Gray)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+        Text("Ringer Profile", fontSize = (minDim * 0.033f).value.sp, fontWeight = FontWeight.SemiBold, color = Color.Gray)
+        Row(horizontalArrangement = Arrangement.spacedBy(minDim * 0.022f), modifier = Modifier.fillMaxWidth()) {
             listOf(
                 AudioManager.RINGER_MODE_NORMAL to "Sound" to Icons.Default.VolumeUp,
                 AudioManager.RINGER_MODE_VIBRATE to "Vibrate" to Icons.Default.Vibration,
@@ -898,7 +917,7 @@ private fun SoundTab(
                 val selected = ringerMode == mode
                 Box(
                     modifier = Modifier.weight(1f)
-                        .clip(RoundedCornerShape(12.dp))
+                        .clip(RoundedCornerShape(minDim * 0.033f))
                         .background(if (selected) onPageColor else thumbBg)
                         .clickable {
                             try {
@@ -925,27 +944,27 @@ private fun SoundTab(
                                 onNote("Ringer mode could not be changed on this phone.")
                             }
                         }
-                        .padding(vertical = 10.dp),
+                        .padding(vertical = minDim * 0.028f),
                     contentAlignment = Alignment.Center
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(minDim * 0.011f)) {
                         Icon(
                             icon,
                             contentDescription = null,
-                            modifier = Modifier.size(20.dp),
+                            modifier = Modifier.size(minDim * 0.056f),
                             tint = if (selected) if (onPageColor == Color(0xFFF6F4EF)) Color(0xFF0E0E0E) else Color(0xFFF6F4EF) else onPageColor
                         )
                         Text(
                             label,
                             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
                             color = if (selected) if (onPageColor == Color(0xFFF6F4EF)) Color(0xFF0E0E0E) else Color(0xFFF6F4EF) else onPageColor,
-                            fontSize = 14.sp
+                            fontSize = (minDim * 0.039f).value.sp
                         )
                     }
                 }
             }
         }
-        Text("Audio Streams", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color.Gray)
+        Text("Audio Streams", fontSize = (minDim * 0.033f).value.sp, fontWeight = FontWeight.SemiBold, color = Color.Gray)
         streams.forEach { row ->
             val max = try {
                 audio.getStreamMaxVolume(row.stream)
@@ -956,22 +975,22 @@ private fun SoundTab(
             val percent = if (max > 0) (current * 100 / max) else 0
             Column(
                 modifier = Modifier.fillMaxWidth()
-                    .clip(RoundedCornerShape(16.dp))
+                    .clip(RoundedCornerShape(minDim * 0.044f))
                     .background(cardBg)
-                    .border(1.dp, cardBorder, RoundedCornerShape(16.dp))
-                    .padding(12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                    .border(1.dp, cardBorder, RoundedCornerShape(minDim * 0.044f))
+                    .padding(minDim * 0.033f),
+                verticalArrangement = Arrangement.spacedBy(minDim * 0.022f)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
-                        modifier = Modifier.size(40.dp).clip(CircleShape).background(thumbBg),
+                        modifier = Modifier.size(minDim * 0.111f).clip(CircleShape).background(thumbBg),
                         contentAlignment = Alignment.Center
                     ) {
-                        Icon(row.icon, contentDescription = null, modifier = Modifier.size(22.dp))
+                        Icon(row.icon, contentDescription = null, modifier = Modifier.size(minDim * 0.061f))
                     }
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Text(row.title, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, modifier = Modifier.weight(1f))
-                    Text("$percent%", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                    Spacer(modifier = Modifier.width(minDim * 0.033f))
+                    Text(row.title, fontWeight = FontWeight.SemiBold, fontSize = (minDim * 0.044f).value.sp, modifier = Modifier.weight(1f))
+                    Text("$percent%", fontWeight = FontWeight.SemiBold, fontSize = (minDim * 0.042f).value.sp)
                 }
                 Slider(
                     value = current.toFloat(),
@@ -995,12 +1014,12 @@ private fun SoundTab(
                 if (row.stream == AudioManager.STREAM_VOICE_CALL) {
                     Text(
                         "Call volume applies during a call.",
-                        fontSize = 12.sp,
+                        fontSize = (minDim * 0.033f).value.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
         }
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(minDim * 0.022f))
     }
 }

@@ -1,4 +1,8 @@
 // FILE: app/src/main/java/com/calnyx/app/ui/screens/ScientificCalculatorScreen.kt
+// REDESIGN V3 % (2026-11-07) - REPLACE. V2 base, logic + colours
+// UNCHANGED. Only change: every size is now a % of the window
+// (BoxWithConstraints: windowW/windowH/minDim). No fixed dp/sp
+// except 0.dp and the 0.65f superscript ratio.
 // REDESIGN V2 (2026-11-07) - REPLACE. Based on the B/W version.
 // Logic UNCHANGED (onKeyPress SHIFT/HYP, ViewModel calls, history
 // sheet, format helpers, drawer swipe). Only the look changed:
@@ -62,6 +66,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.BaselineShift
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -215,43 +220,81 @@ fun ScientificCalculatorScreen(
         }
     }
 
-    // DRAWER SWIPE (universal rule): a LEFTWARD drag on the toolbar or
-    // the keypad opens the app drawer. Rightward drags are NOT consumed
-    // here. The LCD panel is deliberately excluded — its expression /
-    // result rows scroll horizontally and must keep working.
-    val drawerSwipe = Modifier.pointerInput(Unit) {
-        val thresholdPx = 24.dp.toPx()
-        var totalDx = 0f
-        var done = false
-        detectHorizontalDragGestures(
-            onDragStart = { totalDx = 0f; done = false },
-            onDragEnd = { totalDx = 0f; done = false },
-            onDragCancel = { totalDx = 0f; done = false },
-            onHorizontalDrag = { change, dragAmount ->
-                if (done) return@detectHorizontalDragGestures
-                totalDx += dragAmount
-                if (totalDx < -thresholdPx) {
-                    done = true
-                    onOpenDrawer()
-                    change.consume()
-                }
-            }
-        )
-    }
-
-    Column(
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
-            .statusBarsPadding()
-            .navigationBarsPadding()
-            .padding(horizontal = 6.dp)
     ) {
+        val windowW = maxWidth
+        val windowH = maxHeight
+        val minDim = minOf(windowW, windowH)
+        // % SIZES (2026-11-07): sob window-er % - kono fixed dp/sp
+        // nei (0.dp chara). Normal 360x760 phone-e ager motoi dekhabe.
+        val sidePad = windowW * 0.017f   // 6dp
+        val topGap = windowH * 0.013f    // 10dp
+        val histIcon = minDim * 0.072f   // 26dp
+        val titleFont = (minDim.value * 0.044f).sp // 16sp
+        val lcdCorner = minDim * 0.044f  // 16dp
+        val lcdPadH = minDim * 0.044f    // 16dp
+        val lcdPadV = windowH * 0.011f   // 8dp
+        val indH = windowH * 0.021f      // 16dp
+        val indFont = (minDim.value * 0.031f).sp // 11sp
+        val exprH = windowH * 0.061f     // 46dp
+        val resultH = windowH * 0.068f   // 52dp
+        val gapAfterLcd = windowH * 0.008f // 6dp
+        val keyGapH = windowW * 0.017f   // 6dp
+        val keyGapV = windowH * 0.008f   // 6dp
+        val bottomGap = windowH * 0.003f // 2dp
+        val sheetPadH = windowW * 0.056f // 20dp
+        val sheetPadB = windowH * 0.037f // 28dp
+        val sheetTitle = (minDim.value * 0.05f).sp // 18sp
+        val noHistPadV = windowH * 0.032f // 24dp
+        val sheetMaxH = windowH * 0.566f // 430dp
+        val dayFont = (minDim.value * 0.039f).sp // 14sp
+        val dayPadV = windowH * 0.013f   // 10dp
+        val itemPadV = windowH * 0.011f  // 8dp
+        val itemExprFont = (minDim.value * 0.047f).sp // 17sp
+        val itemGap = windowH * 0.003f   // 2dp
+        val itemResultFont = (minDim.value * 0.078f).sp // 28sp
+        // DRAWER SWIPE (universal rule): a LEFTWARD drag on the
+        // toolbar or the keypad opens the app drawer. Rightward
+        // drags are NOT consumed here. The LCD panel is
+        // deliberately excluded - its expression / result rows
+        // scroll horizontally and must keep working.
+        // pointerInput(minDim): window resize-e detector-ta
+        // notun threshold niye abar shuru hoy.
+        val drawerSwipe = Modifier.pointerInput(minDim) {
+            val thresholdPx = (minDim * 0.067f).toPx() // 24dp
+            var totalDx = 0f
+            var done = false
+            detectHorizontalDragGestures(
+                onDragStart = { totalDx = 0f; done = false },
+                onDragEnd = { totalDx = 0f; done = false },
+                onDragCancel = { totalDx = 0f; done = false },
+                onHorizontalDrag = { change, dragAmount ->
+                    if (done) return@detectHorizontalDragGestures
+                    totalDx += dragAmount
+                    if (totalDx < -thresholdPx) {
+                        done = true
+                        onOpenDrawer()
+                        change.consume()
+                    }
+                }
+            )
+        }
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .padding(horizontal = sidePad)
+        ) {
         // Only 10.dp up here now: the old 56.dp left a dead empty
         // band at the top and pushed the display down. The toolbar
         // content is left-aligned (History + title), so the
         // floating 3-dot menu at the top right covers nothing.
-        Spacer(modifier = Modifier.height(10.dp))
+        Spacer(modifier = Modifier.height(topGap))
         Row(
             modifier = Modifier.fillMaxWidth().then(drawerSwipe),
             verticalAlignment = Alignment.CenterVertically
@@ -261,12 +304,12 @@ fun ScientificCalculatorScreen(
                     Icons.Default.History,
                     contentDescription = "History",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(26.dp)
+                    modifier = Modifier.size(histIcon)
                 )
             }
             Text(
                 text = "Scientific",
-                fontSize = 16.sp,
+                fontSize = titleFont,
                 fontWeight = FontWeight.Medium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -276,21 +319,21 @@ fun ScientificCalculatorScreen(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(16.dp))
+                .clip(RoundedCornerShape(lcdCorner))
                 .background(MaterialTheme.colorScheme.surfaceVariant)
-                .padding(horizontal = 16.dp, vertical = 8.dp),
+                .padding(horizontal = lcdPadH, vertical = lcdPadV),
             horizontalAlignment = Alignment.End
         ) {
             // Indicator row — fixed height
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(16.dp),
+                    .height(indH),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
                     text = if (isDegrees) "DEG" else "RAD",
-                    fontSize = 11.sp,
+                    fontSize = indFont,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -300,7 +343,7 @@ fun ScientificCalculatorScreen(
                 ) {
                     Text(
                         text = "  SHIFT",
-                        fontSize = 11.sp,
+                        fontSize = indFont,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
@@ -311,7 +354,7 @@ fun ScientificCalculatorScreen(
                 ) {
                     Text(
                         text = "  HYP",
-                        fontSize = 11.sp,
+                        fontSize = indFont,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
@@ -322,10 +365,10 @@ fun ScientificCalculatorScreen(
             val shownExpression = if (finalResult != null) "" else expression
             val expressionFontSize by animateFloatAsState(
                 targetValue = when {
-                    shownExpression.length <= 12 -> 34f
-                    shownExpression.length <= 18 -> 29f
-                    shownExpression.length <= 26 -> 24f
-                    else -> 20f
+                    shownExpression.length <= 12 -> minDim.value * 0.094f
+                    shownExpression.length <= 18 -> minDim.value * 0.081f
+                    shownExpression.length <= 26 -> minDim.value * 0.067f
+                    else -> minDim.value * 0.056f
                 },
                 animationSpec = tween(180),
                 label = "sciExprFont"
@@ -337,7 +380,7 @@ fun ScientificCalculatorScreen(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(46.dp)
+                    .height(exprH)
                     .clipToBounds(),
                 contentAlignment = Alignment.CenterEnd
             ) {
@@ -367,12 +410,12 @@ fun ScientificCalculatorScreen(
             }
             val resultFontSize by animateFloatAsState(
                 targetValue = when {
-                    finalResult != null && shownResultDisplay.length <= 10 -> 36f
-                    finalResult != null && shownResultDisplay.length <= 14 -> 30f
-                    finalResult != null && shownResultDisplay.length <= 19 -> 25f
-                    finalResult != null -> 21f
-                    shownResultDisplay.length <= 19 -> 22f
-                    else -> 19f
+                    finalResult != null && shownResultDisplay.length <= 10 -> minDim.value * 0.10f
+                    finalResult != null && shownResultDisplay.length <= 14 -> minDim.value * 0.083f
+                    finalResult != null && shownResultDisplay.length <= 19 -> minDim.value * 0.069f
+                    finalResult != null -> minDim.value * 0.058f
+                    shownResultDisplay.length <= 19 -> minDim.value * 0.061f
+                    else -> minDim.value * 0.053f
                 },
                 animationSpec = tween(180),
                 label = "sciResultFont"
@@ -384,7 +427,7 @@ fun ScientificCalculatorScreen(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(52.dp)
+                    .height(resultH)
                     .clipToBounds(),
                 contentAlignment = Alignment.CenterEnd
             ) {
@@ -411,9 +454,9 @@ fun ScientificCalculatorScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(6.dp))
+        Spacer(modifier = Modifier.height(gapAfterLcd))
 
-        // Keypad — rows share the remaining height, 6.dp gaps.
+        // Keypad — rows share the remaining height, % gaps.
         // No entrance animation any more: the whole keypad is
         // there at once instead of fading in row by row.
         Column(modifier = Modifier.weight(1f).then(drawerSwipe)) {
@@ -422,12 +465,13 @@ fun ScientificCalculatorScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(keyGapH)
                 ) {
                     row.forEach { key ->
                         SciKeyCell(
                             key = key,
                             darkTheme = darkTheme,
+                            minDim = minDim,
                             shiftMode = shiftMode,
                             hypMode = hypMode,
                             modifier = Modifier
@@ -437,11 +481,11 @@ fun ScientificCalculatorScreen(
                         )
                     }
                 }
-                Spacer(modifier = Modifier.height(6.dp))
+                Spacer(modifier = Modifier.height(keyGapV))
             }
         }
 
-        Spacer(modifier = Modifier.height(2.dp))
+        Spacer(modifier = Modifier.height(bottomGap))
     }
 
     // History modal — slides up as a bottom sheet
@@ -454,8 +498,8 @@ fun ScientificCalculatorScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 20.dp)
-                    .padding(bottom = 28.dp)
+                    .padding(horizontal = sheetPadH)
+                    .padding(bottom = sheetPadB)
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -463,7 +507,7 @@ fun ScientificCalculatorScreen(
                 ) {
                     Text(
                         text = "History",
-                        fontSize = 18.sp,
+                        fontSize = sheetTitle,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
@@ -480,21 +524,21 @@ fun ScientificCalculatorScreen(
                     Text(
                         text = "No history yet",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(vertical = 24.dp)
+                        modifier = Modifier.padding(vertical = noHistPadV)
                     )
                 } else {
                     LazyColumn(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(max = 430.dp)
+                            .heightIn(max = sheetMaxH)
                     ) {
                         groupedEntries.forEach { (day, dayItems) ->
                             item(key = "sheet-header-$day") {
                                 Text(
                                     text = day,
-                                    fontSize = 14.sp,
+                                    fontSize = dayFont,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(vertical = 10.dp)
+                                    modifier = Modifier.padding(vertical = dayPadV)
                                 )
                             }
                             items(dayItems) { item ->
@@ -505,19 +549,19 @@ fun ScientificCalculatorScreen(
                                             viewModel.onHistoryItemClick(item.result)
                                             showHistorySheet = false
                                         }
-                                        .padding(vertical = 8.dp),
+                                        .padding(vertical = itemPadV),
                                     horizontalAlignment = Alignment.End
                                 ) {
                                     Text(
                                         text = formatForDisplay(item.expression),
-                                        fontSize = 17.sp,
+                                        fontSize = itemExprFont,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         textAlign = TextAlign.End
                                     )
-                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Spacer(modifier = Modifier.height(itemGap))
                                     Text(
                                         text = formatForDisplay(item.result),
-                                        fontSize = 28.sp,
+                                        fontSize = itemResultFont,
                                         color = MaterialTheme.colorScheme.onSurface,
                                         textAlign = TextAlign.End
                                     )
@@ -529,17 +573,28 @@ fun ScientificCalculatorScreen(
             }
         }
     }
+    } // BoxWithConstraints
+
 }
 
 @Composable
 private fun SciKeyCell(
     key: SciKey,
     darkTheme: Boolean,
+    minDim: Dp, // % base - caller passes window minDim
     shiftMode: Boolean,
     hypMode: Boolean,
     modifier: Modifier = Modifier,
     onPress: (SciKey) -> Unit
 ) {
+    // % SIZES: sob minDim-er %.
+    val keyCorner = minDim * 0.033f   // 12dp
+    val backIcon = minDim * 0.061f    // 22dp
+    val smallFont = (minDim.value * 0.025f).sp // 9sp
+    val smallLineH = (minDim.value * 0.028f).sp // 10sp
+    val digitFont = (minDim.value * 0.067f).sp // 24sp
+    val funcFont = (minDim.value * 0.036f).sp  // 13sp
+    val otherFont = (minDim.value * 0.042f).sp // 15sp
     // COLOURS (2026-11-07 redesign - colour is allowed on this
     // screen now): digits neutral, function keys soft blue,
     // Deg/Rad soft purple, SHIFT amber, AC red, = green,
@@ -624,7 +679,7 @@ private fun SciKeyCell(
                 scaleX = pressScale
                 scaleY = pressScale
             },
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(keyCorner),
         colors = ButtonDefaults.buttonColors(
             containerColor = animatedContainer,
             contentColor = contentColor
@@ -637,7 +692,7 @@ private fun SciKeyCell(
             Icon(
                 Icons.Default.Backspace,
                 contentDescription = "Delete",
-                modifier = Modifier.size(22.dp)
+                modifier = Modifier.size(backIcon)
             )
         } else {
             Column(
@@ -652,8 +707,8 @@ private fun SciKeyCell(
                 if (smallLabel.isNotEmpty()) {
                     Text(
                         text = smallLabel,
-                        fontSize = 9.sp,
-                        lineHeight = 10.sp,
+                        fontSize = smallFont,
+                        lineHeight = smallLineH,
                         color = contentColor.copy(alpha = 0.65f),
                         maxLines = 1,
                         softWrap = false
@@ -669,9 +724,9 @@ private fun SciKeyCell(
                     // cos⁻¹, tan⁻¹, RanInt) fit on one line; digits
                     // stay 24.sp, the rest 15.sp.
                     fontSize = when (key.style) {
-                        SciKeyStyle.DIGIT -> 24.sp
-                        SciKeyStyle.FUNCTION -> 13.sp
-                        else -> 15.sp
+                        SciKeyStyle.DIGIT -> digitFont
+                        SciKeyStyle.FUNCTION -> funcFont
+                        else -> otherFont
                     },
                     fontWeight = FontWeight.Medium,
                     maxLines = 1,

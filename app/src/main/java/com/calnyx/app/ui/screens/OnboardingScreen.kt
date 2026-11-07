@@ -62,6 +62,8 @@ import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.Icon
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -104,11 +106,15 @@ fun OnboardingScreen(darkTheme: Boolean, onFinish: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val pagerState = rememberPagerState(initialPage = 0, pageCount = { PAGE_COUNT })
-    val pageBg = if (darkTheme) Color(0xFF0E0E0E) else Color(0xFFF6F4EF)
-    val cardBg = if (darkTheme) Color(0xFF1B1B1B) else Color(0xFFFFFFFF)
-    val cardBorder = if (darkTheme) Color(0xFF2B2B2B) else Color(0xFFE9E6DF)
+    // SMOOTH BLACK (2026-11-07): the intro must never be pitch
+    // black. Dark mode is a soft charcoal (#1E1E1E) with lifted
+    // cards and borders, so it is easy on the eyes. Light mode
+    // is untouched. Status + navigation bar follow pageBg.
+    val pageBg = if (darkTheme) Color(0xFF1E1E1E) else Color(0xFFF6F4EF)
+    val cardBg = if (darkTheme) Color(0xFF2A2A2A) else Color(0xFFFFFFFF)
+    val cardBorder = if (darkTheme) Color(0xFF3D3D3D) else Color(0xFFE9E6DF)
     val onPageColor = if (darkTheme) Color(0xFFF6F4EF) else Color(0xFF0E0E0E)
-    val thumbBg = if (darkTheme) Color(0xFF262626) else Color(0xFFEFEDE8)
+    val thumbBg = if (darkTheme) Color(0xFF333333) else Color(0xFFEFEDE8)
 
     // Status + navigation bar match the page background.
     val view = LocalView.current
@@ -144,6 +150,11 @@ fun OnboardingScreen(darkTheme: Boolean, onFinish: () -> Unit) {
     val page = pagerState.currentPage
     val allRequiredDone = OnboardingPermissions.required().all { permStates[it.id] == true }
     val nextEnabled = page != PAGE_PERMISSIONS || allRequiredDone
+
+    fun toggle(permission: AppPermission, value: Boolean) {
+        OnboardingPermissions.setToggle(context, permission, value)
+        refreshPerms()
+    }
 
     fun grant(permission: AppPermission) {
         try {
@@ -223,7 +234,8 @@ fun OnboardingScreen(darkTheme: Boolean, onFinish: () -> Unit) {
                         cardBorder = cardBorder,
                         permStates = permStates,
                         allRequiredDone = allRequiredDone,
-                        onGrant = ::grant
+                        onGrant = ::grant,
+                        onToggle = ::toggle
                     )
                     6 -> DonePage(onPageColor, thumbBg)
                 }
@@ -408,7 +420,7 @@ private fun WelcomePage(onPageColor: Color, thumbBg: Color, cardBg: Color, cardB
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Text(
-                text = "Made by Md. Masud Khan",
+                text = "Made by Masud Ibn Belat",
                 fontSize = 16.sp,
                 fontWeight = FontWeight.Bold,
                 color = onPageColor
@@ -513,7 +525,8 @@ private fun PermissionsPage(
     cardBorder: Color,
     permStates: Map<String, Boolean>,
     allRequiredDone: Boolean,
-    onGrant: (AppPermission) -> Unit
+    onGrant: (AppPermission) -> Unit,
+    onToggle: (AppPermission, Boolean) -> Unit
 ) {
     PageTitle("Permissions", onPageColor)
     PageSubtitle(
@@ -524,6 +537,7 @@ private fun PermissionsPage(
     OnboardingPermissions.all().forEach { permission ->
         val granted = permStates[permission.id] == true
         val isStop = permission.id == OnboardingPermissions.ID_STOP_NOTIFICATIONS
+        val isToggle = permission.kind == PermissionKind.TOGGLE
         Column(
             modifier = Modifier.fillMaxWidth()
                 .clip(RoundedCornerShape(16.dp))
@@ -583,7 +597,33 @@ private fun PermissionsPage(
                     )
                 }
             }
-            if (!granted && !isStop) {
+            // TOGGLE items get a black / white Switch, never a
+            // Grant button. The Switch is B/W only - no M3 purple.
+            if (isToggle) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = if (granted) "Hidden" else "Showing",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = onPageColor.copy(alpha = 0.75f),
+                        modifier = Modifier.weight(1f)
+                    )
+                    Switch(
+                        checked = granted,
+                        onCheckedChange = { onToggle(permission, it) },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = cardBg,
+                            checkedTrackColor = onPageColor,
+                            uncheckedThumbColor = onPageColor,
+                            uncheckedTrackColor = cardBorder
+                        )
+                    )
+                }
+            }
+            if (!granted && !isStop && !isToggle) {
                 Box(
                     modifier = Modifier.fillMaxWidth().height(44.dp)
                         .clip(RoundedCornerShape(12.dp))

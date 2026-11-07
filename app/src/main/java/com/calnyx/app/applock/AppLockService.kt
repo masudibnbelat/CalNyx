@@ -1,19 +1,73 @@
 // FILE: app/src/main/java/com/calnyx/app/applock/AppLockService.kt
-// FIXED2 + PANEL VERSION - replace your old AppLockService.kt with this file.
-// WHY THE BUILD FAILED: BallPanelActivity.kt and MoanControlScreen.kt
-// call AppLockService.requestOfficialScreenshot(), requestLockScreen()
-// and requestPowerDialog(), but the AppLockService.kt in the project
-// is the plain FIXED2 version, which does NOT have those three
-// companion methods — hence "Unresolved reference" x5. This file is
-// FIXED2 session logic UNCHANGED, plus a companion object holding
-// the service instance and those three request methods:
-//   requestPowerDialog() -> GLOBAL_ACTION_POWER_DIALOG
-//   requestLockScreen()  -> GLOBAL_ACTION_LOCK_SCREEN
-//   requestOfficialScreenshot() -> GLOBAL_ACTION_TAKE_SCREENSHOT (API 28+)
-// Each returns false when Accessibility is off / service not running,
-// and the callers already show "Turn on Accessibility" then.
-// Also: onServiceConnected sets instance + OrientationGuard.refresh,
-// onDestroy clears instance. Nothing else changed vs FIXED2.
+// PANEL6-FIXED3 VERSION (PANEL6 + the 30s-lock fix) - replace your old AppLockService.kt with this file.
+// This is PANEL6 (companion requestPowerDialog / requestLockScreen /
+// requestOfficialScreenshot + OrientationGuard hook) WITH the FIXED3
+// changes below. Do NOT use the plain FIXED2 file for this service -
+// it has no companion functions, and BallPanelActivity /
+// MoanControlScreen will not compile without them (that is the build
+// error you just saw).
+// Based on PANEL2 (FIXED2 session logic unchanged). Only change:
+// screenshot now uses the phone's OFFICIAL screenshot via
+// GLOBAL_ACTION_TAKE_SCREENSHOT (Android 9+). The system shows
+// its own screenshot preview, so the user can see it, share it
+// and edit it. The old custom takeScreenshot() + save-to-file
+// path is removed - it only showed a toast and the user could
+// not tell if a screenshot was taken.
+// Based on MOAN (FIXED2 + power/lock). Only addition: screenshot
+// for the floating-ball mini panel. All FIXED2 session logic
+// unchanged. Screenshot uses takeScreenshot() (Android 11+ only)
+// and saves to Pictures/CalNyx. Needs canTakeScreenshot=true in
+// app_lock_service_config.xml and Accessibility on. On Android
+// 9/10 it returns false and the panel shows a note.
+// Apply TOGETHER with AppLockManager-FIXED2.kt and NavGraph-FIXED2.kt.
+// NormalCalculatorScreen (UNLOCK / LIFTED) stays as-is.
+//
+// WHY MIDUSEFIX STILL LOCKED MID-USE - the 3 holes found in your pasted code:
+// 1. hasLauncher() was the only filter. Keyboard (Gboard / Samsung /
+//    SwiftKey), permission dialog, share sheet, file picker, Play
+//    Services dialog ALL have a launch intent, so the service thought
+//    "user left WhatsApp for another app" when the keyboard just opened.
+//    It ended the session and started the 30s grace. After 30s the next
+//    window change inside the SAME app blocked. That is exactly your
+//    "kichukkhon por lock hoye jay".
+// 2. NavGraph ON_RESUME ended the session on EVERY CalNyx resume. That
+//    fires during the unlock handoff too, and the intervened flag it set
+//    stayed stuck if the next event was CalNyx itself (ignored by the
+//    service, so never consumed). Next session-allow then failed.
+// 3. A transient package overwrote lastForegroundPkg, so the "previous
+//    == session" check broke on return.
+//
+// FIXED2 - single source of truth is this Service, not NavGraph:
+// 1. Transient packages are ignored BEFORE any session logic: system,
+//    permission controller, chooser, documents picker, GMS, and the
+//    CURRENT keyboard (read from Settings, not a hard-coded list).
+//    They never change lastForeground and never end a session.
+// 2. Session allow is UNCONDITIONAL: if pkg == session, allow.
+//    No intervened check, no lastForeground check. A session ends
+//    only on a real switch to another REAL app, or on a manual
+//    CalNyx open - both handled here.
+// 3. CalNyx foreground is handled HERE, not in NavGraph:
+//    - pending != null (decoy launch to block) -> ignore, do not end.
+//    - pending == null + session != null (user manually opened CalNyx)
+//      -> real exit, end session, grace starts.
+// 4. Dialog / popup window events (className contains Dialog/Popup)
+//    are ignored - they are not an app switch.
+// FIXED3 - the 30s lock sometimes never locks. TWO holes, one cause:
+// the session only ended when the Service SAW an exit, so an exit it
+// never saw left the session alive forever and the app never locked:
+// 1. Screen off: locking the phone (power button, screen timeout)
+//    inside a locked app fires NO window event. The session stayed
+//    alive for hours - next open went straight in, no lock.
+//    Fix: a screen-off receiver ends the session (grace starts).
+// 2. Ghost session: service killed (battery / OEM) or reboot while a
+//    session is alive. The switch away was missed, the session is
+//    still in prefs, next open is allowed. Fix: the session now has
+//    a last-seen stamp; a session unseen for 10 minutes AND last seen
+//    before this service instance started is a ghost and is cleared
+//    (the normal lock check below then blocks). While the app is
+//    really in use, window events keep refreshing lastSeen, and a
+//    service restart mid-use has only a seconds-long gap - so neither
+//    fix can ever fire mid-use. The mid-use rule is untouched.
 // Debug: adb logcat -s CalNyxAppLock  (filter by pid for clean log)
 package com.calnyx.app.applock
 
@@ -21,7 +75,10 @@ import com.calnyx.app.moan.OrientationGuard
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.os.Build
 import android.provider.Settings
 import android.util.Log
@@ -70,6 +127,32 @@ class AppLockService : AccessibilityService() {
     }
 
     private var lastForegroundPkg: String? = null
+
+    // When THIS service instance started. A session last seen before
+    // this moment spans a service restart / reboot.
+    private var serviceStartedAt: Long = 0L
+
+    // A session unseen for longer than this is stale - the user left
+    // the app through an exit the Service never saw. 10 minutes: far
+    // longer than the 30s lock time, so normal use never trips it.
+    private val STALE_SESSION_MS = 10L * 60L * 1000L
+
+    // FIXED3: the screen going off is an exit the window events never
+    // show. Screen off ends the session and starts the normal grace
+    // (30s): back within 30s it reopens freely, after 30s it locks.
+    private val screenOffReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action != Intent.ACTION_SCREEN_OFF) return
+            try {
+                val session = AppLockManager.getUnlockedSession(this@AppLockService)
+                if (session != null) {
+                    Log.d("CalNyxAppLock", "screen off, ending session $session")
+                    AppLockManager.endUnlockedSession(this@AppLockService)
+                }
+            } catch (_: Exception) {
+            }
+        }
+    }
 
     // Packages that are never a real app switch, even though
     // getLaunchIntentForPackage() returns non-null for some of them.
@@ -121,6 +204,11 @@ class AppLockService : AccessibilityService() {
             notificationTimeout = 100
         }
         serviceInfo = info
+        serviceStartedAt = System.currentTimeMillis()
+        try {
+            registerReceiver(screenOffReceiver, IntentFilter(Intent.ACTION_SCREEN_OFF))
+        } catch (_: Exception) {
+        }
         lastForegroundPkg = try {
             AppLockManager.getLastForegroundPkg(this)
         } catch (_: Exception) {
@@ -242,14 +330,43 @@ class AppLockService : AccessibilityService() {
             return
         }
 
-        // FIXED2: session allow is UNCONDITIONAL. If this IS the session
-        // app, it is still the same use, no matter how long, no matter
-        // if the service restarted, no matter what lastForeground says.
-        // NEVER block here. This is the whole mid-use rule.
+        // FIXED3: session allow is UNCONDITIONAL while the app is really
+        // still in front - no matter how long, no matter if the service
+        // restarted, no matter what lastForeground says. NEVER block
+        // here. This is the whole mid-use rule. ONE exception: a STALE
+        // session (see the FIXED3 note at the top of this file). A ghost
+        // session is cleared and the normal lock check below runs
+        // (grace is long expired, so it blocks). While the app is
+        // really in use, window events keep refreshing lastSeen, so
+        // this can never fire mid-use.
         if (session != null && pkg == session) {
-            Log.d("CalNyxAppLock", "session allow pkg=$pkg")
-            setLastForeground(pkg)
-            return
+            val now = System.currentTimeMillis()
+            val lastSeen = try {
+                AppLockManager.getSessionLastSeen(this)
+            } catch (_: Exception) {
+                0L
+            }
+            if (lastSeen > 0L && now - lastSeen > STALE_SESSION_MS &&
+                lastSeen < serviceStartedAt
+            ) {
+                Log.d(
+                    "CalNyxAppLock",
+                    "stale session pkg=$pkg lastSeen=$lastSeen serviceStarted=$serviceStartedAt"
+                )
+                try {
+                    AppLockManager.clearUnlockedSession(this)
+                } catch (_: Exception) {
+                }
+                // Fall through: the normal lock check below runs.
+            } else {
+                try {
+                    AppLockManager.setSessionLastSeen(this, now)
+                } catch (_: Exception) {
+                }
+                Log.d("CalNyxAppLock", "session allow pkg=$pkg")
+                setLastForeground(pkg)
+                return
+            }
         }
 
         // Continuation of an UNLOCKED app: harmless, allow.
@@ -308,6 +425,10 @@ class AppLockService : AccessibilityService() {
 
     override fun onDestroy() {
         if (instance == this) instance = null
+        try {
+            unregisterReceiver(screenOffReceiver)
+        } catch (_: Exception) {
+        }
         super.onDestroy()
     }
 

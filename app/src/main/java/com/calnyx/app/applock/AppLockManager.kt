@@ -15,6 +15,12 @@
 //    App info > 3 dots > Allow restricted settings. This helper lets
 //    AppLockScreen show that exact help only when it applies.
 // 4. endUnlockedSession() also clears session start time.
+// FIXED3 (30s lock sometimes never locks): NEW session last-seen time.
+// The session only ended when the Service SAW an exit, so an exit it
+// never saw (screen off, service killed, reboot) left the session
+// alive forever. setUnlockedSession() now stamps lastSeen, the Service
+// refreshes it on every session-allow event, and clearUnlockedSession()
+// removes it. See AppLockService STALE_SESSION_MS.
 // Old intervened helpers are kept (for migration) but FIXED2 Service
 // no longer depends on them - session allow is unconditional now.
 package com.calnyx.app.applock
@@ -35,6 +41,7 @@ object AppLockManager {
     private const val KEY_UNLOCK_DURATION_MS = "unlock_duration_ms"
     private const val KEY_SESSION_PKG = "unlocked_session_package"
     private const val KEY_SESSION_STARTED_AT = "unlocked_session_started_at"
+    private const val KEY_SESSION_LAST_SEEN = "unlocked_session_last_seen"
     private const val KEY_CALNYX_INTERVENED = "calnyx_intervened"
     private const val KEY_LAST_FOREGROUND = "last_foreground_package"
     private const val KEY_DECOY_LAUNCH = "calnyx_decoy_launch"
@@ -50,6 +57,7 @@ object AppLockManager {
         if (!enabled) {
             edit.remove(KEY_SESSION_PKG)
             edit.remove(KEY_SESSION_STARTED_AT)
+            edit.remove(KEY_SESSION_LAST_SEEN)
             edit.remove(KEY_CALNYX_INTERVENED)
             edit.remove(KEY_ALLOWED_PKG)
             edit.remove(KEY_ALLOWED_UNTIL)
@@ -91,6 +99,7 @@ object AppLockManager {
         if (!locked && getUnlockedSession(context) == packageName) {
             edit.remove(KEY_SESSION_PKG)
             edit.remove(KEY_SESSION_STARTED_AT)
+            edit.remove(KEY_SESSION_LAST_SEEN)
         }
         edit.apply()
     }
@@ -115,6 +124,7 @@ object AppLockManager {
         prefs(context).edit()
             .putString(KEY_SESSION_PKG, packageName)
             .putLong(KEY_SESSION_STARTED_AT, System.currentTimeMillis())
+            .putLong(KEY_SESSION_LAST_SEEN, System.currentTimeMillis())
             .remove(KEY_CALNYX_INTERVENED)
             .remove(KEY_ALLOWED_PKG)
             .remove(KEY_ALLOWED_UNTIL)
@@ -127,10 +137,22 @@ object AppLockManager {
     fun getSessionStartedAt(context: Context): Long =
         prefs(context).getLong(KEY_SESSION_STARTED_AT, 0L)
 
+    // Last time the Service saw the session app in front. Updated on
+    // every session-allow event. The Service uses it to spot a session
+    // that outlived the exit it came from (screen off missed, service
+    // killed, reboot) - see AppLockService STALE_SESSION_MS.
+    fun getSessionLastSeen(context: Context): Long =
+        prefs(context).getLong(KEY_SESSION_LAST_SEEN, 0L)
+
+    fun setSessionLastSeen(context: Context, timeMs: Long) {
+        prefs(context).edit().putLong(KEY_SESSION_LAST_SEEN, timeMs).apply()
+    }
+
     fun clearUnlockedSession(context: Context) {
         prefs(context).edit()
             .remove(KEY_SESSION_PKG)
             .remove(KEY_SESSION_STARTED_AT)
+            .remove(KEY_SESSION_LAST_SEEN)
             .apply()
     }
 

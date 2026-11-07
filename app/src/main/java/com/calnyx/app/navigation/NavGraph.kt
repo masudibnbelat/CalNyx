@@ -1,3 +1,13 @@
+// NAVBAR % + SCROLLABLE DRAWER VERSION (2026-11-07) - REPLACE NavGraph.kt.
+//  Mini/split/floating-e drawer scroll hoto na, karon: (1) drawer width
+//  LocalConfiguration (DEVICE width) * 2/3 chilo - window choto holeo
+//  drawer device-er moto choura hoto, screen-er baire chole jeto;
+//  (2) drawer Column-e kono verticalScroll chilo na, ar Spacer
+//  weight(1f) About item-ke niche thele window-er baire pathato.
+//  V: drawer width = WINDOW width-er % (normal 66.7%, mini 85%),
+//  tools list = weight(1f) + verticalScroll, About = fixed footer
+//  (kokhono baire jabe na), header/icon/font/padding/gap - sob %.
+//  Top bar-o % -e. Logic/routes/swipe/privacy - kichu bodlayni.
 // ONBOARDING VERSION (2026-11-06) - REPLACE NavGraph.kt.
 //  1. FIRST RUN: if OnboardingPrefs says the introduction was
 //     never finished, CalNyxNavGraph shows OnboardingScreen
@@ -30,9 +40,12 @@
 //     BlueFilmScreen now get onOpenDrawer, so a leftward
 //     swipe anywhere on Hardware, Sound or Spy opens the
 //     drawer (universal drawer rule).
-//  3. ABOUT: the bottom "Contact Developer" item is now
-//     "About this app" (small text). Tap it and an About
-//     modal opens: app icon + CalNyx + version on top,
+//  3. ABOUT / UPDATE (swapped 2026-11-07): the header
+//     top-right icon is now an Info (i) button - tap it and
+//     the About modal opens; the bottom footer item is now
+//     Update - tap it and the UpdateDialog opens. Function
+//     unchanged, only the places swapped. The About modal
+//     itself: app icon + CalNyx + version on top,
 //     a Check for updates button (opens the existing
 //     UpdateDialog), a description of the app, and below
 //     it Contact Developer with the developer's name and
@@ -71,7 +84,7 @@
 //     (top-right) still opens it, and tapping a tool,
 //     the scrim, or dragging the panel right closes it.
 //  3. Everything else is unchanged: drawer content
-//     (logo, version, Update icon, tools list, theme
+//     (logo, version, Info icon, tools list, theme
 //     toggle), the 2/3 width, the 0.65 scrim, the reopen
 //     rule, blackhole hiding.
 // RIGHTDRAWER VERSION - replace your old NavGraph.kt with this file.
@@ -105,7 +118,8 @@
 //    controls, and the hamburger icon stays (it opens a drawer).
 //    History keeps its Back button on the top-left.
 // 3. Drawer header (top): theme toggle circle (sun/moon — tap to
-//    change theme at once), CalNyx, version, Update icon. The old
+//    change theme at once), CalNyx, version, Info icon (opens
+//    About). The bottom footer is Update. The old
 //    app logo circle was removed here (2026-11-06).
 //    Below: tools as a vertical list - icon + title per row.
 //    History is in the list too. BlackHole / BlackHoleSetup / AppLock are
@@ -130,6 +144,12 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
@@ -159,6 +179,8 @@ import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.Update
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -177,19 +199,23 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import android.app.Activity
+import android.content.Context
 import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.net.Uri
 import android.os.Build
 import android.widget.Toast
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
@@ -218,6 +244,8 @@ import com.calnyx.app.onboarding.PermissionKind
 import com.calnyx.app.ui.screens.OnboardingScreen
 import com.calnyx.app.applock.AppLockManager
 import com.calnyx.app.blackhole.BlackHolePickerGuard
+import com.calnyx.app.moan.FloatingBallService
+import com.calnyx.app.moan.MoanControlPrefs
 import com.calnyx.app.data.NavStateDatabase
 import com.calnyx.app.data.NavStateEntity
 import com.calnyx.app.ui.screens.BlueFilmScreen
@@ -235,6 +263,7 @@ import com.calnyx.app.ui.screens.NumberSystemCalculatorScreen
 import com.calnyx.app.ui.screens.ScientificCalculatorScreen
 import com.calnyx.app.ui.screens.BlackHoleScreen
 import com.calnyx.app.ui.screens.BlackHoleSetupScreen
+import com.calnyx.app.update.AppUpdateManager
 import com.calnyx.app.update.UpdateDialog
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -336,9 +365,33 @@ private val NavRed = Color(0xFFC62828)
 // (2026-11-06). Taken from the user's own CV. To change it, edit
 // this one line — the mail intent below uses it.
 private const val DEVELOPER_EMAIL = "masudibnbelat@gmail.com"
-private const val DEVELOPER_NAME = "Md. Masud Khan"
+private const val DEVELOPER_NAME = "Masud Ibn Belat"
+
+// PRIVACY (2026-11-07): "was backgrounded" flag, PERSISTED in
+// SharedPreferences (not just remember) so it survives a process
+// death while CalNyx is stopped. Set only on a REAL ON_STOP
+// (picker closed, not a config change); the ON_START guard below
+// consumes it. commit() on set: the flag must reach disk before a
+// possible immediate process kill; apply() on clear is enough.
+private const val PRIVACY_PREFS = "calnyx_privacy"
+private const val KEY_WAS_BACKGROUNDED = "was_backgrounded"
+
+private fun wasPrivacyBackgrounded(context: Context): Boolean =
+    context.getSharedPreferences(PRIVACY_PREFS, Context.MODE_PRIVATE)
+        .getBoolean(KEY_WAS_BACKGROUNDED, false)
+
+private fun setPrivacyBackgrounded(context: Context, value: Boolean) {
+    val edit = context.getSharedPreferences(PRIVACY_PREFS, Context.MODE_PRIVATE)
+        .edit().putBoolean(KEY_WAS_BACKGROUNDED, value)
+    if (value) edit.commit() else edit.apply()
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
+// Drawer update status (2026-11-07): the footer "Check update"
+// item's live state. Top-level on purpose - Kotlin does not
+// allow an enum declared inside a function (local enum).
+enum class DrawerUpdateStatus { Idle, Checking, UpToDate, Available }
+
 @Composable
 fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
     val context = LocalContext.current
@@ -371,8 +424,43 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
     // asar somoy BlackHole-er ek jholok-o dekhabe na. Normal
     // calculator theke locked app unlock korle eta kichu kore na,
     // karon tokhon route Normal-i thake.
+    // ON_START GUARD (2026-11-07): ON_STOP pop jodi kono karone na
+    // chole (purono NavGraph, pop fail, process death-e backstack
+    // restore), tahole fire asar somoy ON_START-e abar Normal-e
+    // firiye deoa hoy. Picker theke fira / rotation-e eta fire na.
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner, navController) {
+        // PRIVACY POP (shared by the ON_STOP close and the ON_START
+        // guard below): if a private screen is on top, go back to
+        // the Normal calculator, never showing the vault again.
+        // DECOY POP (2026-11-07): back stack-ke Normal-e ferano,
+        // kono shorto chara. Fresh start-e NavHost na thakle
+        // (back stack entry null) kichu kore na — tokhon start
+        // destination-i (niche, decoy hole Normal) kaj kore.
+        val popToNormal: () -> Unit = {
+            // Fresh start-e NavHost na thakle (back stack entry
+            // null) kichu kore na — tokhon start destination-i
+            // (niche, decoy hole Normal) kaj kore.
+            if (navController.currentBackStackEntry != null) {
+                if (!navController.popBackStack(Screen.Normal.route, false)) {
+                    navController.navigate(Screen.Normal.route) {
+                        popUpTo(navController.graph.findStartDestination().id) {
+                            inclusive = true
+                        }
+                        launchSingleTop = true
+                    }
+                }
+            }
+        }
+        val popPrivateToNormal: () -> Unit = {
+            val route = navController.currentBackStackEntry?.destination?.route
+            if (route == Screen.BlackHole.route ||
+                route == Screen.BlackHoleSetup.route ||
+                route == Screen.AppLock.route
+            ) {
+                popToNormal()
+            }
+        }
         val observer = LifecycleEventObserver { _, event ->
             // FIXED2: NO ON_RESUME session handling here any more.
             // AppLockService-FIXED2.kt handles CalNyx foreground:
@@ -403,20 +491,48 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
                 !BlackHolePickerGuard.isPickerOpen() &&
                 (context as? Activity)?.isChangingConfigurations != true
             ) {
-                val route = navController.currentBackStackEntry?.destination?.route
-                if (route == Screen.BlackHole.route ||
-                    route == Screen.BlackHoleSetup.route ||
-                    route == Screen.AppLock.route
+                // REAL backgrounding: remember it (persisted, so it
+                // survives a process death while stopped). The
+                // ON_START guard below re-checks even if this pop
+                // fails or the process dies before it runs.
+                setPrivacyBackgrounded(context, true)
+                popPrivateToNormal()
+            }
+            // ON_START GUARD (2026-11-07, defense in depth): the
+            // ON_STOP pop above is not enough on its own - if the
+            // installed NavGraph is older (no observer), or the
+            // pop fails, or the process dies while stopped and the
+            // back stack is restored with the vault on top, the
+            // vault would show again on reopen. So on every return
+            // to foreground after a REAL backgrounding, close a
+            // private screen again. Safe by construction:
+            // - picker return: ON_STOP had the guard open, so the
+            //   flag was never set - the import flow is untouched.
+            // - rotation: a config-change ON_STOP never sets the
+            //   flag, so rotating inside the vault keeps it open.
+            // - unlock handoff: the decoy lands on Normal (and this
+            //   guard pops a stale vault to Normal first), so the
+            //   secret-code "=" handler runs with pending intact.
+            if (event == Lifecycle.Event.ON_START) {
+                if (wasPrivacyBackgrounded(context) &&
+                    !BlackHolePickerGuard.isPickerOpen()
                 ) {
-                    if (!navController.popBackStack(Screen.Normal.route, false)) {
-                        navController.navigate(Screen.Normal.route) {
-                            popUpTo(navController.graph.findStartDestination().id) {
-                                inclusive = true
-                            }
-                            launchSingleTop = true
-                        }
-                    }
+                    popPrivateToNormal()
                 }
+                // DECOY (2026-11-07): App Lock ekta locked app-e tap
+                // koray CalNyx-ke decoy hisebe khuleche. Decoy-te
+                // SOBSOMOY Normal calculator dekhate hobe — user
+                // jekhane chilo (Converter / Scientific / CalTape)
+                // seta kokhono na. Launch-ta SINGLE_TOP, tai minimize
+                // kora CalNyx sudhu samne ase, back stack jemon chilo
+                // temoni thake — ei pop na thakle last section-tai
+                // dekhay. ON_RESUME niche flag clear kore, tai proti
+                // decoy launch-e ekbari chole; normal open-e flag
+                // set hoy na, tai tokhon kichu kore na.
+                if (AppLockManager.isDecoyLaunch(context)) {
+                    popToNormal()
+                }
+                setPrivacyBackgrounded(context, false)
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -438,6 +554,24 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
         val saved = ThemePrefs.isDarkTheme(context, darkTheme)
         if (saved != darkTheme) onToggleTheme()
     }
+
+    // FLOATING BALL (2026-11-07): the ball was only ever started
+    // from the Hardware screen, so after the app was killed or
+    // the phone rebooted it stayed gone until the user opened
+    // Hardware. Restore it on every app launch when the toggle
+    // is ON and the overlay permission is granted. start() is a
+    // no-op without the permission, and re-starting an already
+    // running service just re-applies the prefs.
+    LaunchedEffect(Unit) {
+        try {
+            if (MoanControlPrefs.isBallEnabled(context) &&
+                FloatingBallService.canDrawOverlays(context)
+            ) {
+                FloatingBallService.start(context)
+            }
+        } catch (_: Exception) {
+        }
+    }
     LaunchedEffect(darkTheme) {
         ThemePrefs.setDarkTheme(context, darkTheme)
     }
@@ -452,6 +586,95 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
     // drive this one value.
     var drawerOpen by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+
+    // DRAWER UPDATE STATUS (2026-11-07, drawer only): the footer
+    // "Check update" item is a live status. Auto-check runs once
+    // per app launch when a data connection appears (WiFi or
+    // mobile data): Idle -> Checking -> UpToDate / Available.
+    // A failed check falls back to Idle, so tapping the item
+    // retries by hand (the UpdateDialog checks again). Status
+    // colours are the user's explicit exception to the
+    // black/white-only rule: green = up to date, yellow =
+    // checking, red = update available.
+    var updateStatus by remember { mutableStateOf(DrawerUpdateStatus.Idle) }
+    var latestVersion by remember { mutableStateOf("") }
+    var updateChecked by remember { mutableStateOf(false) }
+    val updateGreen = Color(0xFF43A047)
+    val updateYellow = Color(0xFFFFB300)
+    val updateRed = Color(0xFFE53935)
+
+    // Spin for the checking icon (created always, only read
+    // while Checking, so it costs nothing in other states).
+    val updateSpin by rememberInfiniteTransition(label = "updateSpin").animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(900, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "updateSpinAngle"
+    )
+
+    fun isOnline(): Boolean {
+        return try {
+            val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+            val caps = cm.getNetworkCapabilities(cm.activeNetwork)
+            caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    fun runUpdateCheck() {
+        if (updateChecked) return
+        if (updateStatus == DrawerUpdateStatus.Checking) return
+        updateStatus = DrawerUpdateStatus.Checking
+        scope.launch {
+            try {
+                val result = AppUpdateManager.checkForUpdate(context)
+                updateStatus = result.fold(
+                    onSuccess = { info ->
+                        updateChecked = true
+                        if (info == null) {
+                            DrawerUpdateStatus.UpToDate
+                        } else {
+                            latestVersion = info.version
+                            DrawerUpdateStatus.Available
+                        }
+                    },
+                    onFailure = { DrawerUpdateStatus.Idle }
+                )
+            } catch (_: Exception) {
+                updateStatus = DrawerUpdateStatus.Idle
+            }
+        }
+    }
+
+    // Auto-check: registerDefaultNetworkCallback fires onAvailable
+    // at once if a connection is already up, and again whenever
+    // one appears later (WiFi / mobile data switched on).
+    DisposableEffect(Unit) {
+        val cm = try {
+            context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        } catch (_: Exception) {
+            null
+        }
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                if (isOnline()) runUpdateCheck()
+            }
+        }
+        try {
+            cm?.registerDefaultNetworkCallback(callback)
+        } catch (_: Exception) {
+        }
+        onDispose {
+            try {
+                cm?.unregisterNetworkCallback(callback)
+            } catch (_: Exception) {
+            }
+        }
+    }
 
     // App version from PackageManager (BuildConfig is not enabled
     // in build.gradle.kts, so do not use BuildConfig.VERSION_NAME).
@@ -494,7 +717,12 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
     LaunchedEffect(Unit) {
         val saved = navStateDao.observe().first()?.route
         startRoute =
-                if (saved != null && saved in calculatorRoutes) {
+                if (AppLockManager.isDecoyLaunch(context)) {
+                    // DECOY (2026-11-07): lock block theke fresh
+                    // start — decoy Normal-ei khulbe, mone rakha
+                    // calculator-e (Scientific / CalTape) na.
+                    Screen.Normal.route
+                } else if (saved != null && saved in calculatorRoutes) {
                     saved
                 } else {
                     Screen.Normal.route
@@ -539,22 +767,50 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
     val drawerVisible = currentRoute != Screen.BlackHole.route &&
         currentRoute != Screen.BlackHoleSetup.route &&
         currentRoute != Screen.AppLock.route
-    // Drawer is 2/3 of the screen, not full screen. The remaining
-    // 1/3 stays visible behind the scrim, dimmed.
-    val drawerWidth = (LocalConfiguration.current.screenWidthDp * 2 / 3).dp
-    // Slide + scrim animations for the right drawer.
-    val drawerOffset by animateDpAsState(
-        targetValue = if (drawerOpen) 0.dp else drawerWidth,
-        animationSpec = tween(300), label = "drawerOffset"
-    )
-    val scrimAlpha by animateFloatAsState(
-        targetValue = if (drawerOpen) 0.65f else 0f,
-        animationSpec = tween(280), label = "scrimAlpha"
-    )
+    // Drawer width/offset/scrim - niche outer BoxWithConstraints-er
+    // WINDOW size theke % hisab hobe (device size theke na).
     // The drawer must never stay open on a screen that hides
     // it (BlackHole / BlackHoleSetup / AppLock).
     LaunchedEffect(drawerVisible) { if (!drawerVisible) drawerOpen = false }
-    Box(modifier = Modifier.fillMaxSize().background(pageBg)) {
+    // NAVBAR % ROOT: BoxWithConstraints window-er asol size dey -
+    // split-e half height, floating-e choto window - sob % ekhan theke.
+    BoxWithConstraints(modifier = Modifier.fillMaxSize().background(pageBg)) {
+        val windowW = maxWidth
+        val windowH = maxHeight
+        val isMiniWindow = windowW < 320.dp || windowH < 480.dp
+        // Drawer width % of WINDOW: normal 66.7% (2/3), mini-te 85%
+        // (choto window-e 2/3 khub soru hoye jeto, item porte kosto hoto).
+        val drawerWidth = if (isMiniWindow) windowW * 0.85f else windowW * 0.667f
+        val drawerOffset by animateDpAsState(
+            targetValue = if (drawerOpen) 0.dp else drawerWidth,
+            animationSpec = tween(300), label = "drawerOffset"
+        )
+        val scrimAlpha by animateFloatAsState(
+            targetValue = if (drawerOpen) 0.65f else 0f,
+            animationSpec = tween(280), label = "scrimAlpha"
+        )
+        // Drawer % vars - sob drawerWidth / windowH-er %.
+        val drawerPadH = drawerWidth * 0.067f // 16dp / 240dp
+        val drawerPadV = windowH * 0.014f // 12dp / 850dp
+        val drawerGapH = windowH * 0.019f // 16dp
+        val drawerGapS = windowH * 0.009f // 8dp
+        val headerCircle = drawerWidth * 0.217f // 52dp
+        val headerIcon = headerCircle * 0.54f // 28dp
+        val drawerTitleFont = (drawerWidth.value * 0.092f).sp // 22sp
+        val drawerVersionFont = (drawerWidth.value * 0.05f).sp // 12sp
+        val drawerItemFont = (drawerWidth.value * 0.062f).sp // 15sp
+        val drawerAboutFont = (drawerWidth.value * 0.054f).sp // 13sp
+        val drawerIconSize = drawerWidth * 0.10f // 24dp
+        val drawerBadge = drawerWidth * 0.033f // 8dp
+        val drawerCorner = drawerWidth * 0.067f // 16dp
+        val drawerShadow = drawerWidth * 0.067f // 16dp
+        val drawerBorder = drawerWidth * 0.004f // ~1dp
+        val edgeZoneW = windowW * 0.078f // 28dp / 360dp
+        val topBarPadH = windowW * 0.028f // 10dp
+        val topBarPadV = windowH * 0.005f // 4dp
+        val topBarCircle = windowW * 0.133f // 48dp
+        val topBarHit = windowW * 0.155f // 56dp
+        val topBarIcon = windowW * 0.061f // 22dp
         val start = startRoute
         if (start != null) {
             NavHost(
@@ -711,22 +967,22 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
                         modifier =
                                 Modifier.fillMaxWidth()
                                         .statusBarsPadding()
-                                        .padding(horizontal = 10.dp, vertical = 4.dp),
+                                        .padding(horizontal = topBarPadH, vertical = topBarPadV),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                 ) {
                     when (currentRoute) {
                         Screen.History.route -> {
                             // Back stays on the top-LEFT (standard).
-                            TopBarCircleButton(onClick = { navController.popBackStack() }) {
+                            TopBarCircleButton(onClick = { navController.popBackStack() }, buttonSize = topBarCircle) {
                                 Icon(
                                         Icons.AutoMirrored.Filled.ArrowBack,
                                         contentDescription = "Back",
                                         tint = MaterialTheme.colorScheme.onSurface,
-                                        modifier = Modifier.size(22.dp)
+                                        modifier = Modifier.size(topBarIcon)
                                 )
                             }
-                            Spacer(modifier = Modifier.size(56.dp))
+                            Spacer(modifier = Modifier.size(topBarHit))
                         }
                         else -> {
                             // DRAWER: 3-DOT menu on the top-RIGHT (the user
@@ -737,13 +993,13 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
                             // Top-left is left empty on purpose: CalTape
                             // has its own top-left 3-dot button, and the
                             // two bars mixed together when both were left.
-                            Spacer(modifier = Modifier.size(56.dp))
-                            TopBarCircleButton(onClick = { drawerOpen = true }) {
+                            Spacer(modifier = Modifier.size(topBarHit))
+                            TopBarCircleButton(onClick = { drawerOpen = true }, buttonSize = topBarCircle) {
                                 Icon(
                                         Icons.Default.MoreVert,
                                         contentDescription = "Menu",
                                         tint = MaterialTheme.colorScheme.onSurface,
-                                        modifier = Modifier.size(22.dp)
+                                        modifier = Modifier.size(topBarIcon)
                                 )
                             }
                         }
@@ -758,6 +1014,7 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
                 AboutDialog(
                     appVersion = appVersion,
                     darkTheme = darkTheme,
+                    screenMin = minOf(windowW, windowH),
                     onClose = { showAbout = false },
                     onCheckUpdate = {
                         showAbout = false
@@ -791,18 +1048,19 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
                         .offset(x = drawerOffset)
                         .width(drawerWidth)
                         .fillMaxHeight()
-                        .shadow(16.dp)
+                        .shadow(drawerShadow)
                         .background(cardBg)
                         .border(
-                            1.dp,
+                            drawerBorder,
                             if (darkTheme) NavDrawerEdgeDark else NavBorderLight
                         )
-                        .pointerInput(Unit) {
+                        .pointerInput(drawerWidth) {
                             var acc = 0f
+                            val closeThreshold = drawerWidth.toPx() * 0.25f
                             detectHorizontalDragGestures(
                                 onHorizontalDrag = { _, dragAmount ->
                                     acc += dragAmount
-                                    if (acc > 60f) {
+                                    if (acc > closeThreshold) {
                                         drawerOpen = false
                                         acc = 0f
                                     }
@@ -815,23 +1073,16 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
                     Column(
                         modifier = Modifier.fillMaxSize()
                             .statusBarsPadding()
-                            .padding(horizontal = 16.dp, vertical = 12.dp)
+                            .padding(horizontal = drawerPadH, vertical = drawerPadV)
                     ) {
-                        // Header: theme toggle circle + CalNyx +
-                        // version + Update icon. The old app logo
-                        // circle is gone (2026-11-06). The circle
-                        // shows the Moon in light mode (tap -> dark)
-                        // and the Sun in dark mode (tap -> light),
-                        // same 52dp circle, same styling. Tap it and
-                        // the theme changes at once (drawer closes
-                        // so the change is visible immediately).
+                        // Header (FIXED - scroll hoy na): theme circle + CalNyx + version + Update.
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Box(
-                                modifier = Modifier.size(52.dp)
-                                    .shadow(6.dp, CircleShape)
+                                modifier = Modifier.size(headerCircle)
+                                    .shadow(drawerWidth * 0.025f, CircleShape)
                                     .clip(CircleShape)
                                     .background(if (darkTheme) NavOffWhite else NavOffBlack)
                                     .clickable { drawerOpen = false; onToggleTheme() },
@@ -841,51 +1092,57 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
                                     if (darkTheme) Icons.Default.LightMode else Icons.Default.DarkMode,
                                     contentDescription = "Toggle theme",
                                     tint = if (darkTheme) NavOffBlack else NavOffWhite,
-                                    modifier = Modifier.size(28.dp)
+                                    modifier = Modifier.size(headerIcon)
                                 )
                             }
-                            Spacer(modifier = Modifier.width(12.dp))
+                            Spacer(modifier = Modifier.width(drawerWidth * 0.05f))
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     text = "CalNyx",
-                                    fontSize = 22.sp,
+                                    fontSize = drawerTitleFont,
                                     fontWeight = FontWeight.Bold,
                                     color = onPageColor
                                 )
                                 if (appVersion.isNotEmpty()) {
                                     Text(
                                         text = "Version $appVersion",
-                                        fontSize = 12.sp,
+                                        fontSize = drawerVersionFont,
                                         color = Color.Gray
                                     )
                                 }
                             }
-                            IconButton(onClick = { closeDrawerAndGo(null) { showUpdate = true } }) {
+                            // INFO (header, 2026-11-07): the only i
+                            // button in the drawer. Opens the About
+                            // dialog. The Update icon moved to the
+                            // bottom footer.
+                            IconButton(onClick = { closeDrawerAndGo(null) { showAbout = true } }) {
                                 Icon(
-                                    Icons.Default.Update,
-                                    contentDescription = "App update",
+                                    Icons.Default.Info,
+                                    contentDescription = "About this app",
                                     tint = onPageColor,
-                                    modifier = Modifier.size(24.dp)
+                                    modifier = Modifier.size(drawerIconSize)
                                 )
                             }
                         }
-                        Spacer(modifier = Modifier.height(16.dp))
+                        Spacer(modifier = Modifier.height(drawerGapH))
                         HorizontalDivider(color = if (darkTheme) NavBorderDark else NavBorderLight)
-                        Spacer(modifier = Modifier.height(8.dp))
-                        // Tools list: icon + title, one row per tool.
-                        // To add a feature later, add its Screen to
-                        // menuScreens, or add another NavigationDrawerItem
-                        // here in the same pattern.
-                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Spacer(modifier = Modifier.height(drawerGapS))
+                        // Tools list (SCROLLABLE - V fix): weight(1f) +
+                        // verticalScroll, tai mini/split/floating-e list
+                        // jotoi lomba hok, scroll kore sob item-e jaoa jay.
+                        // Age ekhane kono scroll chilo na, ar niche
+                        // Spacer(weight 1f) About-ke baire thele dito.
+                        Column(
+                            modifier = Modifier.fillMaxWidth().weight(1f)
+                                .verticalScroll(rememberScrollState()),
+                            verticalArrangement = Arrangement.spacedBy(windowH * 0.005f)
+                        ) {
                             menuScreens.forEach { screen ->
                                 NavigationDrawerItem(
                                     label = {
-                                        // Single line, never wrap: "Number System"
-                                        // broke into two lines before. If a title
-                                        // is ever too long it ellipsizes instead.
                                         Text(
                                             screen.title,
-                                            fontSize = 15.sp,
+                                            fontSize = drawerItemFont,
                                             maxLines = 1,
                                             softWrap = false,
                                             overflow = TextOverflow.Ellipsis,
@@ -896,20 +1153,18 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
                                         Icon(
                                             screen.icon,
                                             contentDescription = screen.title,
-                                            modifier = Modifier.size(24.dp)
+                                            modifier = Modifier.size(drawerIconSize)
                                         )
                                     },
                                     selected = currentRoute == screen.route,
                                     onClick = { closeDrawerAndGo(screen.route) },
                                     badge = {
-                                        // Red dot only for the two special
-                                        // sections, only when selected.
                                         if (currentRoute == screen.route &&
                                             (screen.route == Screen.Moan.route ||
                                                 screen.route == Screen.Hardcore.route)
                                         ) {
                                             Box(
-                                                modifier = Modifier.size(8.dp)
+                                                modifier = Modifier.size(drawerBadge)
                                                     .clip(CircleShape)
                                                     .background(NavRed)
                                             )
@@ -923,42 +1178,97 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
                                         unselectedIconColor = onPageColor,
                                         unselectedTextColor = onPageColor
                                     ),
-                                    shape = RoundedCornerShape(16.dp),
+                                    shape = RoundedCornerShape(drawerCorner),
                                     modifier = Modifier.fillMaxWidth()
                                 )
                             }
                         }
-                        Spacer(modifier = Modifier.weight(1f))
+                        // CHECK UPDATE (FIXED FOOTER - scroll hoy na,
+                        // kokhono window-er baire jabe na, mini-teo
+                        // sobsomoy dekha jabe). Live status, drawer
+                        // only. Idle: "Check update" black/white.
+                        // Checking: "Checking update", yellow text +
+                        // spinning yellow icon, version hidden.
+                        // UpToDate: "Updated" green + current version
+                        // below. Available: "Update available" red +
+                        // old -> new version below, red. Tap always
+                        // opens the UpdateDialog.
                         HorizontalDivider(color = if (darkTheme) NavBorderDark else NavBorderLight)
-                        Spacer(modifier = Modifier.height(8.dp))
-                        // ABOUT THIS APP at the bottom (2026-11-06).
-                        // Replaces "Contact Developer" (that now lives
-                        // INSIDE the About modal). Small text, tap it
-                        // and the About modal opens.
+                        Spacer(modifier = Modifier.height(drawerGapS))
                         NavigationDrawerItem(
-                            label = { Text("About this app", fontSize = 13.sp, fontWeight = FontWeight.Medium) },
+                            label = {
+                                when (updateStatus) {
+                                    DrawerUpdateStatus.Idle -> Text(
+                                        "Check update",
+                                        fontSize = drawerAboutFont,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                    DrawerUpdateStatus.Checking -> Text(
+                                        "Checking update",
+                                        fontSize = drawerAboutFont,
+                                        fontWeight = FontWeight.Medium,
+                                        color = updateYellow
+                                    )
+                                    DrawerUpdateStatus.UpToDate -> Column {
+                                        Text(
+                                            "Updated",
+                                            fontSize = drawerAboutFont,
+                                            fontWeight = FontWeight.Bold,
+                                            color = updateGreen
+                                        )
+                                        Text(
+                                            "v$appVersion",
+                                            fontSize = drawerVersionFont,
+                                            color = updateGreen
+                                        )
+                                    }
+                                    DrawerUpdateStatus.Available -> Column {
+                                        Text(
+                                            "Update available",
+                                            fontSize = drawerAboutFont,
+                                            fontWeight = FontWeight.Bold,
+                                            color = updateRed
+                                        )
+                                        Text(
+                                            "v$appVersion → v$latestVersion",
+                                            fontSize = drawerVersionFont,
+                                            color = updateRed
+                                        )
+                                    }
+                                }
+                            },
                             icon = {
                                 Icon(
-                                    Icons.Default.Info,
-                                    contentDescription = "About this app",
-                                    modifier = Modifier.size(24.dp)
+                                    Icons.Default.Update,
+                                    contentDescription = "App update",
+                                    tint = when (updateStatus) {
+                                        DrawerUpdateStatus.Idle -> onPageColor
+                                        DrawerUpdateStatus.Checking -> updateYellow
+                                        DrawerUpdateStatus.UpToDate -> updateGreen
+                                        DrawerUpdateStatus.Available -> updateRed
+                                    },
+                                    modifier = Modifier.size(drawerIconSize)
+                                        .then(
+                                            if (updateStatus == DrawerUpdateStatus.Checking) {
+                                                Modifier.rotate(updateSpin)
+                                            } else {
+                                                Modifier
+                                            }
+                                        )
                                 )
                             },
                             selected = false,
-                            onClick = {
-                                drawerOpen = false
-                                showAbout = true
-                            },
+                            onClick = { closeDrawerAndGo(null) { showUpdate = true } },
                             colors = NavigationDrawerItemDefaults.colors(
                                 selectedContainerColor = Color.Transparent,
                                 unselectedContainerColor = Color.Transparent,
                                 unselectedIconColor = onPageColor,
                                 unselectedTextColor = onPageColor
                             ),
-                            shape = RoundedCornerShape(16.dp),
+                            shape = RoundedCornerShape(drawerCorner),
                             modifier = Modifier.fillMaxWidth()
                         )
-                        Spacer(modifier = Modifier.height(8.dp))
+                        Spacer(modifier = Modifier.height(drawerGapS))
                     }
                 }
             }
@@ -968,14 +1278,15 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
             if (!drawerOpen) {
                 Box(
                     modifier = Modifier.align(Alignment.CenterEnd)
-                        .width(28.dp)
+                        .width(edgeZoneW)
                         .fillMaxHeight()
-                        .pointerInput(Unit) {
+                        .pointerInput(windowW) {
                             var acc = 0f
+                            val openThreshold = windowW.toPx() * 0.17f
                             detectHorizontalDragGestures(
                                 onHorizontalDrag = { _, dragAmount ->
                                     acc += dragAmount
-                                    if (acc < -60f) {
+                                    if (acc < -openThreshold) {
                                         drawerOpen = true
                                         acc = 0f
                                     }
@@ -999,12 +1310,12 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
 @Composable
 private fun TopBarCircleButton(
         onClick: () -> Unit,
-        buttonSize: Dp = 48.dp,
+        buttonSize: Dp, // % size - callers pass topBarCircle (window %)
         content: @Composable () -> Unit
 ) {
     Box(
             modifier =
-                    Modifier.size(buttonSize + 8.dp)
+                    Modifier.size(buttonSize * 1.167f)
                             .clip(CircleShape)
                             .clickable { onClick() },
             contentAlignment = Alignment.Center
@@ -1031,6 +1342,7 @@ private fun TopBarCircleButton(
 private fun AboutDialog(
         appVersion: String,
         darkTheme: Boolean,
+        screenMin: Dp, // % base: screen-er choto dik (windowW/windowH theke)
         onClose: () -> Unit,
         onCheckUpdate: () -> Unit
 ) {
@@ -1038,6 +1350,25 @@ private fun AboutDialog(
     val cardBg = if (darkTheme) NavCardBlack else NavCardWhite
     val onPageColor = if (darkTheme) NavOffWhite else NavOffBlack
     val border = if (darkTheme) NavBorderDark else NavBorderLight
+    // % SIZES (2026-11-07): About dialog-e ar kono fixed dp/sp nei -
+    // sob screenMin-er %. Normal 360dp phone-e ager motoi dekhabe.
+    val dlgCorner = screenMin * 0.067f   // 24dp
+    val dlgCornerSm = screenMin * 0.044f // 16dp
+    val dlgPad = screenMin * 0.056f      // 20dp
+    val dlgGap = screenMin * 0.033f      // 12dp
+    val dlgGapSm = screenMin * 0.022f    // 8dp
+    val dlgIcon = screenMin * 0.20f      // 72dp
+    val dlgIconSm = screenMin * 0.10f    // 36dp
+    val dlgIconMd = screenMin * 0.061f   // 22dp
+    val dlgIconLg = screenMin * 0.067f   // 24dp
+    val dlgIconXs = screenMin * 0.056f   // 20dp
+    val dlgBtnH = screenMin * 0.133f     // 48dp
+    val dlgBtnHSm = screenMin * 0.122f   // 44dp
+    val fTitle = (screenMin.value * 0.061f).sp // 22sp
+    val fHead = (screenMin.value * 0.044f).sp  // 16sp
+    val fBtn = (screenMin.value * 0.042f).sp   // 15sp
+    val fBody = (screenMin.value * 0.039f).sp  // 14sp
+    val fSub = (screenMin.value * 0.036f).sp   // 13sp
     // App icon WITHOUT painterResource: the launcher icon is
     // an adaptive-icon XML and painterResource throws on it.
     // PackageManager returns the real drawable (adaptive
@@ -1091,26 +1422,26 @@ private fun AboutDialog(
     Dialog(onDismissRequest = onClose) {
         Box(
                 modifier = Modifier.fillMaxWidth()
-                        .clip(RoundedCornerShape(24.dp))
+                        .clip(RoundedCornerShape(dlgCorner))
                         .background(cardBg)
-                        .padding(20.dp)
+                        .padding(dlgPad)
         ) {
             Column(
                     modifier = Modifier.fillMaxWidth()
                             .verticalScroll(rememberScrollState()),
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                    verticalArrangement = Arrangement.spacedBy(dlgGap)
             ) {
                 // App icon + name + version.
                 if (appIconBitmap != null) {
                     Image(
                             bitmap = appIconBitmap,
                             contentDescription = "CalNyx logo",
-                            modifier = Modifier.size(72.dp).clip(CircleShape)
+                            modifier = Modifier.size(dlgIcon).clip(CircleShape)
                     )
                 } else {
                     Box(
-                            modifier = Modifier.size(72.dp)
+                            modifier = Modifier.size(dlgIcon)
                                     .clip(CircleShape)
                                     .background(onPageColor),
                             contentAlignment = Alignment.Center
@@ -1119,27 +1450,27 @@ private fun AboutDialog(
                                 Icons.Default.Calculate,
                                 contentDescription = "CalNyx logo",
                                 tint = cardBg,
-                                modifier = Modifier.size(36.dp)
+                                modifier = Modifier.size(dlgIconSm)
                         )
                     }
                 }
                 Text(
                         text = "CalNyx",
-                        fontSize = 22.sp,
+                        fontSize = fTitle,
                         fontWeight = FontWeight.Bold,
                         color = onPageColor
                 )
                 if (appVersion.isNotEmpty()) {
                     Text(
                             text = "Version $appVersion",
-                            fontSize = 13.sp,
+                            fontSize = fSub,
                             color = Color.Gray
                     )
                 }
                 // Update: opens the existing UpdateDialog.
                 Box(
-                        modifier = Modifier.fillMaxWidth().height(48.dp)
-                                .clip(RoundedCornerShape(16.dp))
+                        modifier = Modifier.fillMaxWidth().height(dlgBtnH)
+                                .clip(RoundedCornerShape(dlgCornerSm))
                                 .background(onPageColor)
                                 .clickable { onCheckUpdate() },
                         contentAlignment = Alignment.Center
@@ -1149,12 +1480,12 @@ private fun AboutDialog(
                                 Icons.Default.Update,
                                 contentDescription = null,
                                 tint = cardBg,
-                                modifier = Modifier.size(20.dp)
+                                modifier = Modifier.size(dlgIconXs)
                         )
-                        Spacer(modifier = Modifier.width(8.dp))
+                        Spacer(modifier = Modifier.width(dlgGapSm))
                         Text(
                                 text = "Check for updates",
-                                fontSize = 15.sp,
+                                fontSize = fBtn,
                                 fontWeight = FontWeight.Bold,
                                 color = cardBg
                         )
@@ -1163,7 +1494,7 @@ private fun AboutDialog(
                 // What the app is.
                 Text(
                         text = "CalNyx is an all-in-one calculator for everyday use \u2014 Normal, Scientific, CalTape, Converter, Number System, ICT and Notepad \u2014 with a hidden Black Hole vault for private photos, videos, documents and audio, an App Lock, Sound and Hardware controls, a floating ball, Spy camera recording and a Clipboard history. Everything works offline and stays on this phone.",
-                        fontSize = 14.sp,
+                        fontSize = fBody,
                         color = onPageColor,
                         textAlign = TextAlign.Center
                 )
@@ -1174,13 +1505,14 @@ private fun AboutDialog(
                 // system dialog or the system Settings screen.
                 Text(
                         text = "Permissions",
-                        fontSize = 16.sp,
+                        fontSize = fHead,
                         fontWeight = FontWeight.Bold,
                         color = onPageColor
                 )
                 OnboardingPermissions.all().forEach { permission ->
                     val granted = permStates[permission.id] == true
                     val isStop = permission.id == OnboardingPermissions.ID_STOP_NOTIFICATIONS
+                    val isToggle = permission.kind == PermissionKind.TOGGLE
                     Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically
@@ -1189,41 +1521,59 @@ private fun AboutDialog(
                                 permission.icon,
                                 contentDescription = null,
                                 tint = onPageColor,
-                                modifier = Modifier.size(22.dp)
+                                modifier = Modifier.size(dlgIconMd)
                         )
-                        Spacer(modifier = Modifier.width(12.dp))
+                        Spacer(modifier = Modifier.width(dlgGap))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
                                     text = permission.title,
-                                    fontSize = 15.sp,
+                                    fontSize = fBtn,
                                     fontWeight = FontWeight.Bold,
                                     color = onPageColor
                             )
                             Text(
                                     text = if (granted) {
-                                        if (isStop) "Notifications are off" else "Granted"
+                                        if (isStop) "Notifications are off"
+                                        else if (isToggle) "Hidden"
+                                        else "Granted"
                                     } else {
                                         permission.description
                                     },
-                                    fontSize = 13.sp,
+                                    fontSize = fSub,
                                     color = Color.Gray
                             )
                         }
-                        if (granted) {
+                        if (isToggle) {
+                            // TOGGLE items get a black / white Switch,
+                            // never a Grant button. No M3 purple.
+                            Switch(
+                                    checked = granted,
+                                    onCheckedChange = {
+                                        OnboardingPermissions.setToggle(context, permission, it)
+                                        refreshPerms()
+                                    },
+                                    colors = SwitchDefaults.colors(
+                                        checkedThumbColor = cardBg,
+                                        checkedTrackColor = onPageColor,
+                                        uncheckedThumbColor = onPageColor,
+                                        uncheckedTrackColor = border
+                                    )
+                            )
+                        } else if (granted) {
                             Icon(
                                     Icons.Default.Check,
                                     contentDescription = null,
                                     tint = onPageColor,
-                                    modifier = Modifier.size(22.dp)
+                                    modifier = Modifier.size(dlgIconMd)
                             )
                         } else {
                             Text(
                                     text = if (isStop) "Turn off" else "Grant",
-                                    fontSize = 14.sp,
+                                    fontSize = fBody,
                                     fontWeight = FontWeight.Bold,
                                     color = onPageColor,
                                     modifier = Modifier.clickable { grantPermission(permission) }
-                                            .padding(8.dp)
+                                            .padding(dlgGapSm)
                             )
                         }
                     }
@@ -1232,14 +1582,14 @@ private fun AboutDialog(
                 // Contact Developer: name + email, tap to email.
                 Text(
                         text = "Contact Developer",
-                        fontSize = 16.sp,
+                        fontSize = fHead,
                         fontWeight = FontWeight.Bold,
                         color = onPageColor
                 )
                 Row(
                         modifier = Modifier.fillMaxWidth()
-                                .clip(RoundedCornerShape(16.dp))
-                                .border(1.dp, border, RoundedCornerShape(16.dp))
+                                .clip(RoundedCornerShape(dlgCornerSm))
+                                .border(1.dp, border, RoundedCornerShape(dlgCornerSm))
                                 .clickable {
                                     try {
                                         context.startActivity(
@@ -1255,42 +1605,45 @@ private fun AboutDialog(
                                         Toast.makeText(context, "No email app found", Toast.LENGTH_SHORT).show()
                                     }
                                 }
-                                .padding(12.dp),
+                                .padding(dlgGap),
                         verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
                             Icons.Default.Email,
                             contentDescription = null,
                             tint = onPageColor,
-                            modifier = Modifier.size(24.dp)
+                            modifier = Modifier.size(dlgIconLg)
                     )
-                    Spacer(modifier = Modifier.width(12.dp))
+                    Spacer(modifier = Modifier.width(dlgGap))
                     Column {
                         Text(
                                 text = DEVELOPER_NAME,
-                                fontSize = 15.sp,
+                                fontSize = fBtn,
                                 fontWeight = FontWeight.SemiBold,
                                 color = onPageColor
                         )
                         Text(
                                 text = DEVELOPER_EMAIL,
-                                fontSize = 13.sp,
+                                fontSize = fSub,
                                 color = Color.Gray
                         )
                     }
                 }
-                // Close.
+                // Close (black / white filled button, same as
+                // Check for updates above: background onPageColor,
+                // text cardBg - black in light mode, white in dark).
                 Box(
-                        modifier = Modifier.fillMaxWidth().height(44.dp)
-                                .clip(RoundedCornerShape(16.dp))
+                        modifier = Modifier.fillMaxWidth().height(dlgBtnHSm)
+                                .clip(RoundedCornerShape(dlgCornerSm))
+                                .background(onPageColor)
                                 .clickable { onClose() },
                         contentAlignment = Alignment.Center
                 ) {
                     Text(
                             text = "Close",
-                            fontSize = 15.sp,
+                            fontSize = fBtn,
                             fontWeight = FontWeight.Medium,
-                            color = onPageColor
+                            color = cardBg
                     )
                 }
             }

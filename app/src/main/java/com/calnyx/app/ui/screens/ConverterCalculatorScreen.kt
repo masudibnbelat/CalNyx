@@ -1,4 +1,9 @@
 // FILE: app/src/main/java/com/calnyx/app/ui/screens/ConverterCalculatorScreen.kt
+// % VERSION (2026-11-07) - REPLACE. B/W base, logic UNCHANGED.
+// Only change: the last fixed dp/sp are now % (swipe threshold,
+// input clamp, card corner, caret/result pads, copy icon, picker
+// sheet, unit cards, unit pills, entrance slide). The layout was
+// already % (sw/sh fractions).
 // B/W VERSION - replace your old ConverterCalculatorScreen.kt with this file.
 // Based on the user's pasted version. Logic UNCHANGED (categories,
 // units, conversion math, formatting, picker sheet, swap, keypad,
@@ -477,31 +482,7 @@ fun ConverterCalculatorScreen(
     // B/W border used by the display card (and the key borders below).
     val cardBorder = colors.onSurface.copy(alpha = 0.12f)
 
-    // DRAWER SWIPE (universal rule): a leftward drag past the
-    // threshold opens the app drawer, once per gesture. Rightward
-    // drags are NOT consumed here, so nothing else loses its own
-    // gesture. Applied to the display card and the keypad only —
-    // never to the root Box or the chips row, so the category
-    // chips keep scrolling horizontally.
-    val drawerSwipe = Modifier.pointerInput(Unit) {
-        val thresholdPx = 24.dp.toPx()
-        var totalDx = 0f
-        var done = false
-        detectHorizontalDragGestures(
-            onDragStart = { totalDx = 0f; done = false },
-            onDragEnd = { totalDx = 0f; done = false },
-            onDragCancel = { totalDx = 0f; done = false },
-            onHorizontalDrag = { change, dragAmount ->
-                if (done) return@detectHorizontalDragGestures
-                totalDx += dragAmount
-                if (totalDx < -thresholdPx) {
-                    done = true
-                    onOpenDrawer()
-                    change.consume()
-                }
-            }
-        )
-    }
+    // (Drawer swipe lives inside BoxWithConstraints now - it needs minDim.)
 
     fun swapUnits() {
         val tmp = fromSymbol
@@ -555,6 +536,34 @@ fun ConverterCalculatorScreen(
                 val sw = maxWidth
                 val sh = maxHeight
                 val landscape = sw > sh
+                val minDim = minOf(sw, sh)
+                // DRAWER SWIPE (universal rule): a leftward drag past
+                // the threshold opens the app drawer, once per
+                // gesture. Rightward drags are NOT consumed here.
+                // Applied to the display card and the keypad only —
+                // never to the root Box or the chips row, so the
+                // category chips keep scrolling horizontally.
+                // pointerInput(minDim): window resize-e detector-ta
+                // notun threshold niye abar shuru hoy.
+                val drawerSwipe = Modifier.pointerInput(minDim) {
+                    val thresholdPx = (minDim * 0.067f).toPx() // 24dp
+                    var totalDx = 0f
+                    var done = false
+                    detectHorizontalDragGestures(
+                        onDragStart = { totalDx = 0f; done = false },
+                        onDragEnd = { totalDx = 0f; done = false },
+                        onDragCancel = { totalDx = 0f; done = false },
+                        onHorizontalDrag = { change, dragAmount ->
+                            if (done) return@detectHorizontalDragGestures
+                            totalDx += dragAmount
+                            if (totalDx < -thresholdPx) {
+                                done = true
+                                onOpenDrawer()
+                                change.consume()
+                            }
+                        }
+                    )
+                }
                 fun hSp(frac: Float): TextUnit = with(density) { (sh * frac).toSp() }
                 fun wSp(frac: Float): TextUnit = with(density) { (sw * frac).toSp() }
 
@@ -572,7 +581,7 @@ fun ConverterCalculatorScreen(
                 // has no coerceIn / Float-times in this Compose
                 // version.
                 val inputBaseDp = (sh * if (landscape) 0.105f else 0.060f)
-                    .coerceIn(26.dp, 54.dp)
+                    .coerceIn(minDim * 0.072f, minDim * 0.15f)
                 val inputTier = when {
                     input.length <= 9 -> 1f
                     input.length <= 13 -> 0.83f
@@ -602,7 +611,7 @@ fun ConverterCalculatorScreen(
                             fontSize = titleSize,
                             fontWeight = FontWeight.Bold,
                             color = colors.onBackground,
-                            modifier = Modifier.padding(top = 5.dp)
+                            modifier = Modifier.padding(top = sh * 0.007f)
                         )
                     }
                 }
@@ -675,13 +684,14 @@ fun ConverterCalculatorScreen(
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
-                            .clip(RoundedCornerShape(28.dp))
+                            .clip(RoundedCornerShape(minDim * 0.078f))
                             .background(colors.surfaceVariant.copy(alpha = 0.55f))
-                            .border(1.dp, cardBorder, RoundedCornerShape(28.dp))
+                            .border(1.dp, cardBorder, RoundedCornerShape(minDim * 0.078f))
                             .padding(horizontal = cardPadH, vertical = cardPadV)
                     ) {
                         Row(verticalAlignment = Alignment.Top) {
                             ConverterUnitPill(
+                                minDim = minDim,
                                 label = "FROM",
                                 unit = fromUnit,
                                 onClick = { pickerFor = "from" },
@@ -714,6 +724,7 @@ fun ConverterCalculatorScreen(
                                 )
                             }
                             ConverterUnitPill(
+                                minDim = minDim,
                                 label = "TO",
                                 unit = toUnit,
                                 onClick = { pickerFor = "to" },
@@ -759,7 +770,7 @@ fun ConverterCalculatorScreen(
                                 fontSize = caretSize,
                                 color = colors.onSurface,
                                 modifier = Modifier
-                                    .padding(start = 2.dp)
+                                    .padding(start = sw * 0.006f)
                                     .alpha(caretAlpha)
                             )
                         }
@@ -785,7 +796,7 @@ fun ConverterCalculatorScreen(
                                     color = colors.onSurface,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.padding(top = 2.dp)
+                                    modifier = Modifier.padding(top = sh * 0.003f)
                                 )
                             }
                             if (result != null) {
@@ -804,7 +815,7 @@ fun ConverterCalculatorScreen(
                                     Icon(
                                         Icons.Default.ContentCopy,
                                         contentDescription = "Copy result",
-                                        modifier = Modifier.size(18.dp),
+                                        modifier = Modifier.size(minDim * 0.05f),
                                         tint = colors.onSurfaceVariant
                                     )
                                 }
@@ -883,20 +894,20 @@ fun ConverterCalculatorScreen(
                                 bottom = gapSm
                             )
                     ) {
-                        AnimatedIn(delayMillis = 0) {
+                        AnimatedIn(delayMillis = 0, minDim = minDim) {
                             headerBlock()
                         }
                         Spacer(modifier = Modifier.height(gapSm))
                         chipsRow()
                         Spacer(modifier = Modifier.height(gapMd))
                         key(selectedCategoryName) {
-                            AnimatedIn(delayMillis = 60, modifier = Modifier.weight(1f).then(drawerSwipe)) {
+                            AnimatedIn(delayMillis = 60, minDim = minDim, modifier = Modifier.weight(1f).then(drawerSwipe)) {
                                 displayCard()
                             }
                         }
                         Spacer(modifier = Modifier.height(gapMd))
                         key(selectedCategoryName + "-keys") {
-                            AnimatedIn(delayMillis = 140, modifier = Modifier.weight(1.0f).then(drawerSwipe)) {
+                            AnimatedIn(delayMillis = 140, minDim = minDim, modifier = Modifier.weight(1.0f).then(drawerSwipe)) {
                                 keypad()
                             }
                         }
@@ -920,14 +931,14 @@ fun ConverterCalculatorScreen(
                                 .weight(1f)
                                 .fillMaxHeight()
                         ) {
-                            AnimatedIn(delayMillis = 0) {
+                            AnimatedIn(delayMillis = 0, minDim = minDim) {
                                 headerBlock()
                             }
                             Spacer(modifier = Modifier.height(gapSm))
                             chipsRow()
                             Spacer(modifier = Modifier.height(gapMd))
                             key(selectedCategoryName) {
-                                AnimatedIn(delayMillis = 60, modifier = Modifier.weight(1f).then(drawerSwipe)) {
+                                AnimatedIn(delayMillis = 60, minDim = minDim, modifier = Modifier.weight(1f).then(drawerSwipe)) {
                                     displayCard()
                                 }
                             }
@@ -935,6 +946,7 @@ fun ConverterCalculatorScreen(
                         key(selectedCategoryName + "-keys") {
                             AnimatedIn(
                                 delayMillis = 140,
+                                minDim = minDim,
                                 modifier = Modifier
                                     .weight(1.05f)
                                     .fillMaxHeight()
@@ -957,32 +969,47 @@ fun ConverterCalculatorScreen(
                 containerColor = colors.surface,
                 contentColor = colors.onSurface
             ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .navigationBarsPadding()
-                        .padding(horizontal = 20.dp)
-                        .padding(bottom = 24.dp)
-                ) {
+                // % SIZES: sheet-er nijer size-er % (sheet full-width,
+                // pray full-height, tai screen-er %-er motoi).
+                BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                    val sheetW = maxWidth
+                    val sheetH = maxHeight
+                    val sheetMin = minOf(sheetW, sheetH)
+                    val sheetPadH = sheetW * 0.056f   // 20dp
+                    val sheetPadB = sheetH * 0.032f   // 24dp
+                    val sheetTitle = (sheetMin.value * 0.05f).sp  // 18sp
+                    val sheetCat = (sheetMin.value * 0.035f).sp   // 12.5sp
+                    val sheetPadTop = sheetH * 0.003f  // 2dp
+                    val sheetPadBot = sheetH * 0.016f  // 12dp
+                    val sheetGridH = sheetH * 0.566f   // 430dp
+                    val sheetGapH = sheetW * 0.028f    // 10dp
+                    val sheetGapV = sheetH * 0.013f    // 10dp
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .navigationBarsPadding()
+                            .padding(horizontal = sheetPadH)
+                            .padding(bottom = sheetPadB)
+                    ) {
                     Text(
                         text = "Choose unit",
-                        fontSize = 18.sp,
+                        fontSize = sheetTitle,
                         fontWeight = FontWeight.Bold,
                         color = colors.onSurface
                     )
                     Text(
                         text = category.name,
-                        fontSize = 12.5.sp,
+                        fontSize = sheetCat,
                         color = colors.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 2.dp, bottom = 12.dp)
+                        modifier = Modifier.padding(top = sheetPadTop, bottom = sheetPadBot)
                     )
                     LazyVerticalGrid(
                         columns = GridCells.Fixed(2),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(max = 430.dp),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                            .heightIn(max = sheetGridH),
+                        horizontalArrangement = Arrangement.spacedBy(sheetGapH),
+                        verticalArrangement = Arrangement.spacedBy(sheetGapV)
                     ) {
                         items(category.units) { unit ->
                             val selectedUnit =
@@ -999,6 +1026,7 @@ fun ConverterCalculatorScreen(
                                 ) + " " + unit.symbol
                             }
                             UnitGridCard(
+                                minDim = sheetMin,
                                 name = unit.name,
                                 symbol = unit.symbol,
                                 preview = preview,
@@ -1015,6 +1043,7 @@ fun ConverterCalculatorScreen(
                         }
                     }
                 }
+                } // BoxWithConstraints (sheet %)
             }
         }
     }
@@ -1024,6 +1053,7 @@ fun ConverterCalculatorScreen(
 @Composable
 private fun AnimatedIn(
     delayMillis: Int,
+    minDim: Dp, // % base - caller passes window minDim
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit
 ) {
@@ -1042,7 +1072,7 @@ private fun AnimatedIn(
         modifier = modifier
             .fillMaxWidth()
             .alpha(progress)
-            .offset(y = ((1f - progress) * 22f).dp)
+            .offset(y = ((1f - progress) * minDim.value * 0.061f).dp)
     ) {
         content()
     }
@@ -1145,6 +1175,7 @@ private fun ConverterSwapKey(
 
 @Composable
 private fun UnitGridCard(
+    minDim: Dp, // % base - caller passes sheet minDim
     name: String,
     symbol: String,
     preview: String,
@@ -1155,22 +1186,22 @@ private fun UnitGridCard(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(18.dp))
+            .clip(RoundedCornerShape(minDim * 0.05f))
             .background(colors.surfaceVariant.copy(alpha = 0.6f))
             .border(
-                if (selected) 1.5.dp else 1.dp,
+                if (selected) minDim * 0.004f else 1.dp,
                 if (selected) colors.onSurface
                 else colors.onSurface.copy(alpha = 0.12f),
-                RoundedCornerShape(18.dp)
+                RoundedCornerShape(minDim * 0.05f)
             )
             .clickable { onClick() }
-            .padding(13.dp)
+            .padding(minDim * 0.036f)
     ) {
         Column {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = name,
-                    fontSize = 14.sp,
+                    fontSize = (minDim.value * 0.039f).sp,
                     fontWeight = FontWeight.Medium,
                     color = colors.onSurface,
                     maxLines = 1,
@@ -1181,25 +1212,25 @@ private fun UnitGridCard(
                     Icon(
                         Icons.Default.Check,
                         contentDescription = null,
-                        modifier = Modifier.size(16.dp),
+                        modifier = Modifier.size(minDim * 0.044f),
                         tint = colors.onSurface
                     )
                 }
             }
             Text(
                 text = symbol,
-                fontSize = 11.5.sp,
+                fontSize = (minDim.value * 0.032f).sp,
                 color = colors.onSurfaceVariant
             )
             if (preview.isNotEmpty()) {
                 Text(
                     text = preview,
-                    fontSize = 12.5.sp,
+                    fontSize = (minDim.value * 0.035f).sp,
                     fontWeight = FontWeight.SemiBold,
                     color = colors.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 6.dp)
+                    modifier = Modifier.padding(top = minDim * 0.017f)
                 )
             }
         }
@@ -1208,6 +1239,7 @@ private fun UnitGridCard(
 
 @Composable
 private fun ConverterUnitPill(
+    minDim: Dp, // % base - caller passes window minDim
     label: String,
     unit: ConverterUnit,
     onClick: () -> Unit,
@@ -1225,14 +1257,14 @@ private fun ConverterUnitPill(
             fontWeight = FontWeight.SemiBold,
             color = colors.onSurfaceVariant
         )
-        Spacer(modifier = Modifier.height(4.dp))
+        Spacer(modifier = Modifier.height(minDim * 0.011f))
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(percent = 25))
                 .background(colors.surfaceVariant.copy(alpha = 0.65f))
                 .clickable { onClick() }
-                .padding(horizontal = 12.dp, vertical = vPad),
+                .padding(horizontal = minDim * 0.033f, vertical = vPad),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(modifier = Modifier.weight(1f)) {
@@ -1253,7 +1285,7 @@ private fun ConverterUnitPill(
             Icon(
                 Icons.Default.KeyboardArrowDown,
                 contentDescription = "Choose unit",
-                modifier = Modifier.size(20.dp),
+                modifier = Modifier.size(minDim * 0.056f),
                 tint = colors.onSurfaceVariant
             )
         }

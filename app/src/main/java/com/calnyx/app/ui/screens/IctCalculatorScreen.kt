@@ -1,4 +1,9 @@
 // FILE: app/src/main/java/com/calnyx/app/ui/screens/IctCalculatorScreen.kt
+// % VERSION (2026-11-07) - REPLACE. B/W base, logic UNCHANGED.
+// Only change: every size is now a % of the window
+// (BoxWithConstraints: windowW/windowH/minDim). Card 44% / keypad
+// 56% split was already weight-based. No fixed dp/sp except
+// 1.dp hairline borders.
 // B/W VERSION - replace your old IctCalculatorScreen.kt with this file.
 // Based on the user's pasted IctCalculatorScreen.kt. LOGIC UNCHANGED:
 // base switching, IctFraction math, parser, rendering, grouping,
@@ -80,6 +85,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.math.BigInteger
@@ -406,30 +412,7 @@ fun IctCalculatorScreen(
     val clipboardManager = LocalClipboardManager.current
     val haptics = LocalHapticFeedback.current
 
-    // DRAWER SWIPE (universal rule): a leftward drag past 24dp opens
-    // the app drawer, once per gesture. Rightward drags are NOT
-    // consumed here. Applied to the base-chips row and the keypad
-    // only — never to the display panel, whose rows scroll
-    // horizontally and must keep working.
-    val drawerSwipe = Modifier.pointerInput(Unit) {
-        val thresholdPx = 24.dp.toPx()
-        var totalDx = 0f
-        var done = false
-        detectHorizontalDragGestures(
-            onDragStart = { totalDx = 0f; done = false },
-            onDragEnd = { totalDx = 0f; done = false },
-            onDragCancel = { totalDx = 0f; done = false },
-            onHorizontalDrag = { change, dragAmount ->
-                if (done) return@detectHorizontalDragGestures
-                totalDx += dragAmount
-                if (totalDx < -thresholdPx) {
-                    done = true
-                    onOpenDrawer()
-                    change.consume()
-                }
-            }
-        )
-    }
+    // (Drawer swipe lives inside BoxWithConstraints now - it needs minDim.)
 
     var base by remember { mutableStateOf(IctBase.BINARY) }
     // Internal expression is plain ASCII: digits, A-F, . + - * / ( )
@@ -624,34 +607,99 @@ fun IctCalculatorScreen(
             // Inside the card there is NO dead spacer any more —
             // the display panel fills everything under the chips.
             // Background is the plain theme colour — no effects.
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .statusBarsPadding()
-                    .navigationBarsPadding()
-                    .padding(start = 16.dp, end = 16.dp, top = 2.dp, bottom = 8.dp)
-            ) {
+            BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                val windowW = maxWidth
+                val windowH = maxHeight
+                val minDim = minOf(windowW, windowH)
+                // % SIZES (2026-11-07): sob window-er % - kono fixed
+                // dp/sp nei (1.dp hairline chara). Normal 360x760
+                // phone-e ager motoi dekhabe.
+                val sidePad = windowW * 0.044f   // 16dp
+                val topPad = windowH * 0.003f    // 2dp
+                val bottomPad = windowH * 0.011f // 8dp
+                val titleFont = (minDim.value * 0.061f).sp // 22sp
+                val titleTopPad = windowH * 0.016f // 12dp
+                val gapSm = windowH * 0.011f     // 8dp
+                val cardCorner = minDim * 0.078f // 28dp
+                val cardPadH = windowW * 0.044f  // 16dp
+                val cardPadV = windowH * 0.016f  // 12dp
+                val baseLabelFont = (minDim.value * 0.031f).sp // 11sp
+                val gapXs = windowH * 0.005f     // 4dp
+                val chipRowH = windowH * 0.058f  // 44dp
+                val chipGapH = windowW * 0.022f  // 8dp
+                val gapMd = windowH * 0.016f     // 12dp
+                val panelCorner = minDim * 0.056f // 20dp
+                val panelPadH = windowW * 0.039f // 14dp
+                val panelPadTop = windowH * 0.021f // 16dp
+                val panelPadBot = windowH * 0.016f // 12dp
+                val baseShortFont = (minDim.value * 0.033f).sp // 12sp
+                val tagGapW = windowW * 0.028f   // 10dp
+                val exprFont = (minDim.value * 0.128f).sp // 46sp
+                val exprLineH = (minDim.value * 0.139f).sp // 50sp
+                val caretFont = (minDim.value * 0.111f).sp // 40sp
+                val gapLg = windowH * 0.018f     // 14dp
+                val resultFont = (minDim.value * 0.10f).sp // 36sp
+                val resultLineH = (minDim.value * 0.111f).sp // 40sp
+                val copyBtn = minDim * 0.10f     // 36dp
+                val copyIcon = minDim * 0.05f    // 18dp
+                val gapKeypad = windowH * 0.013f // 10dp
+                val keyGapV = windowH * 0.012f   // 9dp
+                val keyGapH = windowW * 0.025f   // 9dp
+                // DRAWER SWIPE (universal rule): a leftward drag past
+                // the threshold opens the app drawer, once per
+                // gesture. Rightward drags are NOT consumed here.
+                // Applied to the base-chips row and the keypad only
+                // — never to the display panel, whose rows scroll
+                // horizontally and must keep working.
+                // pointerInput(minDim): window resize-e detector-ta
+                // notun threshold niye abar shuru hoy.
+                val drawerSwipe = Modifier.pointerInput(minDim) {
+                    val thresholdPx = (minDim * 0.067f).toPx() // 24dp
+                    var totalDx = 0f
+                    var done = false
+                    detectHorizontalDragGestures(
+                        onDragStart = { totalDx = 0f; done = false },
+                        onDragEnd = { totalDx = 0f; done = false },
+                        onDragCancel = { totalDx = 0f; done = false },
+                        onHorizontalDrag = { change, dragAmount ->
+                            if (done) return@detectHorizontalDragGestures
+                            totalDx += dragAmount
+                            if (totalDx < -thresholdPx) {
+                                done = true
+                                onOpenDrawer()
+                                change.consume()
+                            }
+                        }
+                    )
+                }
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .statusBarsPadding()
+                        .navigationBarsPadding()
+                        .padding(start = sidePad, end = sidePad, top = topPad, bottom = bottomPad)
+                ) {
                 // Header — compact
-                IctAnimatedIn(delayMs = 0) {
+                IctAnimatedIn(delayMs = 0, minDim = minDim) {
                     Column {
                         Text(
                             text = "ICT Calculator",
-                            fontSize = 22.sp,
+                            fontSize = titleFont,
                             fontWeight = FontWeight.Bold,
                             color = colors.onBackground,
-                            modifier = Modifier.padding(top = 12.dp)
+                            modifier = Modifier.padding(top = titleTopPad)
                         )
                     }
                 }
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(gapSm))
 
                 // ===== 44% — glass card: base chips + FULL display panel
-                IctAnimatedIn(modifier = Modifier.weight(0.44f), delayMs = 90) {
+                IctAnimatedIn(modifier = Modifier.weight(0.44f), delayMs = 90, minDim = minDim) {
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
-                            .clip(RoundedCornerShape(28.dp))
+                            .clip(RoundedCornerShape(cardCorner))
                             .background(
                                 Brush.verticalGradient(
                                     listOf(
@@ -668,26 +716,27 @@ fun IctCalculatorScreen(
                                         colors.onSurface.copy(alpha = 0.05f)
                                     )
                                 ),
-                                shape = RoundedCornerShape(28.dp)
+                                shape = RoundedCornerShape(cardCorner)
                             )
-                            .padding(horizontal = 16.dp, vertical = 12.dp)
+                            .padding(horizontal = cardPadH, vertical = cardPadV)
                     ) {
                         Text(
                             text = "BASE",
-                            fontSize = 11.sp,
+                            fontSize = baseLabelFont,
                             fontWeight = FontWeight.Bold,
                             color = colors.onSurfaceVariant
                         )
-                        Spacer(modifier = Modifier.height(4.dp))
+                        Spacer(modifier = Modifier.height(gapXs))
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(44.dp)
+                                .height(chipRowH)
                                 .then(drawerSwipe),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            horizontalArrangement = Arrangement.spacedBy(chipGapH)
                         ) {
                             ictBases.forEach { ictBase ->
                                 IctBaseChip(
+                                    minDim = minDim,
                                     base = ictBase,
                                     selected = ictBase == base,
                                     modifier = Modifier.weight(1f),
@@ -696,7 +745,7 @@ fun IctCalculatorScreen(
                             }
                         }
 
-                        Spacer(modifier = Modifier.height(12.dp))
+                        Spacer(modifier = Modifier.height(gapMd))
 
                         // Display panel: fills ALL the remaining
                         // card height. Expression + result sit at
@@ -705,14 +754,14 @@ fun IctCalculatorScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .weight(1f)
-                                .clip(RoundedCornerShape(20.dp))
+                                .clip(RoundedCornerShape(panelCorner))
                                 .background(colors.background.copy(alpha = 0.28f))
                                 .border(
                                     width = 1.dp,
                                     color = colors.onSurface.copy(alpha = 0.12f),
-                                    shape = RoundedCornerShape(20.dp)
+                                    shape = RoundedCornerShape(panelCorner)
                                 )
-                                .padding(start = 14.dp, end = 14.dp, top = 16.dp, bottom = 12.dp),
+                                .padding(start = panelPadH, end = panelPadH, top = panelPadTop, bottom = panelPadBot),
                             verticalArrangement = Arrangement.Top
                         ) {
                             // Expression — big, single line, scrollable,
@@ -723,11 +772,11 @@ fun IctCalculatorScreen(
                             ) {
                                 Text(
                                     text = base.short,
-                                    fontSize = 12.sp,
+                                    fontSize = baseShortFont,
                                     fontWeight = FontWeight.Bold,
                                     color = colors.onSurfaceVariant
                                 )
-                                Spacer(modifier = Modifier.width(10.dp))
+                                Spacer(modifier = Modifier.width(tagGapW))
                                 Box(
                                     modifier = Modifier
                                         .weight(1f)
@@ -743,8 +792,8 @@ fun IctCalculatorScreen(
                                     ) {
                                         Text(
                                             text = expressionDisplay,
-                                            fontSize = 46.sp,
-                                            lineHeight = 50.sp,
+                                            fontSize = exprFont,
+                                            lineHeight = exprLineH,
                                             fontWeight = FontWeight.Medium,
                                             fontFamily = FontFamily.Monospace,
                                             color = colors.onSurface,
@@ -754,8 +803,8 @@ fun IctCalculatorScreen(
                                         )
                                         Text(
                                             text = "▌",
-                                            fontSize = 40.sp,
-                                            lineHeight = 50.sp,
+                                            fontSize = caretFont,
+                                            lineHeight = exprLineH,
                                             color = colors.onSurface,
                                             modifier = Modifier.alpha(if (caretOn) 0.9f else 0f)
                                         )
@@ -763,11 +812,11 @@ fun IctCalculatorScreen(
                                 }
                             }
 
-                            Spacer(modifier = Modifier.height(14.dp))
+                            Spacer(modifier = Modifier.height(gapLg))
                             HorizontalDivider(
                                 color = colors.outline.copy(alpha = 0.25f)
                             )
-                            Spacer(modifier = Modifier.height(14.dp))
+                            Spacer(modifier = Modifier.height(gapLg))
 
                             // Live result — slides, fades and scales
                             // in on every change; division by zero
@@ -806,8 +855,8 @@ fun IctCalculatorScreen(
                                         ) { text ->
                                             Text(
                                                 text = text,
-                                                fontSize = 36.sp,
-                                                lineHeight = 40.sp,
+                                                fontSize = resultFont,
+                                                lineHeight = resultLineH,
                                                 fontWeight = FontWeight.Bold,
                                                 fontFamily = FontFamily.Monospace,
                                                 color = if (eval is IctEval.DivZero) {
@@ -829,13 +878,13 @@ fun IctCalculatorScreen(
                                             clipboardManager.setText(AnnotatedString(e.raw))
                                         }
                                     },
-                                    modifier = Modifier.size(36.dp)
+                                    modifier = Modifier.size(copyBtn)
                                 ) {
                                     Icon(
                                         Icons.Default.ContentCopy,
                                         contentDescription = "Copy result",
                                         tint = colors.onSurfaceVariant,
-                                        modifier = Modifier.size(18.dp)
+                                        modifier = Modifier.size(copyIcon)
                                     )
                                 }
                             }
@@ -843,7 +892,7 @@ fun IctCalculatorScreen(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(gapKeypad))
 
                 // ===== 56% — keypad. Only possible keys are active:
                 // digits outside the base, operators with nowhere
@@ -851,21 +900,23 @@ fun IctCalculatorScreen(
                 // incomplete expression all stay dim and dead.
                 IctAnimatedIn(
                     modifier = Modifier.weight(0.56f).then(drawerSwipe),
-                    delayMs = 180
+                    delayMs = 180,
+                    minDim = minDim
                 ) {
                     Column(
                         modifier = Modifier.fillMaxSize(),
-                        verticalArrangement = Arrangement.spacedBy(9.dp)
+                        verticalArrangement = Arrangement.spacedBy(keyGapV)
                     ) {
                         keyRows.forEach { row ->
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .weight(1f),
-                                horizontalArrangement = Arrangement.spacedBy(9.dp)
+                                horizontalArrangement = Arrangement.spacedBy(keyGapH)
                             ) {
                                 row.forEach { spec ->
                                     IctKey(
+                                        minDim = minDim,
                                         spec = spec,
                                         modifier = Modifier.weight(1f),
                                         onLongClick = if (spec.id == "⌫") {
@@ -881,6 +932,7 @@ fun IctCalculatorScreen(
                     }
                 }
             }
+            } // BoxWithConstraints
         }
     }
 }
@@ -888,6 +940,7 @@ fun IctCalculatorScreen(
 // One-line base button: BIN / DEC / OCT / HEX.
 @Composable
 private fun IctBaseChip(
+    minDim: Dp, // % base - caller passes window minDim
     base: IctBase,
     selected: Boolean,
     modifier: Modifier = Modifier,
@@ -913,14 +966,14 @@ private fun IctBaseChip(
         modifier = modifier
             .fillMaxHeight()
             .scale(chipScale)
-            .clip(RoundedCornerShape(14.dp))
+            .clip(RoundedCornerShape(minDim * 0.039f))
             .background(background)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         Text(
             text = base.short,
-            fontSize = 15.sp,
+            fontSize = (minDim.value * 0.042f).sp,
             fontWeight = FontWeight.Bold,
             color = content,
             maxLines = 1
@@ -934,6 +987,7 @@ private fun IctBaseChip(
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun IctKey(
+    minDim: Dp, // % base - caller passes window minDim
     spec: IctKeySpec,
     modifier: Modifier = Modifier,
     onLongClick: (() -> Unit)? = null,
@@ -969,12 +1023,12 @@ private fun IctKey(
             .fillMaxHeight()
             .scale(pressScale)
             .alpha(if (spec.enabled) 1f else 0.32f)
-            .clip(RoundedCornerShape(16.dp))
+            .clip(RoundedCornerShape(minDim * 0.044f))
             .background(containerColor)
             .border(
                 width = 1.dp,
                 color = colors.onSurface.copy(alpha = 0.12f),
-                shape = RoundedCornerShape(16.dp)
+                shape = RoundedCornerShape(minDim * 0.044f)
             )
             .combinedClickable(
                 interactionSource = interactionSource,
@@ -987,7 +1041,7 @@ private fun IctKey(
     ) {
         Text(
             text = spec.label,
-            fontSize = if (spec.label == "⌫") 21.sp else 19.sp,
+            fontSize = if (spec.label == "⌫") (minDim.value * 0.058f).sp else (minDim.value * 0.053f).sp,
             fontWeight = FontWeight.Bold,
             color = contentColor
         )
@@ -999,6 +1053,7 @@ private fun IctKey(
 private fun IctAnimatedIn(
     modifier: Modifier = Modifier,
     delayMs: Int,
+    minDim: Dp, // % base - caller passes window minDim
     content: @Composable () -> Unit
 ) {
     var visible by remember { mutableStateOf(false) }
@@ -1014,7 +1069,7 @@ private fun IctAnimatedIn(
     Box(
         modifier = modifier
             .alpha(progress)
-            .offset(y = ((1f - progress) * 26f).dp)
+            .offset(y = ((1f - progress) * minDim.value * 0.072f).dp)
     ) {
         content()
     }

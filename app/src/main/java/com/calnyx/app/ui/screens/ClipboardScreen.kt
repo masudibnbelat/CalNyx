@@ -1,8 +1,8 @@
 // FILE: app/src/main/java/com/calnyx/app/ui/screens/ClipboardScreen.kt
 // REPLACE FILE - Clipboard feature (2026-11-06).
 // 2026-11-06: header moved up onto the NavGraph 3-dot line
-// (56.dp spacer removed, 8dp top offset so the 48dp icon centres
-// exactly with the 3-dot circle, 56.dp end clearance kept); image
+// (spacer removed, 1.0% H top offset so the 13.3% icon centres
+// exactly with the 3-dot circle, 15.6% W end clearance kept); image
 // thumbnails now decode on Dispatchers.IO, not the main thread.
 // Target: app/src/main/java/com/calnyx/app/ui/screens/ClipboardScreen.kt
 // First package line: package com.calnyx.app.ui.screens
@@ -23,7 +23,7 @@
 // onOpenDrawer(). The search field is deliberately NOT covered —
 // typing and cursor drags must keep working — and vertical list
 // scrolling is untouched (the detector only fires on a clearly
-// leftward drag past 24 dp, using detectHorizontalDragGestures;
+// leftward drag past 6.7% of minDim, using detectHorizontalDragGestures;
 // NEVER the awaitEachGesture family, which is unresolved in this
 // project's Compose version). Rightward drags are not consumed.
 // SEARCH is fast by design: Room Flow (observeAll / search with
@@ -37,6 +37,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -92,7 +93,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.sp
 import com.calnyx.app.clipboard.ClipboardItem
 import com.calnyx.app.clipboard.ClipboardPrefs
@@ -169,373 +170,384 @@ fun ClipboardScreen(
         ClipboardService.checkNow(context)
     }
 
-    // DRAWER SWIPE: leftward drag opens the drawer. Applied to the
-    // header, the auto-delete row and the list — never to the
-    // search field below, so typing keeps working.
-    val drawerSwipe = Modifier.pointerInput(Unit) {
-        val thresholdPx = 24.dp.toPx()
-        var totalDx = 0f
-        var done = false
-        detectHorizontalDragGestures(
-            onDragStart = { totalDx = 0f; done = false },
-            onDragEnd = { totalDx = 0f; done = false },
-            onDragCancel = { totalDx = 0f; done = false },
-            onHorizontalDrag = { change, dragAmount ->
-                if (done) return@detectHorizontalDragGestures
-                totalDx += dragAmount
-                if (totalDx < -thresholdPx) {
-                    done = true
-                    onOpenDrawer()
-                    change.consume()
-                }
-            }
-        )
-    }
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val windowW = maxWidth
+        val windowH = maxHeight
+        val minDim = minOf(windowW, windowH)
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(pageBg)
-            .statusBarsPadding()
-            .navigationBarsPadding()
-            .padding(horizontal = 16.dp)
-    ) {
-        // Header sits on the same line as the NavGraph hamburger
-        // (top-right): no 56.dp spacer above it. The NavGraph top
-        // row is statusBarsPadding + 4dp padding, and the 48dp
-        // 3-dot circle is centred in its 56dp hit area, so the
-        // circle top sits 8dp below the status bar — the header
-        // Row uses the same 8dp top offset, and the 56.dp end
-        // padding keeps the title clear of the hamburger button.
-        // Header: Clipboard icon in an inverted circle + title.
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(top = 8.dp, end = 56.dp).then(drawerSwipe),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier.size(48.dp)
-                    .clip(CircleShape)
-                    .background(onPageColor),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    Icons.Default.ContentPaste,
-                    contentDescription = "Clipboard",
-                    tint = pageBg,
-                    modifier = Modifier.size(26.dp)
-                )
-            }
-            Spacer(modifier = Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "Clipboard",
-                    fontSize = 22.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = onPageColor
-                )
-                Text(
-                    text = if (clipItems.isEmpty()) {
-                        "Nothing copied yet"
-                    } else {
-                        "${clipItems.size} item" +
-                            (if (clipItems.size == 1) "" else "s") +
-                            " • Auto-save on"
-                    },
-                    fontSize = 12.sp,
-                    color = dimColor
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(14.dp))
-
-        // Search bar — full width, live filtering. NOT under the
-        // drawer swipe detector, so typing and cursor drags work.
-        OutlinedTextField(
-            value = query,
-            onValueChange = { query = it },
-            modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text(text = "Search copied text...", color = dimColor) },
-            leadingIcon = {
-                Icon(Icons.Default.Search, contentDescription = "Search", tint = dimColor)
-            },
-            trailingIcon = {
-                if (query.isNotEmpty()) {
-                    IconButton(onClick = { query = "" }) {
-                        Icon(Icons.Default.Clear, contentDescription = "Clear search", tint = dimColor)
+        // DRAWER SWIPE: leftward drag opens the drawer. Applied to the
+        // header, the auto-delete row and the list — never to the
+        // search field below, so typing keeps working.
+        val drawerSwipe = Modifier.pointerInput(minDim) {
+            val thresholdPx = (minDim * 0.067f).toPx()
+            var totalDx = 0f
+            var done = false
+            detectHorizontalDragGestures(
+                onDragStart = { totalDx = 0f; done = false },
+                onDragEnd = { totalDx = 0f; done = false },
+                onDragCancel = { totalDx = 0f; done = false },
+                onHorizontalDrag = { change, dragAmount ->
+                    if (done) return@detectHorizontalDragGestures
+                    totalDx += dragAmount
+                    if (totalDx < -thresholdPx) {
+                        done = true
+                        onOpenDrawer()
+                        change.consume()
                     }
                 }
-            },
-            singleLine = true,
-            shape = RoundedCornerShape(16.dp),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedContainerColor = cardBg,
-                unfocusedContainerColor = cardBg,
-                focusedTextColor = onPageColor,
-                unfocusedTextColor = onPageColor,
-                cursorColor = onPageColor,
-                focusedBorderColor = onPageColor,
-                unfocusedBorderColor = dimColor.copy(alpha = 0.4f)
             )
-        )
-
-        Spacer(modifier = Modifier.height(10.dp))
-
-        // Auto-delete setting: small button showing the current
-        // choice; tap opens the radio-list dialog. Changing it
-        // prunes immediately (see the dialog below).
-        Row(
-            modifier = Modifier.fillMaxWidth().then(drawerSwipe),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "Auto-delete:",
-                fontSize = 13.sp,
-                color = dimColor
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            OutlinedButton(onClick = { showRetentionDialog = true }) {
-                Text(
-                    text = ClipboardPrefs.labelFor(retentionDays),
-                    fontSize = 13.sp,
-                    color = onPageColor
-                )
-            }
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
-
-        if (clipItems.isEmpty()) {
-            Box(
-                modifier = Modifier.fillMaxWidth().weight(1f).then(drawerSwipe),
-                contentAlignment = Alignment.Center
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(pageBg)
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .padding(horizontal = windowW * 0.044f)
+        ) {
+            // Header sits on the same line as the NavGraph hamburger
+            // (top-right): no spacer above it. The NavGraph top row
+            // and the 3-dot circle sit just below the status bar, so
+            // the header Row uses the same 1.0% H top offset, and the
+            // 15.6% W end padding keeps the title clear of the
+            // hamburger button.
+            // Header: Clipboard icon in an inverted circle + title.
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = windowH * 0.01f, end = windowW * 0.156f).then(drawerSwipe),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = if (query.isBlank()) {
-                        "Copy anything on your phone —\nit will appear here automatically."
-                    } else {
-                        "No matches for \"$query\""
-                    },
-                    fontSize = 15.sp,
-                    color = dimColor,
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                )
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier.fillMaxWidth().weight(1f).then(drawerSwipe),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                items(clipItems, key = { it.id }) { item ->
-                    ClipboardCard(
-                        item = item,
-                        cardBg = cardBg,
-                        onPageColor = onPageColor,
-                        dimColor = dimColor,
-                        onCopy = {
-                            scope.launch {
-                                repository.copyAgain(item)
-                            }
-                        },
-                        onEdit = {
-                            editItem = item
-                            editDraft = if (item.type == "IMAGE") {
-                                item.note ?: ""
-                            } else {
-                                item.text
-                            }
-                        },
-                        onDelete = { deleteItem = item }
+                Box(
+                    modifier = Modifier.size(minDim * 0.133f)
+                        .clip(CircleShape)
+                        .background(onPageColor),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Default.ContentPaste,
+                        contentDescription = "Clipboard",
+                        tint = pageBg,
+                        modifier = Modifier.size(minDim * 0.072f)
                     )
                 }
-                item(key = "clipboard-bottom-space") {
-                    Spacer(modifier = Modifier.height(8.dp))
-                }
-            }
-        }
-    }
-
-    // ---- Auto-delete dialog: ONLY the six allowed options. ----
-    if (showRetentionDialog) {
-        AlertDialog(
-            onDismissRequest = { showRetentionDialog = false },
-            containerColor = cardBg,
-            title = {
-                Text(text = "Auto-delete", color = onPageColor, fontWeight = FontWeight.Bold)
-            },
-            text = {
-                Column {
+                Spacer(modifier = Modifier.width(windowW * 0.033f))
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Copies older than this are deleted automatically.",
-                        fontSize = 14.sp,
+                        text = "Clipboard",
+                        fontSize = (minDim * 0.061f).value.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = onPageColor
+                    )
+                    Text(
+                        text = if (clipItems.isEmpty()) {
+                            "Nothing copied yet"
+                        } else {
+                            "${clipItems.size} item" +
+                                (if (clipItems.size == 1) "" else "s") +
+                                " • Auto-save on"
+                        },
+                        fontSize = (minDim * 0.033f).value.sp,
                         color = dimColor
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    ClipboardPrefs.RETENTION_OPTIONS.forEach { days ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
-                                .padding(vertical = 2.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            RadioButton(
-                                selected = retentionDays == days,
-                                onClick = {
-                                    retentionDays = days
-                                    ClipboardPrefs.setRetentionDays(context, days)
-                                    // Prune immediately with the new setting.
-                                    scope.launch {
-                                        try {
-                                            repository.pruneExpired()
-                                        } catch (_: Exception) {
-                                        }
-                                    }
-                                    showRetentionDialog = false
-                                },
-                                colors = RadioButtonDefaults.colors(
-                                    selectedColor = onPageColor,
-                                    unselectedColor = dimColor
-                                )
-                            )
-                            Text(
-                                text = ClipboardPrefs.labelFor(days),
-                                fontSize = 15.sp,
-                                color = onPageColor
-                            )
-                        }
-                    }
-                }
-            },
-            confirmButton = {},
-            dismissButton = {
-                TextButton(onClick = { showRetentionDialog = false }) {
-                    Text(text = "Cancel", color = onPageColor)
                 }
             }
-        )
-    }
 
-    // ---- Edit dialog: full text editable (text rows) or the image
-    // note/caption (image rows). Update saves, Cancel discards. ----
-    val editing = editItem
-    if (editing != null) {
-        AlertDialog(
-            onDismissRequest = { editItem = null },
-            containerColor = cardBg,
-            title = {
-                Text(
-                    text = if (editing.type == "IMAGE") "Edit note" else "Edit text",
-                    color = onPageColor,
-                    fontWeight = FontWeight.Bold
-                )
-            },
-            text = {
-                OutlinedTextField(
-                    value = editDraft,
-                    onValueChange = { editDraft = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    placeholder = {
-                        Text(
-                            text = if (editing.type == "IMAGE") {
-                                "Add a note for this image..."
-                            } else {
-                                "Copied text..."
-                            },
-                            color = dimColor
-                        )
-                    },
-                    singleLine = false,
-                    minLines = 3,
-                    maxLines = 10,
-                    keyboardOptions = KeyboardOptions(
-                        capitalization = KeyboardCapitalization.Sentences
-                    ),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = cardBg,
-                        unfocusedContainerColor = cardBg,
-                        focusedTextColor = onPageColor,
-                        unfocusedTextColor = onPageColor,
-                        cursorColor = onPageColor,
-                        focusedBorderColor = onPageColor,
-                        unfocusedBorderColor = dimColor.copy(alpha = 0.4f)
-                    )
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        val draft = editDraft.trim()
-                        scope.launch {
-                            try {
-                                if (editing.type == "IMAGE") {
-                                    repository.updateItem(
-                                        editing.copy(
-                                            note = draft.ifEmpty { null }
-                                        )
-                                    )
-                                } else if (draft.isNotEmpty()) {
-                                    repository.updateItem(editing.copy(text = draft))
-                                }
-                            } catch (_: Exception) {
-                            }
+            Spacer(modifier = Modifier.height(windowH * 0.018f))
+
+            // Search bar — full width, live filtering. NOT under the
+            // drawer swipe detector, so typing and cursor drags work.
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = { Text(text = "Search copied text...", color = dimColor) },
+                leadingIcon = {
+                    Icon(Icons.Default.Search, contentDescription = "Search", tint = dimColor)
+                },
+                trailingIcon = {
+                    if (query.isNotEmpty()) {
+                        IconButton(onClick = { query = "" }) {
+                            Icon(Icons.Default.Clear, contentDescription = "Clear search", tint = dimColor)
                         }
-                        editItem = null
                     }
-                ) {
-                    // Edit action is green, per the user's request.
-                    Text(text = "Update", color = ClipEditGreen, fontWeight = FontWeight.SemiBold)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { editItem = null }) {
-                    Text(text = "Cancel", color = onPageColor)
-                }
-            }
-        )
-    }
+                },
+                singleLine = true,
+                shape = RoundedCornerShape(minDim * 0.044f),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = cardBg,
+                    unfocusedContainerColor = cardBg,
+                    focusedTextColor = onPageColor,
+                    unfocusedTextColor = onPageColor,
+                    cursorColor = onPageColor,
+                    focusedBorderColor = onPageColor,
+                    unfocusedBorderColor = dimColor.copy(alpha = 0.4f)
+                )
+            )
 
-    // ---- Delete confirm dialog: Yes/No, Delete is red. ----
-    val deleting = deleteItem
-    if (deleting != null) {
-        AlertDialog(
-            onDismissRequest = { deleteItem = null },
-            containerColor = cardBg,
-            title = {
-                Text(text = "Delete this item?", color = onPageColor, fontWeight = FontWeight.Bold)
-            },
-            text = {
+            Spacer(modifier = Modifier.height(windowH * 0.013f))
+
+            // Auto-delete setting: small button showing the current
+            // choice; tap opens the radio-list dialog. Changing it
+            // prunes immediately (see the dialog below).
+            Row(
+                modifier = Modifier.fillMaxWidth().then(drawerSwipe),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Text(
-                    text = "This will be permanently deleted from the clipboard.",
-                    fontSize = 14.sp,
+                    text = "Auto-delete:",
+                    fontSize = (minDim * 0.036f).value.sp,
                     color = dimColor
                 )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        scope.launch {
-                            try {
-                                repository.deleteItem(deleting)
-                            } catch (_: Exception) {
-                            }
-                        }
-                        deleteItem = null
-                    }
-                ) {
-                    Text(text = "Delete", color = ClipDeleteRed, fontWeight = FontWeight.SemiBold)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { deleteItem = null }) {
-                    Text(text = "Cancel", color = onPageColor)
+                Spacer(modifier = Modifier.width(windowW * 0.022f))
+                OutlinedButton(onClick = { showRetentionDialog = true }) {
+                    Text(
+                        text = ClipboardPrefs.labelFor(retentionDays),
+                        fontSize = (minDim * 0.036f).value.sp,
+                        color = onPageColor
+                    )
                 }
             }
-        )
+
+            Spacer(modifier = Modifier.height(windowH * 0.015f))
+
+            if (clipItems.isEmpty()) {
+                Box(
+                    modifier = Modifier.fillMaxWidth().weight(1f).then(drawerSwipe),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = if (query.isBlank()) {
+                            "Copy anything on your phone —\nit will appear here automatically."
+                        } else {
+                            "No matches for \"$query\""
+                        },
+                        fontSize = (minDim * 0.042f).value.sp,
+                        color = dimColor,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxWidth().weight(1f).then(drawerSwipe),
+                    verticalArrangement = Arrangement.spacedBy(windowH * 0.013f)
+                ) {
+                    items(clipItems, key = { it.id }) { item ->
+                        ClipboardCard(
+                            windowW = windowW,
+                            windowH = windowH,
+                            minDim = minDim,
+                            item = item,
+                            cardBg = cardBg,
+                            onPageColor = onPageColor,
+                            dimColor = dimColor,
+                            onCopy = {
+                                scope.launch {
+                                    repository.copyAgain(item)
+                                }
+                            },
+                            onEdit = {
+                                editItem = item
+                                editDraft = if (item.type == "IMAGE") {
+                                    item.note ?: ""
+                                } else {
+                                    item.text
+                                }
+                            },
+                            onDelete = { deleteItem = item }
+                        )
+                    }
+                    item(key = "clipboard-bottom-space") {
+                        Spacer(modifier = Modifier.height(windowH * 0.01f))
+                    }
+                }
+            }
+        }
+
+        // ---- Auto-delete dialog: ONLY the six allowed options. ----
+        if (showRetentionDialog) {
+            AlertDialog(
+                onDismissRequest = { showRetentionDialog = false },
+                containerColor = cardBg,
+                title = {
+                    Text(text = "Auto-delete", color = onPageColor, fontWeight = FontWeight.Bold)
+                },
+                text = {
+                    Column {
+                        Text(
+                            text = "Copies older than this are deleted automatically.",
+                            fontSize = (minDim * 0.039f).value.sp,
+                            color = dimColor
+                        )
+                        Spacer(modifier = Modifier.height(windowH * 0.01f))
+                        ClipboardPrefs.RETENTION_OPTIONS.forEach { days ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth()
+                                    .clip(RoundedCornerShape(minDim * 0.033f))
+                                    .padding(vertical = windowH * 0.003f),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                RadioButton(
+                                    selected = retentionDays == days,
+                                    onClick = {
+                                        retentionDays = days
+                                        ClipboardPrefs.setRetentionDays(context, days)
+                                        // Prune immediately with the new setting.
+                                        scope.launch {
+                                            try {
+                                                repository.pruneExpired()
+                                            } catch (_: Exception) {
+                                            }
+                                        }
+                                        showRetentionDialog = false
+                                    },
+                                    colors = RadioButtonDefaults.colors(
+                                        selectedColor = onPageColor,
+                                        unselectedColor = dimColor
+                                    )
+                                )
+                                Text(
+                                    text = ClipboardPrefs.labelFor(days),
+                                    fontSize = (minDim * 0.042f).value.sp,
+                                    color = onPageColor
+                                )
+                            }
+                        }
+                    }
+                },
+                confirmButton = {},
+                dismissButton = {
+                    TextButton(onClick = { showRetentionDialog = false }) {
+                        Text(text = "Cancel", color = onPageColor)
+                    }
+                }
+            )
+        }
+
+        // ---- Edit dialog: full text editable (text rows) or the image
+        // note/caption (image rows). Update saves, Cancel discards. ----
+        val editing = editItem
+        if (editing != null) {
+            AlertDialog(
+                onDismissRequest = { editItem = null },
+                containerColor = cardBg,
+                title = {
+                    Text(
+                        text = if (editing.type == "IMAGE") "Edit note" else "Edit text",
+                        color = onPageColor,
+                        fontWeight = FontWeight.Bold
+                    )
+                },
+                text = {
+                    OutlinedTextField(
+                        value = editDraft,
+                        onValueChange = { editDraft = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = {
+                            Text(
+                                text = if (editing.type == "IMAGE") {
+                                    "Add a note for this image..."
+                                } else {
+                                    "Copied text..."
+                                },
+                                color = dimColor
+                            )
+                        },
+                        singleLine = false,
+                        minLines = 3,
+                        maxLines = 10,
+                        keyboardOptions = KeyboardOptions(
+                            capitalization = KeyboardCapitalization.Sentences
+                        ),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = cardBg,
+                            unfocusedContainerColor = cardBg,
+                            focusedTextColor = onPageColor,
+                            unfocusedTextColor = onPageColor,
+                            cursorColor = onPageColor,
+                            focusedBorderColor = onPageColor,
+                            unfocusedBorderColor = dimColor.copy(alpha = 0.4f)
+                        )
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            val draft = editDraft.trim()
+                            scope.launch {
+                                try {
+                                    if (editing.type == "IMAGE") {
+                                        repository.updateItem(
+                                            editing.copy(
+                                                note = draft.ifEmpty { null }
+                                            )
+                                        )
+                                    } else if (draft.isNotEmpty()) {
+                                        repository.updateItem(editing.copy(text = draft))
+                                    }
+                                } catch (_: Exception) {
+                                }
+                            }
+                            editItem = null
+                        }
+                    ) {
+                        // Edit action is green, per the user's request.
+                        Text(text = "Update", color = ClipEditGreen, fontWeight = FontWeight.SemiBold)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { editItem = null }) {
+                        Text(text = "Cancel", color = onPageColor)
+                    }
+                }
+            )
+        }
+
+        // ---- Delete confirm dialog: Yes/No, Delete is red. ----
+        val deleting = deleteItem
+        if (deleting != null) {
+            AlertDialog(
+                onDismissRequest = { deleteItem = null },
+                containerColor = cardBg,
+                title = {
+                    Text(text = "Delete this item?", color = onPageColor, fontWeight = FontWeight.Bold)
+                },
+                text = {
+                    Text(
+                        text = "This will be permanently deleted from the clipboard.",
+                        fontSize = (minDim * 0.039f).value.sp,
+                        color = dimColor
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            scope.launch {
+                                try {
+                                    repository.deleteItem(deleting)
+                                } catch (_: Exception) {
+                                }
+                            }
+                            deleteItem = null
+                        }
+                    ) {
+                        Text(text = "Delete", color = ClipDeleteRed, fontWeight = FontWeight.SemiBold)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { deleteItem = null }) {
+                        Text(text = "Cancel", color = onPageColor)
+                    }
+                }
+            )
+        }
     }
 }
 
 @Composable
 private fun ClipboardCard(
+    windowW: Dp,
+    windowH: Dp,
+    minDim: Dp,
     item: ClipboardItem,
     cardBg: Color,
     onPageColor: Color,
@@ -546,52 +558,52 @@ private fun ClipboardCard(
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(minDim * 0.044f),
         colors = CardDefaults.cardColors(containerColor = cardBg),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = minDim * 0.006f)
     ) {
-        Column(modifier = Modifier.fillMaxWidth().padding(14.dp)) {
+        Column(modifier = Modifier.fillMaxWidth().padding(windowW * 0.039f)) {
             // Top line: date + day, time on the right.
             Row(modifier = Modifier.fillMaxWidth()) {
                 Text(
                     text = formatClipDate(item.createdAt),
-                    fontSize = 12.sp,
+                    fontSize = (minDim * 0.033f).value.sp,
                     fontWeight = FontWeight.Medium,
                     color = dimColor,
                     modifier = Modifier.weight(1f)
                 )
                 Text(
                     text = formatClipTime(item.createdAt),
-                    fontSize = 12.sp,
+                    fontSize = (minDim * 0.033f).value.sp,
                     color = dimColor
                 )
             }
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(windowH * 0.01f))
 
             if (item.type == "IMAGE" && item.imagePath != null) {
-                ClipboardThumbnail(path = item.imagePath, dimColor = dimColor)
-                Spacer(modifier = Modifier.height(6.dp))
+                ClipboardThumbnail(path = item.imagePath, dimColor = dimColor, windowW = windowW, windowH = windowH, minDim = minDim)
+                Spacer(modifier = Modifier.height(windowH * 0.008f))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
                         Icons.Default.Image,
                         contentDescription = "Image",
                         tint = dimColor,
-                        modifier = Modifier.size(16.dp)
+                        modifier = Modifier.size(minDim * 0.044f)
                     )
-                    Spacer(modifier = Modifier.width(6.dp))
+                    Spacer(modifier = Modifier.width(windowW * 0.017f))
                     Text(
                         text = "Image",
-                        fontSize = 13.sp,
+                        fontSize = (minDim * 0.036f).value.sp,
                         fontWeight = FontWeight.Medium,
                         color = dimColor
                     )
                 }
                 val note = item.note
                 if (!note.isNullOrBlank()) {
-                    Spacer(modifier = Modifier.height(4.dp))
+                    Spacer(modifier = Modifier.height(windowH * 0.005f))
                     Text(
                         text = note,
-                        fontSize = 15.sp,
+                        fontSize = (minDim * 0.042f).value.sp,
                         color = onPageColor,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis
@@ -601,14 +613,14 @@ private fun ClipboardCard(
                 // 2-line preview of the copied text.
                 Text(
                     text = item.text,
-                    fontSize = 15.sp,
+                    fontSize = (minDim * 0.042f).value.sp,
                     color = onPageColor,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
             }
 
-            Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.height(windowH * 0.008f))
 
             // Copy / Edit (green) / Delete (red).
             Row(
@@ -621,30 +633,30 @@ private fun ClipboardCard(
                         Icons.Default.ContentCopy,
                         contentDescription = "Copy",
                         tint = onPageColor,
-                        modifier = Modifier.size(18.dp)
+                        modifier = Modifier.size(minDim * 0.05f)
                     )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(text = "Copy", color = onPageColor, fontSize = 13.sp)
+                    Spacer(modifier = Modifier.width(windowW * 0.011f))
+                    Text(text = "Copy", color = onPageColor, fontSize = (minDim * 0.036f).value.sp)
                 }
                 TextButton(onClick = onEdit) {
                     Icon(
                         Icons.Default.Edit,
                         contentDescription = "Edit",
                         tint = ClipEditGreen,
-                        modifier = Modifier.size(18.dp)
+                        modifier = Modifier.size(minDim * 0.05f)
                     )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(text = "Edit", color = ClipEditGreen, fontSize = 13.sp)
+                    Spacer(modifier = Modifier.width(windowW * 0.011f))
+                    Text(text = "Edit", color = ClipEditGreen, fontSize = (minDim * 0.036f).value.sp)
                 }
                 TextButton(onClick = onDelete) {
                     Icon(
                         Icons.Default.Delete,
                         contentDescription = "Delete",
                         tint = ClipDeleteRed,
-                        modifier = Modifier.size(18.dp)
+                        modifier = Modifier.size(minDim * 0.05f)
                     )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(text = "Delete", color = ClipDeleteRed, fontSize = 13.sp)
+                    Spacer(modifier = Modifier.width(windowW * 0.011f))
+                    Text(text = "Delete", color = ClipDeleteRed, fontSize = (minDim * 0.036f).value.sp)
                 }
             }
         }
@@ -652,7 +664,7 @@ private fun ClipboardCard(
 }
 
 @Composable
-private fun ClipboardThumbnail(path: String, dimColor: Color) {
+private fun ClipboardThumbnail(path: String, dimColor: Color, windowW: Dp, windowH: Dp, minDim: Dp) {
     // No Coil (none is added for this feature): decode a small
     // thumbnail with BitmapFactory, downsampled to ~400 px wide.
     // Decoded on Dispatchers.IO: decoding inside remember() ran
@@ -689,26 +701,26 @@ private fun ClipboardThumbnail(path: String, dimColor: Color) {
             contentDescription = "Copied image",
             contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxWidth()
-                .height(140.dp)
-                .clip(RoundedCornerShape(12.dp))
+                .height(windowH * 0.175f)
+                .clip(RoundedCornerShape(minDim * 0.033f))
         )
     } else if (!loaded) {
         // Still decoding: neutral placeholder, no text yet.
         Box(
             modifier = Modifier.fillMaxWidth()
-                .height(140.dp)
-                .clip(RoundedCornerShape(12.dp))
+                .height(windowH * 0.175f)
+                .clip(RoundedCornerShape(minDim * 0.033f))
                 .background(dimColor.copy(alpha = 0.15f))
         )
     } else {
         Box(
             modifier = Modifier.fillMaxWidth()
-                .height(64.dp)
-                .clip(RoundedCornerShape(12.dp))
+                .height(windowH * 0.08f)
+                .clip(RoundedCornerShape(minDim * 0.033f))
                 .background(dimColor.copy(alpha = 0.15f)),
             contentAlignment = Alignment.Center
         ) {
-            Text(text = "Image unavailable", fontSize = 13.sp, color = dimColor)
+            Text(text = "Image unavailable", fontSize = (minDim * 0.036f).value.sp, color = dimColor)
         }
     }
 }

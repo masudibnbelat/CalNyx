@@ -1,4 +1,8 @@
 // FILE: app/src/main/java/com/calnyx/app/ui/screens/NumberSystemCalculatorScreen.kt
+// % VERSION (2026-11-07) - REPLACE. B/W base, logic UNCHANGED.
+// Only change: the last fixed values are now % — drawer swipe
+// threshold (6.7% of minDim) and the entrance slide (7.2% of
+// minDim). Everything else was already % (sw/sh fractions).
 // B/W VERSION - replace your old NumberSystemCalculatorScreen.kt with this file.
 // Logic is UNCHANGED (BigInteger parse/render, grouping, key enable
 // rules, swap, copy format, animations). Only the design changed:
@@ -77,6 +81,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -177,30 +182,7 @@ fun NumberSystemCalculatorScreen(
     var input by remember { mutableStateOf("1010") }
     var swapTurns by remember { mutableFloatStateOf(0f) }
 
-    // DRAWER SWIPE — one shared modifier, applied to the FROM chips
-    // row, the TO chips row and the keypad (see below). A leftward
-    // drag past 24dp opens the app drawer once per gesture; a
-    // rightward drag is never consumed, and taps do nothing, so the
-    // chips and keys keep working exactly as before.
-    val drawerSwipe = Modifier.pointerInput(Unit) {
-        val thresholdPx = 24.dp.toPx()
-        var totalDx = 0f
-        var done = false
-        detectHorizontalDragGestures(
-            onDragStart = { totalDx = 0f; done = false },
-            onDragEnd = { totalDx = 0f; done = false },
-            onDragCancel = { totalDx = 0f; done = false },
-            onHorizontalDrag = { change, dragAmount ->
-                if (done) return@detectHorizontalDragGestures
-                totalDx += dragAmount
-                if (totalDx < -thresholdPx) {
-                    done = true
-                    onOpenDrawer()
-                    change.consume()
-                }
-            }
-        )
-    }
+    // (Drawer swipe lives inside BoxWithConstraints now - it needs minDim.)
 
     val value = remember(input, fromBase) { parseNumber(input, fromBase) }
     val resultRaw = remember(value, toBase) { value?.toString(toBase.radix)?.uppercase() }
@@ -296,6 +278,34 @@ fun NumberSystemCalculatorScreen(
                 val density = LocalDensity.current
                 val sw = maxWidth
                 val sh = maxHeight
+                val minDim = minOf(sw, sh)
+                // DRAWER SWIPE — one shared modifier, applied to the
+                // FROM chips row, the TO chips row and the keypad.
+                // A leftward drag past the threshold opens the app
+                // drawer once per gesture; a rightward drag is never
+                // consumed, and taps do nothing, so the chips and
+                // keys keep working exactly as before.
+                // pointerInput(minDim): window resize-e detector-ta
+                // notun threshold niye abar shuru hoy.
+                val drawerSwipe = Modifier.pointerInput(minDim) {
+                    val thresholdPx = (minDim * 0.067f).toPx() // 24dp
+                    var totalDx = 0f
+                    var done = false
+                    detectHorizontalDragGestures(
+                        onDragStart = { totalDx = 0f; done = false },
+                        onDragEnd = { totalDx = 0f; done = false },
+                        onDragCancel = { totalDx = 0f; done = false },
+                        onHorizontalDrag = { change, dragAmount ->
+                            if (done) return@detectHorizontalDragGestures
+                            totalDx += dragAmount
+                            if (totalDx < -thresholdPx) {
+                                done = true
+                                onOpenDrawer()
+                                change.consume()
+                            }
+                        }
+                    )
+                }
                 fun hSp(frac: Float): TextUnit =
                     with(density) { (sh * frac).toSp() }
 
@@ -349,7 +359,7 @@ fun NumberSystemCalculatorScreen(
                         .padding(start = sidePad, end = sidePad, top = topPad, bottom = bottomPad)
                 ) {
                     // Header — compact, no wasted band
-                    NsAnimatedIn(delayMs = 0) {
+                    NsAnimatedIn(delayMs = 0, minDim = minDim) {
                         Column {
                             Text(
                                 text = "Number System",
@@ -364,7 +374,7 @@ fun NumberSystemCalculatorScreen(
                     Spacer(modifier = Modifier.height(gapHeader))
 
                     // ===== 52% — glass card: From/To chips + display panel
-                    NsAnimatedIn(modifier = Modifier.weight(0.52f), delayMs = 90) {
+                    NsAnimatedIn(modifier = Modifier.weight(0.52f), delayMs = 90, minDim = minDim) {
                         Column(
                             modifier = Modifier
                                 .fillMaxSize()
@@ -630,7 +640,7 @@ fun NumberSystemCalculatorScreen(
                     // the screen — shorter keys on any phone.
                     // Entrance replays when the From base changes.
                     key(fromBase) {
-                        NsAnimatedIn(modifier = Modifier.weight(0.44f).then(drawerSwipe), delayMs = 60) {
+                        NsAnimatedIn(modifier = Modifier.weight(0.44f).then(drawerSwipe), delayMs = 60, minDim = minDim) {
                             Column(
                                 modifier = Modifier.fillMaxSize(),
                                 verticalArrangement = Arrangement.spacedBy(keyGapV)
@@ -855,6 +865,7 @@ private fun NsKey(
 private fun NsAnimatedIn(
     modifier: Modifier = Modifier,
     delayMs: Int,
+    minDim: Dp, // % base - caller passes window minDim
     content: @Composable () -> Unit
 ) {
     var visible by remember { mutableStateOf(false) }
@@ -870,7 +881,7 @@ private fun NsAnimatedIn(
     Box(
         modifier = modifier
             .alpha(progress)
-            .offset(y = ((1f - progress) * 26f).dp)
+            .offset(y = ((1f - progress) * minDim.value * 0.072f).dp)
     ) {
         content()
     }

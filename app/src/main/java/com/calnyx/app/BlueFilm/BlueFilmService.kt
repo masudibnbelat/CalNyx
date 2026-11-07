@@ -9,6 +9,14 @@
 //    notification are all unchanged.
 //  - Old encrypted .bfenc videos are converted by
 //    BlueFilmStore.ensureMigrated() on first open - not here.
+//  - MIC (2026-11-07): video now records WITH microphone audio
+//    (AAC, 128 kbps, 44.1 kHz) when RECORD_AUDIO is granted at
+//    start time; without it the video records silently, exactly
+//    as before. Foreground type becomes camera|microphone only
+//    while audio is on. The mic is never opened without the
+//    permission, so a denied mic can never crash a recording.
+//    Note: Android shows its green mic dot while recording,
+//    same as the camera dot - the OS, no app can hide it.
 package com.calnyx.app.BlueFilm
 
 import android.app.Notification
@@ -107,6 +115,12 @@ class BlueFilmService : Service() {
     private var cameraDevice: CameraDevice? = null
     private var captureSession: CameraCaptureSession? = null
     private var mediaRecorder: MediaRecorder? = null
+    // MIC: true when RECORD_AUDIO was granted at the moment
+    // recording started. Set on the main thread in
+    // startRecording(), read on the camera thread in
+    // startRecordingInternal(). Decides audio + FGS mic type.
+    @Volatile
+    private var recordAudio: Boolean = false
     private var tmpFile: File? = null
 
     @Volatile
@@ -206,9 +220,27 @@ class BlueFilmService : Service() {
             stopSelf()
             return
         }
+        // MIC: audio only when the permission is granted right
+        // now. The screen asks for Camera + Microphone together;
+        // if the mic was denied, this stays false and the video
+        // records without sound, exactly as before.
+        recordAudio = ContextCompat.checkSelfPermission(
+            this, android.Manifest.permission.RECORD_AUDIO
+        ) == PackageManager.PERMISSION_GRANTED
         isStarting = true
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(NOTIF_ID, buildNotification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA)
+            // Microphone type only when actually recording audio
+            // (and only on Android 11+, where the mic type
+            // exists). Camera-only otherwise.
+            val fgsType = if (recordAudio &&
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
+            ) {
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA or
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+            } else {
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
+            }
+            startForeground(NOTIF_ID, buildNotification(), fgsType)
         } else {
             startForeground(NOTIF_ID, buildNotification())
         }
@@ -266,8 +298,19 @@ class BlueFilmService : Service() {
             mediaRecorder = recorder
             recorder.apply {
                 setVideoSource(MediaRecorder.VideoSource.SURFACE)
+                // MIC: audio source BEFORE setOutputFormat,
+                // encoder AFTER it. AAC 128 kbps / 44.1 kHz
+                // into the same .mp4, so the video has sound.
+                if (recordAudio) {
+                    setAudioSource(MediaRecorder.AudioSource.MIC)
+                }
                 setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
                 setVideoEncoder(MediaRecorder.VideoEncoder.H264)
+                if (recordAudio) {
+                    setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+                    setAudioEncodingBitRate(128_000)
+                    setAudioSamplingRate(44_100)
+                }
                 setVideoSize(videoSize.width, videoSize.height)
                 setVideoFrameRate(30)
                 setVideoEncodingBitRate(5_000_000)

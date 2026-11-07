@@ -1,3 +1,8 @@
+// % VERSION (2026-11-07) - sizes only: every margin, padding,
+// width, height, corner, icon and font is now % of the window
+// (windowW / windowH / minDim). Only 1.dp hairline borders and
+// .sp as the conversion of a % value remain fixed. Swipe
+// threshold is 6.7% of minDim. No logic / colour / text change.
 // SPY + PLAIN VERSION (2026-11-06) - REPLACE BlueFilmScreen.kt.
 //  1. PLAIN: no encryption any more (see BlueFilmStore).
 //     Play / thumbnails / Download use the stored .mp4
@@ -276,12 +281,22 @@ fun BlueFilmScreen(
         videos = BlueFilmStore.listVideosInFolder(context, folder)
     }
 
-    val cameraLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        if (granted) {
+    // MIC: Camera + Microphone are asked together, so a Spy video
+    // records with sound. If the mic is denied, the video still
+    // records - silently - and the note says so, instead of the
+    // recording silently having no sound.
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { result ->
+        val cameraOk = result[Manifest.permission.CAMERA] == true
+        val micOk = result[Manifest.permission.RECORD_AUDIO] == true
+        if (cameraOk) {
             BlueFilmService.start(context, facing)
-            note = null
+            note = if (micOk) {
+                null
+            } else {
+                "Microphone permission was not given - this video will have no sound."
+            }
         } else {
             note = "Camera permission was not given."
         }
@@ -289,13 +304,24 @@ fun BlueFilmScreen(
 
     fun startRecording() {
         if (isRecording || isStarting) return
-        if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA)
-            == PackageManager.PERMISSION_GRANTED
-        ) {
+        val cameraOk = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
+            PackageManager.PERMISSION_GRANTED
+        val micOk = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
+            PackageManager.PERMISSION_GRANTED
+        if (cameraOk) {
             BlueFilmService.start(context, facing)
-            note = null
+            note = if (micOk) {
+                null
+            } else {
+                "Microphone permission was not given - this video will have no sound."
+            }
         } else {
-            cameraLauncher.launch(Manifest.permission.CAMERA)
+            permissionLauncher.launch(
+                arrayOf(
+                    Manifest.permission.CAMERA,
+                    Manifest.permission.RECORD_AUDIO
+                )
+            )
         }
     }
 
@@ -388,53 +414,69 @@ fun BlueFilmScreen(
         }
     }
 
-    // DRAWER SWIPE (universal rule, 2026-11-06): a LEFTWARD
-    // drag anywhere on this screen opens the app drawer.
-    // Rightward drags are not consumed here. A tap (no real
-    // movement) does nothing, so buttons still work.
-    val drawerSwipe = Modifier.pointerInput(Unit) {
-        val thresholdPx = 24.dp.toPx()
-        var totalDx = 0f
-        var done = false
-        detectHorizontalDragGestures(
-            onDragStart = { totalDx = 0f; done = false },
-            onDragEnd = { totalDx = 0f; done = false },
-            onDragCancel = { totalDx = 0f; done = false },
-            onHorizontalDrag = { change, dragAmount ->
-                if (done) return@detectHorizontalDragGestures
-                totalDx += dragAmount
-                if (totalDx < -thresholdPx) {
-                    done = true
-                    onOpenDrawer()
-                    change.consume()
-                }
-            }
-        )
-    }
-
     BoxWithConstraints(
         // Background FIRST, then the bar paddings: the page
         // colour covers the area behind the status bar too,
         // so the top strip matches the page below it.
-        modifier = Modifier.fillMaxSize().then(drawerSwipe)
+        modifier = Modifier.fillMaxSize()
             .background(pageBg)
             .statusBarsPadding()
             .navigationBarsPadding()
     ) {
         val screenW = maxWidth
         val screenH = maxHeight
+        val minDim = minOf(screenW, screenH)
+        // % sizes, all of minDim (minDim ~360.dp on a phone, so
+        // 28.sp = 7.8%, 18.sp = 5.0%, 16.sp = 4.4%, 14.sp = 3.9%).
+        val cornerCard = minDim * 0.044f
+        val cornerBtn = minDim * 0.033f
+        val fTitle = (minDim * 0.078f).value.sp
+        val fSection = (minDim * 0.050f).value.sp
+        val fCard = (minDim * 0.044f).value.sp
+        val fBtn = (minDim * 0.042f).value.sp
+        val fBody = (minDim * 0.039f).value.sp
+        val fSmall = (minDim * 0.036f).value.sp
+        val fCount = (minDim * 0.033f).value.sp
+        val fMeta = (minDim * 0.031f).value.sp
         val padX = screenW * 0.04f
         val padY = screenH * 0.015f
         val gap = screenH * 0.015f
         val cardPad = screenW * 0.035f
         val iconBox = screenW * 0.13f
         val thumbH = screenW * 0.30f
-        val actionBtn = 36.dp
+        val actionBtn = minDim * 0.10f
+
+        // DRAWER SWIPE (universal rule, 2026-11-06): a LEFTWARD
+        // drag anywhere on this screen opens the app drawer.
+        // Rightward drags are not consumed here. A tap (no real
+        // movement) does nothing, so buttons still work.
+        // Threshold is 6.7% of minDim; keyed on minDim so the
+        // detector restarts with a new threshold on resize.
+        val drawerSwipe = Modifier.pointerInput(minDim) {
+            val thresholdPx = (minDim * 0.067f).toPx()
+            var totalDx = 0f
+            var done = false
+            detectHorizontalDragGestures(
+                onDragStart = { totalDx = 0f; done = false },
+                onDragEnd = { totalDx = 0f; done = false },
+                onDragCancel = { totalDx = 0f; done = false },
+                onHorizontalDrag = { change, dragAmount ->
+                    if (done) return@detectHorizontalDragGestures
+                    totalDx += dragAmount
+                    if (totalDx < -thresholdPx) {
+                        done = true
+                        onOpenDrawer()
+                        change.consume()
+                    }
+                }
+            )
+        }
 
         Column(
             modifier = Modifier.fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = padX),
+                .padding(horizontal = padX)
+                .then(drawerSwipe),
             verticalArrangement = Arrangement.spacedBy(gap)
         ) {
             // TOP HEADER - no spacer above it, no top padding.
@@ -461,7 +503,7 @@ fun BlueFilmScreen(
                 Text(
                     "Spy",
                     fontWeight = FontWeight.Bold,
-                    fontSize = 28.sp,
+                    fontSize = fTitle,
                     color = primary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -473,20 +515,20 @@ fun BlueFilmScreen(
             if (showSettings) {
                 Column(
                     modifier = Modifier.fillMaxWidth()
-                        .clip(RoundedCornerShape(16.dp))
+                        .clip(RoundedCornerShape(cornerCard))
                         .background(cardBg)
-                        .border(1.dp, cardBorder, RoundedCornerShape(16.dp))
+                        .border(1.dp, cardBorder, RoundedCornerShape(cornerCard))
                         .padding(cardPad),
                     verticalArrangement = Arrangement.spacedBy(gap)
                 ) {
-                    Text("Settings", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = primary)
-                    Text("Camera", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = primary)
+                    Text("Settings", fontWeight = FontWeight.Bold, fontSize = fSection, color = primary)
+                    Text("Camera", fontWeight = FontWeight.SemiBold, fontSize = fBody, color = primary)
                     Row(modifier = Modifier.fillMaxWidth()) {
                         Box(
                             modifier = Modifier.weight(1f)
-                                .clip(RoundedCornerShape(12.dp))
+                                .clip(RoundedCornerShape(cornerBtn))
                                 .background(if (facing == CameraCharacteristics.LENS_FACING_BACK) buttonBg else cardBg)
-                                .border(1.dp, cardBorder, RoundedCornerShape(12.dp))
+                                .border(1.dp, cardBorder, RoundedCornerShape(cornerBtn))
                                 .clickable(enabled = !isRecording && !isStarting) {
                                     facing = CameraCharacteristics.LENS_FACING_BACK
                                     BlueFilmService.saveFacing(context, facing)
@@ -494,15 +536,15 @@ fun BlueFilmScreen(
                                 .padding(vertical = padY),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text("Back camera", fontWeight = FontWeight.SemiBold, fontSize = 14.sp,
+                            Text("Back camera", fontWeight = FontWeight.SemiBold, fontSize = fBody,
                                 color = if (facing == CameraCharacteristics.LENS_FACING_BACK) buttonText else primary)
                         }
                         Spacer(modifier = Modifier.width(screenW * 0.02f))
                         Box(
                             modifier = Modifier.weight(1f)
-                                .clip(RoundedCornerShape(12.dp))
+                                .clip(RoundedCornerShape(cornerBtn))
                                 .background(if (facing == CameraCharacteristics.LENS_FACING_FRONT) buttonBg else cardBg)
-                                .border(1.dp, cardBorder, RoundedCornerShape(12.dp))
+                                .border(1.dp, cardBorder, RoundedCornerShape(cornerBtn))
                                 .clickable(enabled = !isRecording && !isStarting) {
                                     facing = CameraCharacteristics.LENS_FACING_FRONT
                                     BlueFilmService.saveFacing(context, facing)
@@ -510,17 +552,17 @@ fun BlueFilmScreen(
                                 .padding(vertical = padY),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text("Front camera", fontWeight = FontWeight.SemiBold, fontSize = 14.sp,
+                            Text("Front camera", fontWeight = FontWeight.SemiBold, fontSize = fBody,
                                 color = if (facing == CameraCharacteristics.LENS_FACING_FRONT) buttonText else primary)
                         }
                     }
-                    Text("Quality", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = primary)
+                    Text("Quality", fontWeight = FontWeight.SemiBold, fontSize = fBody, color = primary)
                     Row(modifier = Modifier.fillMaxWidth()) {
                         Box(
                             modifier = Modifier.weight(1f)
-                                .clip(RoundedCornerShape(12.dp))
+                                .clip(RoundedCornerShape(cornerBtn))
                                 .background(if (quality == 720) buttonBg else cardBg)
-                                .border(1.dp, cardBorder, RoundedCornerShape(12.dp))
+                                .border(1.dp, cardBorder, RoundedCornerShape(cornerBtn))
                                 .clickable(enabled = !isRecording && !isStarting) {
                                     quality = 720
                                     BlueFilmService.saveQuality(context, 720)
@@ -528,15 +570,15 @@ fun BlueFilmScreen(
                                 .padding(vertical = padY),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text("720p", fontWeight = FontWeight.SemiBold, fontSize = 14.sp,
+                            Text("720p", fontWeight = FontWeight.SemiBold, fontSize = fBody,
                                 color = if (quality == 720) buttonText else primary)
                         }
                         Spacer(modifier = Modifier.width(screenW * 0.02f))
                         Box(
                             modifier = Modifier.weight(1f)
-                                .clip(RoundedCornerShape(12.dp))
+                                .clip(RoundedCornerShape(cornerBtn))
                                 .background(if (quality == 1080) buttonBg else cardBg)
-                                .border(1.dp, cardBorder, RoundedCornerShape(12.dp))
+                                .border(1.dp, cardBorder, RoundedCornerShape(cornerBtn))
                                 .clickable(enabled = !isRecording && !isStarting) {
                                     quality = 1080
                                     BlueFilmService.saveQuality(context, 1080)
@@ -544,19 +586,19 @@ fun BlueFilmScreen(
                                 .padding(vertical = padY),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text("1080p", fontWeight = FontWeight.SemiBold, fontSize = 14.sp,
+                            Text("1080p", fontWeight = FontWeight.SemiBold, fontSize = fBody,
                                 color = if (quality == 1080) buttonText else primary)
                         }
                     }
                     Box(
                         modifier = Modifier.fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
+                            .clip(RoundedCornerShape(cornerBtn))
                             .background(buttonBg)
                             .clickable { showSettings = false }
                             .padding(vertical = padY),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text("Done", fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = buttonText)
+                        Text("Done", fontWeight = FontWeight.SemiBold, fontSize = fBtn, color = buttonText)
                     }
                 }
             }
@@ -564,9 +606,9 @@ fun BlueFilmScreen(
             // RECORD CARD - no camera toggle here any more.
             Column(
                 modifier = Modifier.fillMaxWidth()
-                    .clip(RoundedCornerShape(16.dp))
+                    .clip(RoundedCornerShape(cornerCard))
                     .background(cardBg)
-                    .border(1.dp, cardBorder, RoundedCornerShape(16.dp))
+                    .border(1.dp, cardBorder, RoundedCornerShape(cornerCard))
                     .padding(cardPad),
                 verticalArrangement = Arrangement.spacedBy(gap)
             ) {
@@ -579,7 +621,7 @@ fun BlueFilmScreen(
                             if (isRecording) "Recording - ${formatElapsed(elapsedSec)}"
                             else "Starting...",
                             fontWeight = FontWeight.SemiBold,
-                            fontSize = 16.sp,
+                            fontSize = fCard,
                             color = if (isRecording) red else primary,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
@@ -592,7 +634,7 @@ fun BlueFilmScreen(
                 }
                 Box(
                     modifier = Modifier.fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
+                        .clip(RoundedCornerShape(cornerBtn))
                         .background(buttonBg)
                         .clickable(enabled = !isStarting) {
                             if (isRecording) BlueFilmService.stop(context) else startRecording()
@@ -611,14 +653,14 @@ fun BlueFilmScreen(
                         Text(
                             if (isRecording) "Stop Recording" else "Start Recording",
                             fontWeight = FontWeight.SemiBold,
-                            fontSize = 16.sp,
+                            fontSize = fCard,
                             color = buttonText,
                             maxLines = 1
                         )
                     }
                 }
                 if (note != null) {
-                    Text(note!!, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = primary,
+                    Text(note!!, fontSize = fSmall, fontWeight = FontWeight.SemiBold, color = primary,
                         maxLines = 4, overflow = TextOverflow.Ellipsis)
                 }
             }
@@ -627,33 +669,33 @@ fun BlueFilmScreen(
             if (renameFile != null) {
                 Column(
                     modifier = Modifier.fillMaxWidth()
-                        .clip(RoundedCornerShape(16.dp))
+                        .clip(RoundedCornerShape(cornerCard))
                         .background(cardBg)
-                        .border(1.dp, cardBorder, RoundedCornerShape(16.dp))
+                        .border(1.dp, cardBorder, RoundedCornerShape(cornerCard))
                         .padding(cardPad),
                     verticalArrangement = Arrangement.spacedBy(gap)
                 ) {
-                    Text("Rename video", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = primary)
+                    Text("Rename video", fontWeight = FontWeight.Bold, fontSize = fCard, color = primary)
                     BasicTextField(
                         value = renameText,
                         onValueChange = { renameText = it },
                         singleLine = true,
-                        textStyle = TextStyle(color = primary, fontSize = 14.sp),
+                        textStyle = TextStyle(color = primary, fontSize = fBody),
                         decorationBox = { inner ->
                             if (renameText.isEmpty()) {
-                                Text("Video name", fontSize = 14.sp, color = secondary)
+                                Text("Video name", fontSize = fBody, color = secondary)
                             }
                             inner()
                         },
                         modifier = Modifier.fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
+                            .clip(RoundedCornerShape(cornerBtn))
                             .background(thumbBg)
                             .padding(horizontal = screenW * 0.03f, vertical = padY)
                     )
                     Row(modifier = Modifier.fillMaxWidth()) {
                         Box(
                             modifier = Modifier.weight(1f)
-                                .clip(RoundedCornerShape(12.dp))
+                                .clip(RoundedCornerShape(cornerBtn))
                                 .background(buttonBg)
                                 .clickable {
                                     scope.launch(Dispatchers.IO) {
@@ -675,19 +717,19 @@ fun BlueFilmScreen(
                                 .padding(vertical = padY),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text("Save", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = buttonText)
+                            Text("Save", fontWeight = FontWeight.SemiBold, fontSize = fBody, color = buttonText)
                         }
                         Spacer(modifier = Modifier.width(screenW * 0.02f))
                         Box(
                             modifier = Modifier.weight(1f)
-                                .clip(RoundedCornerShape(12.dp))
+                                .clip(RoundedCornerShape(cornerBtn))
                                 .background(cardBg)
-                                .border(1.dp, cardBorder, RoundedCornerShape(12.dp))
+                                .border(1.dp, cardBorder, RoundedCornerShape(cornerBtn))
                                 .clickable { renameFile = null; renameText = "" }
                                 .padding(vertical = padY),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text("Cancel", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = primary)
+                            Text("Cancel", fontWeight = FontWeight.SemiBold, fontSize = fBody, color = primary)
                         }
                     }
                 }
@@ -697,21 +739,21 @@ fun BlueFilmScreen(
             if (moveFile != null) {
                 Column(
                     modifier = Modifier.fillMaxWidth()
-                        .clip(RoundedCornerShape(16.dp))
+                        .clip(RoundedCornerShape(cornerCard))
                         .background(cardBg)
-                        .border(1.dp, cardBorder, RoundedCornerShape(16.dp))
+                        .border(1.dp, cardBorder, RoundedCornerShape(cornerCard))
                         .padding(cardPad),
                     verticalArrangement = Arrangement.spacedBy(gap)
                 ) {
-                    Text("Move to folder", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = primary)
+                    Text("Move to folder", fontWeight = FontWeight.Bold, fontSize = fCard, color = primary)
                     Text(
                         BlueFilmStore.displayName(moveFile!!),
-                        fontSize = 13.sp, color = secondary,
+                        fontSize = fSmall, color = secondary,
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
                     folders.filter { it != currentFolder }.forEach { target ->
                         Box(
                             modifier = Modifier.fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
+                                .clip(RoundedCornerShape(cornerBtn))
                                 .background(buttonBg)
                                 .clickable {
                                     scope.launch(Dispatchers.IO) {
@@ -726,20 +768,20 @@ fun BlueFilmScreen(
                                 .padding(vertical = padY),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text(target, fontWeight = FontWeight.SemiBold, fontSize = 14.sp,
+                            Text(target, fontWeight = FontWeight.SemiBold, fontSize = fBody,
                                 color = buttonText, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                     }
                     Box(
                         modifier = Modifier.fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
+                            .clip(RoundedCornerShape(cornerBtn))
                             .background(cardBg)
-                            .border(1.dp, cardBorder, RoundedCornerShape(12.dp))
+                            .border(1.dp, cardBorder, RoundedCornerShape(cornerBtn))
                             .clickable { moveFile = null }
                             .padding(vertical = padY),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text("Cancel", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = primary)
+                        Text("Cancel", fontWeight = FontWeight.SemiBold, fontSize = fBody, color = primary)
                     }
                 }
             }
@@ -753,22 +795,22 @@ fun BlueFilmScreen(
                 val isDefault = folder == BlueFilmStore.DEFAULT_FOLDER
                 Column(
                     modifier = Modifier.fillMaxWidth()
-                        .clip(RoundedCornerShape(16.dp))
+                        .clip(RoundedCornerShape(cornerCard))
                         .background(cardBg)
-                        .border(1.dp, cardBorder, RoundedCornerShape(16.dp))
+                        .border(1.dp, cardBorder, RoundedCornerShape(cornerCard))
                         .padding(cardPad),
                     verticalArrangement = Arrangement.spacedBy(gap)
                 ) {
-                    Text(folder, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(folder, fontWeight = FontWeight.Bold, fontSize = fCard, color = primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     if (isDefault) {
                         Text(
                             "The default folder cannot be renamed or deleted.",
-                            fontSize = 13.sp, color = secondary
+                            fontSize = fSmall, color = secondary
                         )
                     } else {
                         Box(
                             modifier = Modifier.fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
+                                .clip(RoundedCornerShape(cornerBtn))
                                 .background(buttonBg)
                                 .clickable {
                                     folderToRename = folder
@@ -778,30 +820,30 @@ fun BlueFilmScreen(
                                 .padding(vertical = padY),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text("Rename", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = buttonText)
+                            Text("Rename", fontWeight = FontWeight.SemiBold, fontSize = fBody, color = buttonText)
                         }
                         Box(
                             modifier = Modifier.fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
+                                .clip(RoundedCornerShape(cornerBtn))
                                 .background(cardBg)
-                                .border(1.dp, red, RoundedCornerShape(12.dp))
+                                .border(1.dp, red, RoundedCornerShape(cornerBtn))
                                 .clickable { folderToDelete = folder; folderOptions = null }
                                 .padding(vertical = padY),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text("Delete", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = red)
+                            Text("Delete", fontWeight = FontWeight.SemiBold, fontSize = fBody, color = red)
                         }
                     }
                     Box(
                         modifier = Modifier.fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
+                            .clip(RoundedCornerShape(cornerBtn))
                             .background(cardBg)
-                            .border(1.dp, cardBorder, RoundedCornerShape(12.dp))
+                            .border(1.dp, cardBorder, RoundedCornerShape(cornerBtn))
                             .clickable { folderOptions = null }
                             .padding(vertical = padY),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text("Cancel", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = primary)
+                        Text("Cancel", fontWeight = FontWeight.SemiBold, fontSize = fBody, color = primary)
                     }
                 }
             }
@@ -811,33 +853,33 @@ fun BlueFilmScreen(
             if (folderToRename != null) {
                 Column(
                     modifier = Modifier.fillMaxWidth()
-                        .clip(RoundedCornerShape(16.dp))
+                        .clip(RoundedCornerShape(cornerCard))
                         .background(cardBg)
-                        .border(1.dp, cardBorder, RoundedCornerShape(16.dp))
+                        .border(1.dp, cardBorder, RoundedCornerShape(cornerCard))
                         .padding(cardPad),
                     verticalArrangement = Arrangement.spacedBy(gap)
                 ) {
-                    Text("Rename folder", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = primary)
+                    Text("Rename folder", fontWeight = FontWeight.Bold, fontSize = fCard, color = primary)
                     BasicTextField(
                         value = renameFolderText,
                         onValueChange = { renameFolderText = it },
                         singleLine = true,
-                        textStyle = TextStyle(color = primary, fontSize = 14.sp),
+                        textStyle = TextStyle(color = primary, fontSize = fBody),
                         decorationBox = { inner ->
                             if (renameFolderText.isEmpty()) {
-                                Text("Folder name", fontSize = 14.sp, color = secondary)
+                                Text("Folder name", fontSize = fBody, color = secondary)
                             }
                             inner()
                         },
                         modifier = Modifier.fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
+                            .clip(RoundedCornerShape(cornerBtn))
                             .background(thumbBg)
                             .padding(horizontal = screenW * 0.03f, vertical = padY)
                     )
                     Row(modifier = Modifier.fillMaxWidth()) {
                         Box(
                             modifier = Modifier.weight(1f)
-                                .clip(RoundedCornerShape(12.dp))
+                                .clip(RoundedCornerShape(cornerBtn))
                                 .background(buttonBg)
                                 .clickable {
                                     val oldName = folderToRename!!
@@ -859,19 +901,19 @@ fun BlueFilmScreen(
                                 .padding(vertical = padY),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text("Save", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = buttonText)
+                            Text("Save", fontWeight = FontWeight.SemiBold, fontSize = fBody, color = buttonText)
                         }
                         Spacer(modifier = Modifier.width(screenW * 0.02f))
                         Box(
                             modifier = Modifier.weight(1f)
-                                .clip(RoundedCornerShape(12.dp))
+                                .clip(RoundedCornerShape(cornerBtn))
                                 .background(cardBg)
-                                .border(1.dp, cardBorder, RoundedCornerShape(12.dp))
+                                .border(1.dp, cardBorder, RoundedCornerShape(cornerBtn))
                                 .clickable { folderToRename = null; renameFolderText = "" }
                                 .padding(vertical = padY),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text("Cancel", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = primary)
+                            Text("Cancel", fontWeight = FontWeight.SemiBold, fontSize = fBody, color = primary)
                         }
                     }
                 }
@@ -883,7 +925,7 @@ fun BlueFilmScreen(
                     Text(
                         "Folders",
                         fontWeight = FontWeight.Bold,
-                        fontSize = 18.sp,
+                        fontSize = fSection,
                         color = primary,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -891,28 +933,28 @@ fun BlueFilmScreen(
                     )
                     Text(
                         "${folders.size} folders",
-                        fontSize = 12.sp,
+                        fontSize = fCount,
                         color = secondary,
                         maxLines = 1
                     )
                 }
                 Box(
                     modifier = Modifier.fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
+                        .clip(RoundedCornerShape(cornerBtn))
                         .background(buttonBg)
                         .clickable { showCreate = !showCreate }
                         .padding(vertical = padY),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(if (showCreate) "Cancel" else "+ New folder",
-                        fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = buttonText)
+                        fontWeight = FontWeight.SemiBold, fontSize = fBody, color = buttonText)
                 }
                 if (showCreate) {
                     Row(
                         modifier = Modifier.fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
+                            .clip(RoundedCornerShape(cornerBtn))
                             .background(cardBg)
-                            .border(1.dp, cardBorder, RoundedCornerShape(12.dp))
+                            .border(1.dp, cardBorder, RoundedCornerShape(cornerBtn))
                             .padding(cardPad),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -920,10 +962,10 @@ fun BlueFilmScreen(
                             value = newFolderName,
                             onValueChange = { newFolderName = it },
                             singleLine = true,
-                            textStyle = TextStyle(color = primary, fontSize = 14.sp),
+                            textStyle = TextStyle(color = primary, fontSize = fBody),
                             decorationBox = { inner ->
                                 if (newFolderName.isEmpty()) {
-                                    Text("Folder name", fontSize = 14.sp, color = secondary)
+                                    Text("Folder name", fontSize = fBody, color = secondary)
                                 }
                                 inner()
                             },
@@ -931,7 +973,7 @@ fun BlueFilmScreen(
                         )
                         Spacer(modifier = Modifier.width(screenW * 0.02f))
                         Box(
-                            modifier = Modifier.clip(RoundedCornerShape(12.dp))
+                            modifier = Modifier.clip(RoundedCornerShape(cornerBtn))
                                 .background(buttonBg)
                                 .clickable {
                                     if (BlueFilmStore.createFolder(context, newFolderName)) {
@@ -946,12 +988,12 @@ fun BlueFilmScreen(
                                 .padding(horizontal = screenW * 0.04f, vertical = padY),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text("Create", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = buttonText)
+                            Text("Create", fontWeight = FontWeight.SemiBold, fontSize = fBody, color = buttonText)
                         }
                     }
                 }
                 if (folders.isEmpty()) {
-                    Text("No folders yet.", fontSize = 14.sp, color = secondary)
+                    Text("No folders yet.", fontSize = fBody, color = secondary)
                 }
                 folders.chunked(2).forEach { rowFolders ->
                     Row(
@@ -963,9 +1005,9 @@ fun BlueFilmScreen(
                             val cover = first?.let { thumbBitmaps[BlueFilmStore.displayName(it)] }
                             Column(
                                 modifier = Modifier.weight(1f)
-                                    .clip(RoundedCornerShape(16.dp))
+                                    .clip(RoundedCornerShape(cornerCard))
                                     .background(cardBg)
-                                    .border(1.dp, cardBorder, RoundedCornerShape(16.dp))
+                                    .border(1.dp, cardBorder, RoundedCornerShape(cornerCard))
                                     .combinedClickable(
                                         onClick = { openFolder(folder) },
                                         onLongClick = { folderOptions = folder }
@@ -1001,14 +1043,14 @@ fun BlueFilmScreen(
                                     Text(
                                         folder,
                                         fontWeight = FontWeight.SemiBold,
-                                        fontSize = 14.sp,
+                                        fontSize = fBody,
                                         color = primary,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
                                     Text(
                                         "${BlueFilmStore.folderCount(context, folder)} videos",
-                                        fontSize = 12.sp,
+                                        fontSize = fCount,
                                         color = secondary,
                                         maxLines = 1
                                     )
@@ -1032,7 +1074,7 @@ fun BlueFilmScreen(
                     Text(
                         currentFolder!!,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 18.sp,
+                        fontSize = fSection,
                         color = primary,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -1040,19 +1082,19 @@ fun BlueFilmScreen(
                     )
                     Text(
                         "${videos.size} videos",
-                        fontSize = 12.sp,
+                        fontSize = fCount,
                         color = secondary,
                         maxLines = 1
                     )
                 }
                 Text(
                     "Long-press a video to move it to another folder.",
-                    fontSize = 12.sp,
+                    fontSize = fCount,
                     color = secondary,
                     maxLines = 2
                 )
                 if (videos.isEmpty()) {
-                    Text("No videos in this folder yet.", fontSize = 14.sp, color = secondary)
+                    Text("No videos in this folder yet.", fontSize = fBody, color = secondary)
                 }
                 videos.chunked(2).forEach { rowVideos ->
                     Row(
@@ -1063,9 +1105,9 @@ fun BlueFilmScreen(
                             val name = BlueFilmStore.displayName(file)
                             Column(
                                 modifier = Modifier.weight(1f)
-                                    .clip(RoundedCornerShape(16.dp))
+                                    .clip(RoundedCornerShape(cornerCard))
                                     .background(cardBg)
-                                    .border(1.dp, cardBorder, RoundedCornerShape(16.dp))
+                                    .border(1.dp, cardBorder, RoundedCornerShape(cornerCard))
                                     .combinedClickable(
                                         onClick = { playFile(file) },
                                         onLongClick = { moveFile = file }
@@ -1102,21 +1144,21 @@ fun BlueFilmScreen(
                                     Text(
                                         name,
                                         fontWeight = FontWeight.SemiBold,
-                                        fontSize = 12.sp,
+                                        fontSize = fCount,
                                         color = primary,
                                         maxLines = 2,
                                         overflow = TextOverflow.Ellipsis
                                     )
                                     Text(
                                         BlueFilmStore.displayDate(file),
-                                        fontSize = 11.sp,
+                                        fontSize = fMeta,
                                         color = secondary,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
                                     Text(
                                         BlueFilmStore.sizeText(file),
-                                        fontSize = 11.sp,
+                                        fontSize = fMeta,
                                         color = secondary,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
@@ -1124,7 +1166,7 @@ fun BlueFilmScreen(
                                     if (damagedNames.contains(name)) {
                                         Text(
                                             "Damaged - cannot play",
-                                            fontSize = 11.sp,
+                                            fontSize = fMeta,
                                             fontWeight = FontWeight.SemiBold,
                                             color = red,
                                             maxLines = 1,
@@ -1184,14 +1226,14 @@ fun BlueFilmScreen(
                     Text(
                         "Delete video?",
                         fontWeight = FontWeight.Bold,
-                        fontSize = 18.sp,
+                        fontSize = fSection,
                         color = primary
                     )
                 },
                 text = {
                     Text(
                         BlueFilmStore.displayName(deleteFile!!) + " will be deleted.",
-                        fontSize = 14.sp,
+                        fontSize = fBody,
                         color = secondary
                     )
                 },
@@ -1209,12 +1251,12 @@ fun BlueFilmScreen(
                         }
                         deleteFile = null
                     }) {
-                        Text("Delete", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = red)
+                        Text("Delete", fontWeight = FontWeight.Bold, fontSize = fBtn, color = red)
                     }
                 },
                 dismissButton = {
                     TextButton(onClick = { deleteFile = null }) {
-                        Text("Cancel", fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = primary)
+                        Text("Cancel", fontWeight = FontWeight.SemiBold, fontSize = fBtn, color = primary)
                     }
                 },
                 containerColor = cardBg,
@@ -1234,7 +1276,7 @@ fun BlueFilmScreen(
                     Text(
                         "Delete folder?",
                         fontWeight = FontWeight.Bold,
-                        fontSize = 18.sp,
+                        fontSize = fSection,
                         color = primary
                     )
                 },
@@ -1242,7 +1284,7 @@ fun BlueFilmScreen(
                     Text(
                         if (count == 1) "$folder will be deleted with its 1 video."
                         else "$folder will be deleted with its $count videos.",
-                        fontSize = 14.sp,
+                        fontSize = fBody,
                         color = secondary
                     )
                 },
@@ -1257,12 +1299,12 @@ fun BlueFilmScreen(
                         }
                         folderToDelete = null
                     }) {
-                        Text("Delete", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = red)
+                        Text("Delete", fontWeight = FontWeight.Bold, fontSize = fBtn, color = red)
                     }
                 },
                 dismissButton = {
                     TextButton(onClick = { folderToDelete = null }) {
-                        Text("Cancel", fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = primary)
+                        Text("Cancel", fontWeight = FontWeight.SemiBold, fontSize = fBtn, color = primary)
                     }
                 },
                 containerColor = cardBg,

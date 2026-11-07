@@ -63,9 +63,18 @@
 <!-- 4. Your minSdk 26 / targetSdk 35 already covers Android 9 (28) -->
 <!--    through 16/17 by compatibility. Do NOT raise minSdk. Target 36 -->
 <!--    is only needed later for Play Store, when SDK 36 is installed. -->
+<!-- + LOCKED-APP NOTIFICATIONS (2026-11-07): NEW service -->
+<!--   .applock.LockedAppNotificationService - hides notifications -->
+<!--   from locked apps. No new uses-permission needed -->
+<!--   (BIND_NOTIFICATION_LISTENER_SERVICE is a service-level -->
+<!--   permission). The user must still grant Notification access -->
+<!--   in Settings, or the service never runs. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Auto update check: lets the app see whether WiFi / mobile
+         data is up. Normal permission, no runtime prompt. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
@@ -81,6 +90,9 @@
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
+    <!-- SPY MIC (2026-11-07): Spy videos record microphone audio. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature
@@ -213,7 +225,7 @@
         <service
             android:name=".BlueFilm.BlueFilmService"
             android:exported="false"
-            android:foregroundServiceType="camera" />
+            android:foregroundServiceType="camera|microphone" />
 
         <!-- Clipboard (NEW): foreground service that listens for
              copies and saves them into Room. Not exported - only
@@ -234,6 +246,17 @@
             </intent-filter>
         </receiver>
 
+        <!-- Floating Ball (NEW): bring the ball back after a reboot,
+             so it shows without opening the Hardware screen. -->
+        <receiver
+            android:name=".moan.BallBootReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
         <!-- App Lock: AccessibilityService, must be enabled by user in Settings -->
         <service
             android:name=".applock.AppLockService"
@@ -246,6 +269,20 @@
             <meta-data
                 android:name="android.accessibilityservice"
                 android:resource="@xml/app_lock_service_config" />
+        </service>
+
+        <!-- App Lock: hide notifications from locked apps (2026-11-07).
+             The user must also grant Notification access (Settings >
+             Apps > Special access > Notification access) or this
+             service never runs. No new uses-permission needed. -->
+        <service
+            android:name=".applock.LockedAppNotificationService"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
         </service>
     </application>
 

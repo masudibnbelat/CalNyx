@@ -42,6 +42,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
@@ -102,6 +104,8 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -120,6 +124,13 @@ import java.util.Date
 import java.util.Locale
 import kotlin.math.abs
 
+// % -BASED RESPONSIVE VERSION (2026-11-07) - REPLACE CalTapeCalculatorScreen.kt.
+//  Sob margin/padding/width/height/font % -e, window-er BoxWithConstraints
+//  size theke - mini/floating/split/landscape-e auto adjust hobe.
+//  Sheets drawer contrast: dark drawerBg 0xFF262626 -> 0xFF333333
+//  (page 0xFF0E0E0E theke onek halka, shohoje bojha jabe), light
+//  drawerBg 0xFFFFFFFF -> 0xFFE3E1DC (page 0xFFF6F4EF theke garo).
+//  Logic/swipe detector (v4)/PDF - kichu bodlayni, shudhu size % -e.
 // CalTape worksheet, matched to the reference app in both themes:
 // running-total tape organised in sheets (side drawer, top-left menu
 // button; sheets can be added, renamed and deleted, and the PDF
@@ -162,7 +173,7 @@ private val DarkTapePalette = TapePalette(
     keyBack = Color(0xFF262626),
     keyBorder = null,
     strip = Color(0xFF1B1B1B),
-    drawerBg = Color(0xFF262626),
+    drawerBg = Color(0xFF333333),
     text = Color(0xFFF6F4EF),
     dim = Color(0xFF8A8A8A),
     green = Color(0xFFF6F4EF),
@@ -178,7 +189,7 @@ private val LightTapePalette = TapePalette(
     keyBack = Color(0xFFEFEDE8),
     keyBorder = Color(0xFFE9E6DF),
     strip = Color(0xFFEFEDE8),
-    drawerBg = Color(0xFFFFFFFF),
+    drawerBg = Color(0xFFE3E1DC),
     text = Color(0xFF0E0E0E),
     dim = Color(0xFF6B6B6B),
     green = Color(0xFF0E0E0E),
@@ -240,7 +251,7 @@ fun CalTapeCalculatorScreen(
     // status-bar inset when the window reports one, and never less
     // than 24.dp (a typical status-bar height).
     val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-    val topInset = maxOf(statusTop, 24.dp)
+    // topInsetPct (% - height-er 2.8%) niche BoxWithConstraints-e hobe.
 
     // The strip total counts up/down to its new value instead of
     // jumping; at rest it snaps to the exact Double.
@@ -346,11 +357,13 @@ fun CalTapeCalculatorScreen(
             titleContentColor = palette.text,
             textContentColor = palette.text,
             title = {
-                Text(
-                    "Rename sheet",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold
-                )
+                BoxWithConstraints {
+                    Text(
+                        "Rename sheet",
+                        fontSize = (maxWidth.value * 0.064f).sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             },
             text = {
                 OutlinedTextField(
@@ -389,44 +402,46 @@ fun CalTapeCalculatorScreen(
             containerColor = palette.drawerBg,
             contentColor = palette.text
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp)
-                    .padding(bottom = 28.dp)
-            ) {
+            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                val bw = maxWidth
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = bw * 0.055f)
+                        .padding(bottom = bw * 0.078f)
+                ) {
                 Text(
                     if (isTotalLine) "Edit subtotal line" else "Edit line",
-                    fontSize = 18.sp,
+                    fontSize = (bw.value * 0.05f).sp,
                     fontWeight = FontWeight.Bold,
                     color = palette.text
                 )
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(bw * 0.044f))
 
                 if (!isTotalLine) {
                     // Operator chips, coloured by the tape rule.
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(bw * 0.022f)) {
                         listOf("+", "-", "*", "/").forEach { op ->
                             val selected = editOp == op
                             val chipColor = opColor(op, palette)
                             Box(
                                 modifier = Modifier
-                                    .size(48.dp)
-                                    .clip(RoundedCornerShape(12.dp))
+                                    .size(bw * 0.133f)
+                                    .clip(RoundedCornerShape(bw * 0.033f))
                                     .background(if (selected) chipColor else palette.keyFn)
                                     .clickable { editOp = op },
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(
                                     displayOp(op),
-                                    fontSize = 22.sp,
+                                    fontSize = (bw.value * 0.061f).sp,
                                     fontWeight = FontWeight.Bold,
                                     color = if (selected) palette.bg else palette.text
                                 )
                             }
                         }
                     }
-                    Spacer(modifier = Modifier.height(14.dp))
+                    Spacer(modifier = Modifier.height(bw * 0.039f))
 
                     OutlinedTextField(
                         value = editAmount,
@@ -438,7 +453,7 @@ fun CalTapeCalculatorScreen(
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         modifier = Modifier.fillMaxWidth()
                     )
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(bw * 0.033f))
                 }
 
                 OutlinedTextField(
@@ -448,7 +463,7 @@ fun CalTapeCalculatorScreen(
                     label = { Text("Note") },
                     modifier = Modifier.fillMaxWidth()
                 )
-                Spacer(modifier = Modifier.height(18.dp))
+                Spacer(modifier = Modifier.height(bw * 0.05f))
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     TextButton(
@@ -462,9 +477,9 @@ fun CalTapeCalculatorScreen(
                             Icons.Default.Delete,
                             contentDescription = null,
                             tint = palette.text,
-                            modifier = Modifier.size(18.dp)
+                            modifier = Modifier.size(bw * 0.05f)
                         )
-                        Spacer(modifier = Modifier.width(6.dp))
+                        Spacer(modifier = Modifier.width(bw * 0.017f))
                         Text(
                             "Delete line",
                             color = palette.text,
@@ -490,6 +505,7 @@ fun CalTapeCalculatorScreen(
                     ) {
                         Text("Save", color = palette.text, fontWeight = FontWeight.Bold)
                     }
+                }
                 }
             }
         }
@@ -529,8 +545,8 @@ fun CalTapeCalculatorScreen(
     //  drawer gets the whole drag and opens exactly as before.
     //  When the Sheets drawer is already open this does nothing -
     //  its own swipe closes it instead.
-    val drawerSwipe = Modifier.pointerInput(Unit) {
-        val thresholdPx = 24.dp.toPx()
+    fun drawerSwipePct(windowW: Dp) = Modifier.pointerInput(windowW) {
+        val thresholdPx = (windowW * 0.066f).toPx() // width-er 6.6%
         awaitEachGesture {
             val down = awaitFirstDown()
             // onTouchSlopReached is a REQUIRED parameter in this Compose version
@@ -563,10 +579,59 @@ fun CalTapeCalculatorScreen(
             }
         }
     }
-    Box(
+    BoxWithConstraints(
         modifier = Modifier.fillMaxSize()
-            .then(drawerSwipe)
     ) {
+        // ---- % SIZE SYSTEM: window-er asol size (multi-window aware) ----
+        val windowW = maxWidth
+        val windowH = maxHeight
+        val minDim = minOf(windowW, windowH)
+        val isLandscape = windowW > windowH
+        val isMiniWindow = windowW < 320.dp || windowH < 480.dp
+        val isSmallWindow = windowW < 360.dp || windowH < 620.dp
+        val isVeryShort = windowH < 420.dp
+        val compactFontScale = when {
+            minDim < 300.dp -> 0.85f
+            minDim < 340.dp -> 0.92f
+            else -> 1f
+        }
+        val topInsetPct = maxOf(statusTop, windowH * 0.028f)
+        // Sheets drawer width % of WINDOW: normal 78%, mini 85%.
+        val sheetDrawerW = if (isMiniWindow) windowW * 0.85f else windowW * 0.78f
+        val sheetPadH = sheetDrawerW * 0.057f
+        val sheetPadV = windowH * 0.024f
+        val sheetTitleFont = (sheetDrawerW.value * 0.071f).sp
+        val sheetItemFont = (sheetDrawerW.value * 0.057f).sp
+        val sheetSmallFont = (sheetDrawerW.value * 0.039f).sp
+        val sheetIcon = sheetDrawerW * 0.071f
+        val sheetBtn = sheetDrawerW * 0.114f
+        val sheetBtnIcon = sheetDrawerW * 0.064f
+        val sheetCorner = sheetDrawerW * 0.043f
+        val sheetRowPadH = sheetDrawerW * 0.036f
+        val sheetRowPadV = windowH * 0.012f
+        val sheetGapH = windowH * 0.017f
+        val sheetGapS = windowH * 0.005f
+        val sheetGapFooter = windowH * 0.009f
+        // Main content % vars.
+        val tapePadH = windowW * 0.055f
+        val topRowH = if (isLandscape) windowH * 0.13f else windowH * 0.061f
+        val topMenuBtn = windowW * 0.133f
+        val topMenuIcon = windowW * 0.072f
+        val sheetNameFont = (minDim.value * 0.047f * compactFontScale).sp
+        val emptyFont = (minDim.value * 0.042f * compactFontScale).sp
+        val tapeBottomPad = windowH * 0.052f
+        val stripPadH = windowW * 0.022f
+        val stripPadV = windowH * 0.005f
+        val stripIcon = windowW * 0.058f
+        val stripTotalFont = (minDim.value * 0.053f * compactFontScale).sp
+        val keyGapH = windowW * 0.022f
+        val keyGapV = windowH * 0.009f
+        val keyPadH = windowW * 0.028f
+        val keyPadV = windowH * 0.012f
+        val keyH = if (isLandscape) windowH * 0.11f else windowH * 0.065f
+        val expandIcon = windowW * 0.055f
+        val feedbackFont = (minDim.value * 0.036f).sp
+        val feedbackIcon = windowW * 0.044f
     ModalNavigationDrawer(
         drawerState = drawerState,
         scrimColor = Color.Black.copy(alpha = 0.55f),
@@ -574,50 +639,56 @@ fun CalTapeCalculatorScreen(
             ModalDrawerSheet(
                 drawerContainerColor = palette.drawerBg,
                 drawerContentColor = palette.text,
-                modifier = Modifier.width(280.dp)
+                modifier = Modifier.width(sheetDrawerW)
                     .border(
-                        1.dp,
-                        if (darkTheme) Color(0xFF3D3D3D) else Color(0xFFE9E6DF),
-                        RoundedCornerShape(topEnd = 16.dp, bottomEnd = 16.dp)
+                        sheetDrawerW * 0.004f,
+                        if (darkTheme) Color(0xFF5A5A5A) else Color(0xFFC9C5BC),
+                        RoundedCornerShape(topEnd = sheetDrawerW * 0.057f, bottomEnd = sheetDrawerW * 0.057f)
                     )
             ) {
                 Column(
                     modifier = Modifier
                         .fillMaxHeight()
-                        .padding(horizontal = 16.dp, vertical = 20.dp)
+                        .padding(horizontal = sheetPadH, vertical = sheetPadV)
                 ) {
                     Text(
                         "Sheets",
-                        fontSize = 20.sp,
+                        fontSize = sheetTitleFont,
                         fontWeight = FontWeight.Bold,
                         color = palette.text
                     )
-                    Spacer(modifier = Modifier.height(14.dp))
+                    Spacer(modifier = Modifier.height(sheetGapH))
 
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                            .verticalScroll(rememberScrollState())
+                    ) {
                     sheets.forEach { sheet ->
                         val selected = sheet.id == currentSheetId
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
+                                .clip(RoundedCornerShape(sheetCorner))
                                 .background(if (selected) palette.keyFn else Color.Transparent)
                                 .clickable {
                                     viewModel.switchSheet(sheet.id)
                                     scope.launch { drawerState.close() }
                                 }
-                                .padding(horizontal = 10.dp, vertical = 10.dp),
+                                .padding(horizontal = sheetRowPadH, vertical = sheetRowPadV),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
                                 Icons.Default.Description,
                                 contentDescription = null,
                                 tint = if (selected) palette.text else palette.dim,
-                                modifier = Modifier.size(20.dp)
+                                modifier = Modifier.size(sheetIcon)
                             )
-                            Spacer(modifier = Modifier.width(10.dp))
+                            Spacer(modifier = Modifier.width(sheetRowPadH))
                             Text(
                                 sheet.name,
-                                fontSize = 16.sp,
+                                fontSize = sheetItemFont,
                                 fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
                                 color = palette.text,
                                 modifier = Modifier.weight(1f)
@@ -627,66 +698,66 @@ fun CalTapeCalculatorScreen(
                                     renameTarget = sheet
                                     renameText = sheet.name
                                 },
-                                modifier = Modifier.size(32.dp)
+                                modifier = Modifier.size(sheetBtn)
                             ) {
                                 Icon(
                                     Icons.Default.Edit,
                                     contentDescription = "Rename sheet",
                                     tint = palette.dim,
-                                    modifier = Modifier.size(18.dp)
+                                    modifier = Modifier.size(sheetBtnIcon)
                                 )
                             }
                             if (sheets.size > 1) {
                                 IconButton(
                                     onClick = { viewModel.deleteSheet(sheet.id) },
-                                    modifier = Modifier.size(32.dp)
+                                    modifier = Modifier.size(sheetBtn)
                                 ) {
                                     Icon(
                                         Icons.Default.Delete,
                                         contentDescription = "Delete sheet",
                                         tint = palette.dim,
-                                        modifier = Modifier.size(18.dp)
+                                        modifier = Modifier.size(sheetBtnIcon)
                                     )
                                 }
                             }
                         }
-                        Spacer(modifier = Modifier.height(4.dp))
+                        Spacer(modifier = Modifier.height(sheetGapS))
                     }
 
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
+                            .clip(RoundedCornerShape(sheetCorner))
                             .clickable {
                                 viewModel.addSheet()
                                 scope.launch { drawerState.close() }
                             }
-                            .padding(horizontal = 10.dp, vertical = 10.dp),
+                            .padding(horizontal = sheetRowPadH, vertical = sheetRowPadV),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
                             Icons.Default.Add,
                             contentDescription = null,
                             tint = palette.text,
-                            modifier = Modifier.size(20.dp)
+                            modifier = Modifier.size(sheetIcon)
                         )
-                        Spacer(modifier = Modifier.width(10.dp))
+                        Spacer(modifier = Modifier.width(sheetRowPadH))
                         Text(
                             "New sheet",
-                            fontSize = 16.sp,
+                            fontSize = sheetItemFont,
                             color = palette.text,
                             fontWeight = FontWeight.Medium
                         )
                     }
 
-                    Spacer(modifier = Modifier.weight(1f))
+                    }
                     HorizontalDivider(color = palette.dim.copy(alpha = 0.25f))
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(sheetGapFooter))
 
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
+                            .clip(RoundedCornerShape(sheetCorner))
                             .clickable(enabled = lines.isNotEmpty()) {
                                 scope.launch { drawerState.close() }
                                 val sheetName = currentSheet?.name ?: "Sheet"
@@ -702,28 +773,28 @@ fun CalTapeCalculatorScreen(
                                     }
                                 }
                             }
-                            .padding(horizontal = 10.dp, vertical = 10.dp),
+                            .padding(horizontal = sheetRowPadH, vertical = sheetRowPadV),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
                             Icons.Default.PictureAsPdf,
                             contentDescription = null,
                             tint = if (lines.isNotEmpty()) palette.text else palette.dim.copy(alpha = 0.4f),
-                            modifier = Modifier.size(20.dp)
+                            modifier = Modifier.size(sheetIcon)
                         )
-                        Spacer(modifier = Modifier.width(10.dp))
+                        Spacer(modifier = Modifier.width(sheetRowPadH))
                         Text(
                             "Export PDF",
-                            fontSize = 16.sp,
+                            fontSize = sheetItemFont,
                             color = if (lines.isNotEmpty()) palette.text else palette.dim.copy(alpha = 0.4f),
                             fontWeight = FontWeight.Medium
                         )
                     }
                     Text(
                         "Saved to Downloads/CalTape",
-                        fontSize = 11.sp,
+                        fontSize = sheetSmallFont,
                         color = palette.dim,
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp)
+                        modifier = Modifier.padding(horizontal = sheetRowPadH, vertical = windowH * 0.002f)
                     )
                 }
             }
@@ -733,27 +804,27 @@ fun CalTapeCalculatorScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .background(palette.bg)
-                .padding(top = topInset)
+                .padding(top = topInsetPct)
                 .navigationBarsPadding()
-                .then(drawerSwipe)
+                .then(drawerSwipePct(windowW))
         ) {
             // ----- Top row: side-menu button (left) + current sheet name -----
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(52.dp)
-                    .padding(horizontal = 4.dp),
+                    .height(topRowH)
+                    .padding(horizontal = windowW * 0.011f),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(
                     onClick = { scope.launch { drawerState.open() } },
-                    modifier = Modifier.size(48.dp)
+                    modifier = Modifier.size(topMenuBtn)
                 ) {
                     Icon(
                         Icons.Default.Menu,
                         contentDescription = "Sheets",
                         tint = palette.text,
-                        modifier = Modifier.size(26.dp)
+                        modifier = Modifier.size(topMenuIcon)
                     )
                 }
                 AnimatedContent(
@@ -770,7 +841,7 @@ fun CalTapeCalculatorScreen(
                 ) { name ->
                     Text(
                         name,
-                        fontSize = 17.sp,
+                        fontSize = sheetNameFont,
                         fontWeight = FontWeight.SemiBold,
                         color = palette.text
                     )
@@ -782,13 +853,13 @@ fun CalTapeCalculatorScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f)
-                    .padding(horizontal = 20.dp)
+                    .padding(horizontal = tapePadH)
             ) {
                 if (lines.isEmpty() && input.isEmpty() && !showPendingOp) {
                     Text(
                         "Start typing — your worksheet\nwill appear here.",
                         color = palette.dim.copy(alpha = 0.7f),
-                        fontSize = 15.sp,
+                        fontSize = emptyFont,
                         textAlign = TextAlign.Center,
                         modifier = Modifier.align(Alignment.Center)
                     )
@@ -796,7 +867,7 @@ fun CalTapeCalculatorScreen(
                     LazyColumn(
                         state = tapeListState,
                         modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(bottom = 44.dp)
+                        contentPadding = PaddingValues(bottom = tapeBottomPad)
                     ) {
                         items(lines, key = { it.id }) { line ->
                             val isEditing = line.id == editingLineId
@@ -865,7 +936,7 @@ fun CalTapeCalculatorScreen(
                                             alpha = pendingEntrance.value
                                             translationY = (1f - pendingEntrance.value) * 16f
                                         }
-                                        .padding(horizontal = 6.dp, vertical = 5.dp),
+                                        .padding(horizontal = windowW * 0.017f, vertical = windowH * 0.006f),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Row(
@@ -875,14 +946,14 @@ fun CalTapeCalculatorScreen(
                                         Text(
                                             displayOp(pendingOp),
                                             color = lineColor,
-                                            fontSize = 19.sp,
+                                            fontSize = (minDim.value * 0.053f * compactFontScale).sp,
                                             fontFamily = FontFamily.Monospace,
-                                            modifier = Modifier.width(28.dp)
+                                            modifier = Modifier.width(windowW * 0.078f)
                                         )
                                         Text(
                                             displayEntry(input),
                                             color = lineColor,
-                                            fontSize = 20.sp,
+                                            fontSize = (minDim.value * 0.055f * compactFontScale).sp,
                                             fontWeight = FontWeight.Medium,
                                             fontFamily = FontFamily.Monospace,
                                             textAlign = TextAlign.End,
@@ -891,11 +962,11 @@ fun CalTapeCalculatorScreen(
                                         Text(
                                             "▏",
                                             color = lineColor.copy(alpha = cursorAlpha),
-                                            fontSize = 20.sp,
+                                            fontSize = (minDim.value * 0.055f * compactFontScale).sp,
                                             fontFamily = FontFamily.Monospace
                                         )
                                     }
-                                    Spacer(modifier = Modifier.width(14.dp))
+                                    Spacer(modifier = Modifier.width(windowW * 0.039f))
                                     Spacer(modifier = Modifier.weight(1f))
                                 }
                             }
@@ -908,15 +979,15 @@ fun CalTapeCalculatorScreen(
                     onClick = { tapeExpanded = !tapeExpanded },
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
-                        .padding(bottom = 4.dp)
-                        .clip(RoundedCornerShape(14.dp))
+                        .padding(bottom = windowH * 0.005f)
+                        .clip(RoundedCornerShape(windowW * 0.039f))
                         .background(palette.keyFn)
                 ) {
                     Icon(
                         if (tapeExpanded) Icons.Default.CloseFullscreen else Icons.Default.OpenInFull,
                         contentDescription = if (tapeExpanded) "Show keypad" else "Expand tape",
                         tint = palette.text,
-                        modifier = Modifier.size(20.dp)
+                        modifier = Modifier.size(expandIcon)
                     )
                 }
 
@@ -927,7 +998,7 @@ fun CalTapeCalculatorScreen(
                 Column(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
-                        .padding(bottom = 6.dp),
+                        .padding(bottom = windowH * 0.007f),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     AnimatedVisibility(
@@ -939,22 +1010,22 @@ fun CalTapeCalculatorScreen(
                     ) {
                         Row(
                             modifier = Modifier
-                                .clip(RoundedCornerShape(20.dp))
+                                .clip(RoundedCornerShape(windowW * 0.055f))
                                 .background(palette.text)
-                                .padding(horizontal = 14.dp, vertical = 7.dp),
+                                .padding(horizontal = windowW * 0.039f, vertical = windowH * 0.008f),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
                                 Icons.Default.Check,
                                 contentDescription = null,
                                 tint = palette.bg,
-                                modifier = Modifier.size(16.dp)
+                                modifier = Modifier.size(feedbackIcon)
                             )
-                            Spacer(modifier = Modifier.width(6.dp))
+                            Spacer(modifier = Modifier.width(windowW * 0.017f))
                             Text(
                                 feedback ?: "",
                                 color = palette.bg,
-                                fontSize = 13.sp,
+                                fontSize = feedbackFont,
                                 fontWeight = FontWeight.SemiBold
                             )
                         }
@@ -973,7 +1044,7 @@ fun CalTapeCalculatorScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .background(palette.strip)
-                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                            .padding(horizontal = stripPadH, vertical = stripPadV),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         IconButton(
@@ -984,7 +1055,7 @@ fun CalTapeCalculatorScreen(
                                 Icons.Default.Undo,
                                 contentDescription = "Undo",
                                 tint = if (lines.isNotEmpty()) palette.text else palette.dim.copy(alpha = 0.4f),
-                                modifier = Modifier.size(21.dp)
+                                modifier = Modifier.size(stripIcon)
                             )
                         }
                         IconButton(
@@ -995,14 +1066,14 @@ fun CalTapeCalculatorScreen(
                                 Icons.Default.Redo,
                                 contentDescription = "Redo",
                                 tint = if (canRedo) palette.text else palette.dim.copy(alpha = 0.4f),
-                                modifier = Modifier.size(21.dp)
+                                modifier = Modifier.size(stripIcon)
                             )
                         }
                         Spacer(modifier = Modifier.weight(1f))
                         Text(
                             fmtMoney(shownTotal),
                             color = palette.text,
-                            fontSize = 19.sp,
+                            fontSize = stripTotalFont,
                             fontWeight = FontWeight.SemiBold,
                             fontFamily = FontFamily.Monospace
                         )
@@ -1025,7 +1096,7 @@ fun CalTapeCalculatorScreen(
                                         lines.isNotEmpty() -> palette.text
                                         else -> palette.dim.copy(alpha = 0.4f)
                                     },
-                                    modifier = Modifier.size(20.dp)
+                                    modifier = Modifier.size(stripIcon)
                                 )
                             }
                         }
@@ -1035,13 +1106,14 @@ fun CalTapeCalculatorScreen(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 10.dp, vertical = 10.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                            .padding(horizontal = keyPadH, vertical = keyPadV),
+                        verticalArrangement = Arrangement.spacedBy(keyGapV)
                     ) {
                         TapeRow(
                             index = 0,
                             introDone = keypadIntroDone,
-                            onIntroDone = { keypadIntroDone = true }
+                            onIntroDone = { keypadIntroDone = true },
+                            keyH = keyH
                         ) {
                             TapeKey("AC", palette.text, palette.bg, palette, Modifier.weight(1f)) { viewModel.onKey("AC") }
                             TapeKey("⌫", palette.keyBack, palette.text, palette, Modifier.weight(1f)) {
@@ -1067,7 +1139,8 @@ fun CalTapeCalculatorScreen(
                         TapeRow(
                             index = 1,
                             introDone = keypadIntroDone,
-                            onIntroDone = { keypadIntroDone = true }
+                            onIntroDone = { keypadIntroDone = true },
+                            keyH = keyH
                         ) {
                             TapeKey(
                                 "7",
@@ -1101,7 +1174,8 @@ fun CalTapeCalculatorScreen(
                         TapeRow(
                             index = 2,
                             introDone = keypadIntroDone,
-                            onIntroDone = { keypadIntroDone = true }
+                            onIntroDone = { keypadIntroDone = true },
+                            keyH = keyH
                         ) {
                             TapeKey(
                                 "4",
@@ -1135,7 +1209,8 @@ fun CalTapeCalculatorScreen(
                         TapeRow(
                             index = 3,
                             introDone = keypadIntroDone,
-                            onIntroDone = { keypadIntroDone = true }
+                            onIntroDone = { keypadIntroDone = true },
+                            keyH = keyH
                         ) {
                             TapeKey(
                                 "1",
@@ -1169,7 +1244,8 @@ fun CalTapeCalculatorScreen(
                         TapeRow(
                             index = 4,
                             introDone = keypadIntroDone,
-                            onIntroDone = { keypadIntroDone = true }
+                            onIntroDone = { keypadIntroDone = true },
+                            keyH = keyH
                         ) {
                             TapeKey(
                                 "()",
@@ -1216,6 +1292,7 @@ private fun TapeRow(
     index: Int,
     introDone: Boolean,
     onIntroDone: () -> Unit,
+    keyH: Dp,
     content: @Composable RowScope.() -> Unit
 ) {
     // Staggered rise-in the first time the keypad appears.
@@ -1230,11 +1307,12 @@ private fun TapeRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .height(keyH)
             .graphicsLayer {
                 alpha = progress.value
                 translationY = (1f - progress.value) * 30f
             },
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(keyH * 0.14f),
         content = content
     )
 }
@@ -1263,22 +1341,30 @@ private fun TapeKey(
         label = "tapeKeyFlash"
     )
     val borderColor = if (borderless) null else palette.keyBorder
-    Box(
-        modifier = modifier
-            .height(56.dp)
-            .scale(scale)
-            .clip(RoundedCornerShape(16.dp))
-            .background(background)
-            .then(
-                if (borderColor != null) {
-                    Modifier.border(1.dp, borderColor, RoundedCornerShape(16.dp))
-                } else {
-                    Modifier
-                }
-            )
-            .clickable(interactionSource = interaction, indication = null, onClick = onClick),
+    BoxWithConstraints(
+        modifier = modifier.fillMaxHeight(),
         contentAlignment = Alignment.Center
     ) {
+        val keyCorner = maxWidth * 0.20f
+        val keyBorderW = maxWidth * 0.0125f
+        val keyFont = (maxWidth.value * fontSize / 80f).sp
+        val backIconSize = maxWidth * 0.325f
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .scale(scale)
+                .clip(RoundedCornerShape(keyCorner))
+                .background(background)
+                .then(
+                    if (borderColor != null) {
+                        Modifier.border(keyBorderW, borderColor, RoundedCornerShape(keyCorner))
+                    } else {
+                        Modifier
+                    }
+                )
+                .clickable(interactionSource = interaction, indication = null, onClick = onClick),
+            contentAlignment = Alignment.Center
+        ) {
         // Flash that blooms while the key is pressed (text colour,
         // so it shows in both themes — white was invisible on the
         // light keys).
@@ -1292,17 +1378,18 @@ private fun TapeKey(
                 Icons.Default.Backspace,
                 contentDescription = "Backspace",
                 tint = textColor,
-                modifier = Modifier.size(26.dp)
+                modifier = Modifier.size(backIconSize)
             )
         } else {
             Text(
                 // The bracket key shows a space inside: "( )".
                 if (label == "()") "( )" else label,
                 color = textColor,
-                fontSize = fontSize.sp,
+                fontSize = keyFont,
                 fontWeight = FontWeight.Bold,
                 maxLines = 1
             )
+        }
         }
     }
 }
@@ -1316,6 +1403,7 @@ private fun RowScope.TapeNoteZone(
     editingNote: String,
     focusRequester: FocusRequester,
     palette: TapePalette,
+    fontSize: TextUnit,
     onNoteTextChange: (String) -> Unit,
     onNoteDone: () -> Unit
 ) {
@@ -1323,9 +1411,9 @@ private fun RowScope.TapeNoteZone(
         Box(
             modifier = Modifier
                 .weight(1f)
-                .clip(RoundedCornerShape(8.dp))
+                .clip(RoundedCornerShape((fontSize.value * 0.57f).dp))
                 .background(palette.keyFn)
-                .padding(horizontal = 8.dp, vertical = 5.dp)
+                .padding(horizontal = (fontSize.value * 0.57f).dp, vertical = (fontSize.value * 0.36f).dp)
         ) {
             BasicTextField(
                 value = editingNote,
@@ -1333,7 +1421,7 @@ private fun RowScope.TapeNoteZone(
                 singleLine = true,
                 textStyle = TextStyle(
                     color = palette.text,
-                    fontSize = 14.sp
+                    fontSize = fontSize
                 ),
                 cursorBrush = SolidColor(palette.text),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
@@ -1347,7 +1435,7 @@ private fun RowScope.TapeNoteZone(
                             Text(
                                 "Write note",
                                 color = palette.dim,
-                                fontSize = 14.sp
+                                fontSize = fontSize
                             )
                         }
                         innerTextField()
@@ -1359,7 +1447,7 @@ private fun RowScope.TapeNoteZone(
         Text(
             note,
             color = palette.dim,
-            fontSize = 14.sp,
+            fontSize = fontSize,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f)
@@ -1403,6 +1491,8 @@ private fun TapeEntryRow(
         animationSpec = tween(220),
         label = "entryRowHighlight"
     )
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        val rowW = maxWidth // BoxWithConstraintsScope theke dhore rakha - Row/Column content-e (RowScope) maxWidth direct cholena
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1413,10 +1503,10 @@ private fun TapeEntryRow(
                 scaleX = s
                 scaleY = s
             }
-            .clip(RoundedCornerShape(10.dp))
+            .clip(RoundedCornerShape(rowW * 0.028f))
             .background(rowBackground)
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
-            .padding(horizontal = 6.dp, vertical = 5.dp),
+            .padding(horizontal = rowW * 0.019f, vertical = rowW * 0.016f),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Row(
@@ -1426,30 +1516,32 @@ private fun TapeEntryRow(
             Text(
                 displayOp(op),
                 color = lineColor,
-                fontSize = 19.sp,
+                fontSize = (rowW.value * 0.059f).sp,
                 fontFamily = FontFamily.Monospace,
-                modifier = Modifier.width(28.dp)
+                modifier = Modifier.width(rowW * 0.0875f)
             )
             Text(
                 fmtMoney(value),
                 color = lineColor,
-                fontSize = 20.sp,
+                fontSize = (rowW.value * 0.0625f).sp,
                 fontWeight = FontWeight.Medium,
                 fontFamily = FontFamily.Monospace,
                 textAlign = TextAlign.End,
                 modifier = Modifier.fillMaxWidth()
             )
         }
-        Spacer(modifier = Modifier.width(14.dp))
+        Spacer(modifier = Modifier.width(rowW * 0.039f))
         TapeNoteZone(
             note = note,
             isEditing = isEditing,
             editingNote = editingNote,
             focusRequester = focusRequester,
             palette = palette,
+            fontSize = (rowW.value * 0.044f).sp,
             onNoteTextChange = onNoteTextChange,
             onNoteDone = onNoteDone
         )
+    }
     }
 }
 
@@ -1492,6 +1584,8 @@ private fun TapeTotalRow(
         animationSpec = tween(220),
         label = "totalRowHighlight"
     )
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        val rowW = maxWidth // BoxWithConstraintsScope theke dhore rakha - Row/Column content-e (RowScope) maxWidth direct cholena
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1502,36 +1596,36 @@ private fun TapeTotalRow(
                 scaleX = s
                 scaleY = s
             }
-            .clip(RoundedCornerShape(10.dp))
+            .clip(RoundedCornerShape(rowW * 0.028f))
             .background(rowBackground)
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
-            .padding(horizontal = 6.dp),
+            .padding(horizontal = rowW * 0.019f),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(modifier = Modifier.weight(1.05f)) {
-            Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.height(rowW * 0.019f))
             HorizontalDivider(color = palette.text.copy(alpha = 0.45f), thickness = 1.dp)
             if (isFinal) {
-                Spacer(modifier = Modifier.height(3.dp))
+                Spacer(modifier = Modifier.height(rowW * 0.009f))
                 HorizontalDivider(color = palette.text.copy(alpha = 0.45f), thickness = 1.dp)
             }
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 6.dp, bottom = 2.dp),
+                    .padding(top = rowW * 0.019f, bottom = rowW * 0.006f),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
                     if (negative) "−" else "+",
                     color = totalColor,
-                    fontSize = 19.sp,
+                    fontSize = (rowW.value * 0.059f).sp,
                     fontFamily = FontFamily.Monospace,
-                    modifier = Modifier.width(28.dp)
+                    modifier = Modifier.width(rowW * 0.0875f)
                 )
                 Text(
                     fmtMoney(abs(totalValue)),
                     color = totalColor,
-                    fontSize = 21.sp,
+                    fontSize = (rowW.value * 0.066f).sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = FontFamily.Monospace,
                     textAlign = TextAlign.End,
@@ -1539,16 +1633,18 @@ private fun TapeTotalRow(
                 )
             }
         }
-        Spacer(modifier = Modifier.width(14.dp))
+        Spacer(modifier = Modifier.width(rowW * 0.039f))
         TapeNoteZone(
             note = note,
             isEditing = isEditing,
             editingNote = editingNote,
             focusRequester = focusRequester,
             palette = palette,
+            fontSize = (rowW.value * 0.044f).sp,
             onNoteTextChange = onNoteTextChange,
             onNoteDone = onNoteDone
         )
+    }
     }
 }
 

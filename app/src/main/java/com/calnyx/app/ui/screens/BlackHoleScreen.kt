@@ -1,63 +1,38 @@
 // FILE: app/src/main/java/com/calnyx/app/ui/screens/BlackHoleScreen.kt
-// OPENFIX VERSION - replace your old BlackHoleScreen.kt with this file.
-// Based on MODERN3 (B/W). Only the open flow changed:
-// Tap = options modal (Open / Download / Rename / Restore / Delete).
-// The moment the modal opens, the preview is pre-warmed in the
-// background, so tapping Open usually shows the player chooser at
-// once, with no loading. "Opening..." shows only if the preview
-// is not ready yet. OPENFIX 2 (2026-11-06).
-// OPENFIX 3 (2026-11-06): video thumbnails (real frames, not black
-// boxes); import shows a real "Importing... 47%" bar and writes to
-// a .tmp file first, so one upload can never appear as two files
-// with one opening to nothing; "Opening..." shows a real % bar too
-// (decrypt runs on a 64KB buffer now, so big videos are faster).
-// OPENFIX 4 (2026-11-06): ENCRYPTION REMOVED by the user's choice.
-// Files are stored PLAIN in app internal storage (still hidden from
-// gallery/Files, still deleted from the gallery on import, still
-// protected by the app lock) — so opening is INSTANT: no decrypt,
-// no preview copy, no loading, no background job, no Cancel needed
-// for plain files. Old encrypted files are converted to plain once
-// by migrateEncryptedFilesToPlain() below; until then they open
-// through the old decrypt path. BlackHoleCrypto.kt stays in the project
-// ONLY for that one-time migration.
-// Same as BACKFIX (system back from a folder goes to the overview
-// first), plus the Settings dialog is now modern black/white:
-// no theme pink on the Save button or the text field border,
-// no extra 'Default secret still active' row, English only.
-// Fixes system back from inside a folder: previously it popped
-// the whole BlackHole route to the calculator. Now the first back
-// returns to the Black Hole overview, the second back to the
-// calculator. Top-bar back already did this; system back now
-// does the same.
-// Logic is unchanged (encryption, import, restore, rename, delete,
-// App Lock navigation). Only the design changed:
-//  - No emojis anywhere on this screen. Folder / lock / play
-//    icons are Material icons in monochrome circles.
-//  - No duplicate "Black Hole" banner title, no PRIVATE pill,
-//    no dot bullets, no heavy gradient, no heavy shadows.
-//  - Overview is a clean summary card + folder cards + App Lock
-//    card, all in off-white / off-black only, same corner and
-//    shadow everywhere, so nothing overlaps or sticks out.
-//  - All visible text is English only. No Banglish strings.
-// You still need: BlackHoleCrypto.kt (new) + BlackHoleManager-ENCRYPTED.kt
-// (as BlackHoleManager.kt) + cache-path line in file_paths.xml.
-// B/W AUDIT (2026-11-06): app-theme fix — this screen now takes
-// darkTheme: Boolean = isSystemInDarkTheme() and uses it instead
-// of reading the system theme, so the app's own theme toggle
-// controls it. The three Banglish strings are now English
-// ("Restored to gallery" / "Restore failed" / the delete-dialog
-// text). The one theme-primary text ("saved to Black Hole") is now
-// onPageColor. The Delete buttons KEEP colors.error /
-// errorContainer red — red marks a delete action, which is
-// special. Everything else was already OffWhite / OffBlack /
-// CardWhite / CardBlack / Border / ThumbBg or onPageColor /
-// onSurfaceVariant; the photo viewer's black background with
-// white text is fine. The stored selectedIcon string "⚫" is
-// never displayed anywhere, left as-is.
-// NO DRAWER SWIPE on this screen: it is a hidden screen —
-// NavGraph deliberately hides the drawer and top bar on the
-// BlackHole route, and the blackhole must stay hidden with no menu
-// trace. Do NOT add any onOpenDrawer param or swipe detector here.
+// % -BASED RESPONSIVE MODERN VERSION (2026-11-07) - REPLACE BlackHoleScreen.kt.
+// Based on the OPENFIX version (Black Hole names: com.calnyx.app.blackhole,
+// BlackHoleManager / BlackHoleCategory / BlackHolePrefs / BlackHoleOpener /
+// BlackHolePickerGuard / DeleteStatus). All logic is UNCHANGED, only the
+// layout/design changed:
+//  1. REMOVED the top "N files secured / Private storage" summary card
+//     entirely (user: "মার্ক করা কার্ড দরকার নাই") - the screen now
+//     starts with the Folders section. totalFiles is gone with it
+//     (folderCounts, the per-folder counts, still works).
+//  2. MODERN: one corner system (card 5.6% / small 4.4% / button 3.3% /
+//     dialog 6.7% of minDim), one shadow (minDim x 1.7%), cards distinct
+//     from the page bg via cardBg + 1dp hairline border + shadow.
+//     Black/white only, red only for Delete. No emojis, English only.
+//  3. % EVERYWHERE: root BoxWithConstraints (windowW / windowH / minDim /
+//     isLandscape / isMiniWindow / isSmallWindow). ALL layout sizes are %
+//     of window / minDim / cell - paddings, margins, gaps, card heights,
+//     icon sizes, fonts, corner radii. Folder grid 2 cols portrait /
+//     3-4 landscape; photo grid 3 portrait / 4-5 landscape. Overview
+//     scrolls, so floating / split / mini / short windows never clip.
+//     No fixed dp/sp size left except: size-class thresholds (dp
+//     comparisons, not sizes), 0.dp, and 1.dp hairline borders.
+//     (Material3 defaults - AlertDialog internal padding, IconButton
+//     touch target, HorizontalDivider 1dp - are framework values, not
+//     code values.)
+// OPENFIX flow kept as-is: tap = options modal (Open / Download /
+// Rename / Restore / Delete); video thumbnails (real frames);
+// "Importing... %" bar with .tmp writes; plain storage, instant open;
+// migrateEncryptedFilesToPlain() one-time migration. BACKFIX kept:
+// system back from a folder goes to the overview first, second back
+// to the calculator.
+// NO DRAWER SWIPE on this screen: it is a hidden screen - NavGraph
+// deliberately hides the drawer and top bar on the BlackHole route,
+// and the blackhole must stay hidden with no menu trace. Do NOT add
+// any onOpenDrawer param or swipe detector here.
 package com.calnyx.app.ui.screens
 
 import android.app.Activity
@@ -267,7 +242,6 @@ fun BlackHoleScreen(
     val folderCounts = remember(refreshKey) {
         BlackHoleCategory.entries.associateWith { BlackHoleManager.listFiles(context, it).size }
     }
-    val totalFiles = folderCounts.values.sum()
 
     LaunchedEffect(selectedCategory, refreshKey) {
         val cat = selectedCategory
@@ -338,428 +312,474 @@ fun BlackHoleScreen(
 
     val category = selectedCategory
 
-    Surface(
-        modifier = Modifier.fillMaxSize(),
-        color = pageBg,
-        contentColor = onPageColor
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .statusBarsPadding()
-        ) {
-            if (category == null) {
-                // ══════════════════════════════════════
-                //  OVERVIEW
-                // ══════════════════════════════════════
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(start = 4.dp, end = 8.dp, top = 4.dp, bottom = 4.dp)
-                ) {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                    Text(
-                        "Black Hole",
-                        fontWeight = FontWeight.Bold,
-                        style = MaterialTheme.typography.titleLarge,
-                        modifier = Modifier.weight(1f)
-                    )
-                    IconButton(onClick = {
-                        secretText = BlackHolePrefs.getSecret(context) ?: ""
-                        selectedIcon = BlackHolePrefs.getThemeIcon(context) ?: "⚫"
-                        showSettingsDialog = true
-                    }) {
-                        Icon(Icons.Default.Settings, contentDescription = "Settings")
-                    }
-                }
+    // % LAYOUT - root BoxWithConstraints: every size below is % of
+    // the WINDOW (windowW/windowH) or of its smaller side (minDim),
+    // so floating / split / mini / landscape all stay unbroken.
+    // (dp values here are only size-class THRESHOLDS - comparisons,
+    // not sizes.)
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val windowW = maxWidth
+        val windowH = maxHeight
+        val minDim = minOf(windowW, windowH)
+        val isLandscape = windowW > windowH
+        val isMiniWindow = windowW < 320.dp || windowH < 480.dp
+        val isSmallWindow = windowW < 360.dp || windowH < 620.dp
 
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .verticalScroll(rememberScrollState())
-                        .padding(horizontal = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp)
-                ) {
-                    // Summary card — modern: same card style as
-                    // everything else, no gradient, no emoji, no pill,
-                    // and no duplicate "Black Hole" title (the top bar
-                    // already says it). Just the count + a lock icon.
+        // Corners - % of minDim (20dp / 16dp / 12dp / 24dp at 360dp)
+        val cardCorner = minDim * 0.056f
+        val cardCornerSm = minDim * 0.044f
+        val btnCorner = minDim * 0.033f
+        val dialogCorner = minDim * 0.067f
+        val thumbCorner = minDim * 0.039f
+        // One shadow - 6dp at 360dp
+        val shadowElev = minDim * 0.017f
+        // Page padding / gaps - % of window
+        val padPageW = if (isSmallWindow) windowW * 0.033f else windowW * 0.044f
+        val padTopStartW = windowW * 0.011f
+        val padTopEndW = windowW * 0.022f
+        val padTopH = windowH * 0.005f
+        val gapSectionH = windowH * 0.018f
+        val gapRowW = windowW * 0.033f
+        val gapCardH = windowH * 0.011f
+        val gapSmallH = windowH * 0.013f
+        val gapTinyH = windowH * 0.005f
+        val gapXsH = windowH * 0.008f
+        val gapGrid = windowW * 0.008f
+        val gapListH = windowH * 0.011f
+        val gapBtnH = windowH * 0.021f
+        val gap2H = windowH * 0.003f
+        val gapIconW = windowW * 0.039f
+        val gapBtnW = windowW * 0.022f
+        // Grids adapt to the window
+        val folderCols = if (isLandscape) (if (isMiniWindow) 3 else 4) else 2
+        val photoCols = if (isLandscape) (if (isMiniWindow) 4 else 5) else 3
+        // Fonts - % of minDim
+        val titleFont = (minDim.value * 0.056f).sp
+        val folderNameFont = (minDim.value * 0.044f).sp
+        val bodyFont = (minDim.value * 0.039f).sp
+        val smallFont = (minDim.value * 0.036f).sp
+        val labelFont = (minDim.value * 0.033f).sp
+        val emptyTitleFont = (minDim.value * 0.047f).sp
+        val labelSpacing = (minDim.value * 0.0014f).sp
+        // Icons - % of minDim
+        val iconBar = minDim * 0.067f
+        val iconSm = minDim * 0.05f
+        val iconMd = minDim * 0.061f
+        val iconLg = minDim * 0.083f
+        // Card sizes - % of minDim / window
+        val folderThumbH = minDim * 0.233f
+        val folderIconCircle = minDim * 0.144f
+        val appLockCircle = minDim * 0.133f
+        val emptyCircle = minDim * 0.20f
+        val listThumb = minDim * 0.144f
+        val settingsCircle = minDim * 0.10f
+        val addBtnH = windowH * 0.074f
+        val sheetPhotoH = windowH * 0.237f
+        val folderTextPadW = minDim * 0.039f
+        val folderTextPadH = windowH * 0.016f
+        val appLockPad = minDim * 0.044f
+        val listRowPad = minDim * 0.039f
+
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = pageBg,
+            contentColor = onPageColor
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .statusBarsPadding()
+            ) {
+                if (category == null) {
+                    // ══════════════════════════════════════
+                    //  OVERVIEW (summary card REMOVED - the screen
+                    //  starts with Folders now)
+                    // ══════════════════════════════════════
                     Row(
+                        verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .shadow(6.dp, RoundedCornerShape(20.dp))
-                            .clip(RoundedCornerShape(20.dp))
-                            .background(cardBg)
-                            .border(1.dp, cardBorderColor, RoundedCornerShape(20.dp))
-                            .padding(20.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                            .padding(start = padTopStartW, end = padTopEndW, top = padTopH, bottom = padTopH)
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(56.dp)
-                                .clip(CircleShape)
-                                .background(thumbBg),
-                            contentAlignment = Alignment.Center
-                        ) {
+                        IconButton(onClick = onBack) {
                             Icon(
-                                Icons.Filled.Lock,
-                                contentDescription = null,
-                                tint = onPageColor,
-                                modifier = Modifier.size(24.dp)
+                                Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Back",
+                                modifier = Modifier.size(iconBar)
                             )
                         }
-                        Spacer(Modifier.width(16.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(
-                                if (totalFiles == 0) "Nothing hidden yet"
-                                else "$totalFiles files secured",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 20.sp,
-                                color = onPageColor
-                            )
-                            Spacer(Modifier.height(2.dp))
-                            Text(
-                                "Private storage",
-                                fontSize = 13.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                        Text(
+                            "Black Hole",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = titleFont,
+                            color = onPageColor,
+                            modifier = Modifier.weight(1f)
+                        )
+                        IconButton(onClick = {
+                            secretText = BlackHolePrefs.getSecret(context) ?: ""
+                            selectedIcon = BlackHolePrefs.getThemeIcon(context) ?: "⚫"
+                            showSettingsDialog = true
+                        }) {
+                            Icon(
+                                Icons.Default.Settings,
+                                contentDescription = "Settings",
+                                modifier = Modifier.size(iconBar)
                             )
                         }
                     }
-
-                    Text(
-                        "Folders",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        letterSpacing = 0.5.sp
-                    )
-
-                    BlackHoleCategory.entries.chunked(2).forEach { rowItems ->
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            rowItems.forEach { cat ->
-                                val count = folderCounts[cat] ?: 0
-                                val categoryIcon = categoryInfo[cat]!!
-                                val firstPhoto = if (cat == BlackHoleCategory.PHOTOS)
-                                    BlackHoleManager.listFiles(context, cat).firstOrNull() else null
-
-                                Column(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .shadow(6.dp, RoundedCornerShape(20.dp))
-                                        .clip(RoundedCornerShape(20.dp))
-                                        .background(cardBg)
-                                        .border(1.dp, cardBorderColor, RoundedCornerShape(20.dp))
-                                        .clickable { selectedCategory = cat }
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .height(84.dp)
-                                            .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
-                                            .background(thumbBg),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        if (firstPhoto != null) {
-                                            BlackHolePhotoThumbnail(
-                                                file = firstPhoto,
-                                                modifier = Modifier.fillMaxSize()
-                                            )
-                                        } else {
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(52.dp)
-                                                    .clip(CircleShape)
-                                                    .background(cardBg)
-                                                    .border(1.dp, cardBorderColor, CircleShape),
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                Icon(
-                                                    categoryIcon,
-                                                    contentDescription = null,
-                                                    tint = onPageColor,
-                                                    modifier = Modifier.size(24.dp)
-                                                )
-                                            }
-                                        }
-                                    }
-                                    Column(
-                                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)
-                                    ) {
-                                        Text(
-                                            cat.title,
-                                            fontWeight = FontWeight.SemiBold,
-                                            style = MaterialTheme.typography.bodyLarge,
-                                            color = onPageColor
-                                        )
-                                        Spacer(Modifier.height(2.dp))
-                                        Text(
-                                            if (count == 0) "Empty" else "$count files",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                }
-                            }
-                            if (rowItems.size == 1) Spacer(Modifier.weight(1f))
-                        }
-                    }
-                    Text(
-                        "Security",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        letterSpacing = 0.5.sp
-                    )
 
                     Column(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .shadow(6.dp, RoundedCornerShape(20.dp))
-                            .clip(RoundedCornerShape(20.dp))
-                            .background(cardBg)
-                            .border(1.dp, cardBorderColor, RoundedCornerShape(20.dp))
-                            .clickable { onOpenAppLock() }
-                            .padding(16.dp)
+                            .fillMaxSize()
+                            .verticalScroll(rememberScrollState())
+                            .padding(horizontal = padPageW),
+                        verticalArrangement = Arrangement.spacedBy(gapSectionH)
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(
-                                modifier = Modifier
-                                    .size(48.dp)
-                                    .clip(CircleShape)
-                                    .background(thumbBg),
-                                contentAlignment = Alignment.Center
+                        Text(
+                            "Folders",
+                            fontSize = labelFont,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            letterSpacing = labelSpacing
+                        )
+
+                        BlackHoleCategory.entries.chunked(folderCols).forEach { rowItems ->
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(gapRowW),
+                                modifier = Modifier.fillMaxWidth()
                             ) {
-                                Icon(
-                                    Icons.Filled.Lock,
-                                    contentDescription = null,
-                                    tint = onPageColor,
-                                    modifier = Modifier.size(22.dp)
-                                )
+                                rowItems.forEach { cat ->
+                                    val count = folderCounts[cat] ?: 0
+                                    val categoryIcon = categoryInfo[cat]!!
+                                    val firstPhoto = if (cat == BlackHoleCategory.PHOTOS)
+                                        BlackHoleManager.listFiles(context, cat).firstOrNull() else null
+
+                                    Column(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .shadow(shadowElev, RoundedCornerShape(cardCorner))
+                                            .clip(RoundedCornerShape(cardCorner))
+                                            .background(cardBg)
+                                            .border(1.dp, cardBorderColor, RoundedCornerShape(cardCorner))
+                                            .clickable { selectedCategory = cat }
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .height(folderThumbH)
+                                                .clip(RoundedCornerShape(topStart = cardCorner, topEnd = cardCorner))
+                                                .background(thumbBg),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            if (firstPhoto != null) {
+                                                BlackHolePhotoThumbnail(
+                                                    file = firstPhoto,
+                                                    modifier = Modifier.fillMaxSize()
+                                                )
+                                            } else {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(folderIconCircle)
+                                                        .clip(CircleShape)
+                                                        .background(cardBg)
+                                                        .border(1.dp, cardBorderColor, CircleShape),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Icon(
+                                                        categoryIcon,
+                                                        contentDescription = null,
+                                                        tint = onPageColor,
+                                                        modifier = Modifier.size(iconBar)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                        Column(
+                                            modifier = Modifier.padding(horizontal = folderTextPadW, vertical = folderTextPadH)
+                                        ) {
+                                            Text(
+                                                cat.title,
+                                                fontWeight = FontWeight.SemiBold,
+                                                fontSize = folderNameFont,
+                                                color = onPageColor
+                                            )
+                                            Spacer(Modifier.height(gap2H))
+                                            Text(
+                                                if (count == 0) "Empty" else "$count files",
+                                                fontSize = smallFont,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
+                                }
+                                if (rowItems.size < folderCols) {
+                                    repeat(folderCols - rowItems.size) { Spacer(Modifier.weight(1f)) }
+                                }
                             }
-                            Spacer(Modifier.width(14.dp))
-                            Column(Modifier.weight(1f)) {
-                                Text(
-                                    "App Lock",
-                                    fontWeight = FontWeight.SemiBold,
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    color = onPageColor
-                                )
-                                Spacer(Modifier.height(2.dp))
-                                val appLockOn = AppLockManager.isEnabled(context)
-                                val appLockCount = AppLockManager.getLockedPackages(context).size
-                                Text(
-                                    if (!appLockOn) "Off"
-                                    else if (appLockCount == 0) "On • No apps locked yet"
-                                    else if (appLockCount == 1) "On • 1 app locked"
-                                    else "On • $appLockCount apps locked",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            Icon(
-                                Icons.Filled.KeyboardArrowRight,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(24.dp)
-                            )
                         }
-                    }
-                    Spacer(Modifier.height(8.dp))
-                }
-
-            } else {
-                // ══════════════════════════════════════
-                //  INSIDE FOLDER
-                // ══════════════════════════════════════
-                val categoryIcon = categoryInfo[category]!!
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(start = 4.dp, end = 8.dp, top = 4.dp, bottom = 4.dp)
-                ) {
-                    IconButton(onClick = { selectedCategory = null }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                    Column(Modifier.weight(1f)) {
                         Text(
-                            category.title,
-                            fontWeight = FontWeight.Bold,
-                            style = MaterialTheme.typography.titleLarge
+                            "Security",
+                            fontSize = labelFont,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            letterSpacing = labelSpacing
                         )
-                        Text(
-                            if (files.isEmpty()) "Empty" else "${files.size} files",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    IconButton(onClick = {
-                        secretText = BlackHolePrefs.getSecret(context) ?: ""
-                        selectedIcon = BlackHolePrefs.getThemeIcon(context) ?: "⚫"
-                        showSettingsDialog = true
-                    }) {
-                        Icon(Icons.Default.Settings, contentDescription = "Settings")
-                    }
-                }
 
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 16.dp)
-                ) {
-                    Button(
-                        // OPENFIX 3: disabled while an import runs —
-                        // no double-tap = no duplicate file.
-                        enabled = importingProgress == null,
-                        onClick = {
-                            pendingImportCategory = category
-                            // IMPORT FIX: the picker is a separate
-                            // activity — CalNyx goes ON_STOP while it
-                            // is open. Set the guard so NavGraph's
-                            // privacy close does NOT pop the blackhole.
-                            BlackHolePickerGuard.begin()
-                            pickerLauncher.launch(category.pickerMime)
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .shadow(6.dp, RoundedCornerShape(16.dp))
-                            .height(56.dp),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            // MODERN: light mode-এ কালো বাটন, dark mode-এ সাদা বাটন
-                            containerColor = if (isDark) OffWhite else OffBlack,
-                            contentColor = if (isDark) OffBlack else Color.White
-                        )
-                    ) {
-                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text("Add ${category.title.lowercase(Locale.getDefault())}")
-                    }
-
-                    Spacer(Modifier.height(16.dp))
-
-                    if (files.isEmpty()) {
-                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(10.dp)
-                            ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .shadow(shadowElev, RoundedCornerShape(cardCorner))
+                                .clip(RoundedCornerShape(cardCorner))
+                                .background(cardBg)
+                                .border(1.dp, cardBorderColor, RoundedCornerShape(cardCorner))
+                                .clickable { onOpenAppLock() }
+                                .padding(appLockPad)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
                                 Box(
                                     modifier = Modifier
-                                        .size(72.dp)
+                                        .size(appLockCircle)
                                         .clip(CircleShape)
-                                        .background(cardBg)
-                                        .border(1.dp, cardBorderColor, CircleShape),
+                                        .background(thumbBg),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Icon(
-                                        categoryIcon,
+                                        Icons.Filled.Lock,
                                         contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(30.dp)
+                                        tint = onPageColor,
+                                        modifier = Modifier.size(iconMd)
                                     )
                                 }
-                                Text(
-                                    "Nothing here yet",
-                                    fontWeight = FontWeight.SemiBold,
-                                    style = MaterialTheme.typography.titleMedium
-                                )
-                                Text(
-                                    "Tap Add to import files",
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    textAlign = TextAlign.Center
-                                )
-                            }
-                        }
-                    } else if (category == BlackHoleCategory.PHOTOS || category == BlackHoleCategory.VIDEOS) {
-                        LazyVerticalGrid(
-                            columns = GridCells.Fixed(3),
-                            modifier = Modifier.fillMaxSize(),
-                            horizontalArrangement = Arrangement.spacedBy(3.dp),
-                            verticalArrangement = Arrangement.spacedBy(3.dp)
-                        ) {
-                            items(files.size) { index ->
-                                val f = files[index]
-                                Box(
-                                    modifier = Modifier
-                                        .aspectRatio(1f)
-                                        .shadow(6.dp, RoundedCornerShape(16.dp))
-                                        .clip(RoundedCornerShape(16.dp))
-                                        .background(cardBg)
-                                        .border(1.dp, cardBorderColor, RoundedCornerShape(16.dp))
-                                        .clickable { actionFile = f },
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    if (category == BlackHoleCategory.PHOTOS) {
-                                        BlackHolePhotoThumbnail(file = f, modifier = Modifier.fillMaxSize())
-                                    } else {
-                                        // OPENFIX 3: real video frame,
-                                        // not a black box. While the
-                                        // frame is being made (first
-                                        // time only, background), the
-                                        // old black box + play icon
-                                        // shows, so the grid never
-                                        // looks broken.
-                                        BlackHoleVideoThumbnail(file = f, modifier = Modifier.fillMaxSize())
-                                    }
+                                Spacer(Modifier.width(gapIconW))
+                                Column(Modifier.weight(1f)) {
+                                    Text(
+                                        "App Lock",
+                                        fontWeight = FontWeight.SemiBold,
+                                        fontSize = folderNameFont,
+                                        color = onPageColor
+                                    )
+                                    Spacer(Modifier.height(gap2H))
+                                    val appLockOn = AppLockManager.isEnabled(context)
+                                    val appLockCount = AppLockManager.getLockedPackages(context).size
+                                    Text(
+                                        if (!appLockOn) "Off"
+                                        else if (appLockCount == 0) "On • No apps locked yet"
+                                        else if (appLockCount == 1) "On • 1 app locked"
+                                        else "On • $appLockCount apps locked",
+                                        fontSize = smallFont,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
                                 }
+                                Icon(
+                                    Icons.Filled.KeyboardArrowRight,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(iconBar)
+                                )
                             }
                         }
-                    } else {
-                        LazyColumn(
-                            modifier = Modifier.fillMaxSize(),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        Spacer(Modifier.height(gapCardH))
+                    }
+
+                } else {
+                    // ══════════════════════════════════════
+                    //  INSIDE FOLDER
+                    // ══════════════════════════════════════
+                    val categoryIcon = categoryInfo[category]!!
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = padTopStartW, end = padTopEndW, top = padTopH, bottom = padTopH)
+                    ) {
+                        IconButton(onClick = { selectedCategory = null }) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Back",
+                                modifier = Modifier.size(iconBar)
+                            )
+                        }
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                category.title,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = titleFont,
+                                color = onPageColor
+                            )
+                            Text(
+                                if (files.isEmpty()) "Empty" else "${files.size} files",
+                                fontSize = smallFont,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        IconButton(onClick = {
+                            secretText = BlackHolePrefs.getSecret(context) ?: ""
+                            selectedIcon = BlackHolePrefs.getThemeIcon(context) ?: "⚫"
+                            showSettingsDialog = true
+                        }) {
+                            Icon(
+                                Icons.Default.Settings,
+                                contentDescription = "Settings",
+                                modifier = Modifier.size(iconBar)
+                            )
+                        }
+                    }
+
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = padPageW)
+                    ) {
+                        Button(
+                            // OPENFIX 3: disabled while an import runs —
+                            // no double-tap = no duplicate file.
+                            enabled = importingProgress == null,
+                            onClick = {
+                                pendingImportCategory = category
+                                // IMPORT FIX: the picker is a separate
+                                // activity — CalNyx goes ON_STOP while it
+                                // is open. Set the guard so NavGraph's
+                                // privacy close does NOT pop the blackhole.
+                                BlackHolePickerGuard.begin()
+                                pickerLauncher.launch(category.pickerMime)
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .shadow(shadowElev, RoundedCornerShape(cardCornerSm))
+                                .height(addBtnH),
+                            shape = RoundedCornerShape(cardCornerSm),
+                            colors = ButtonDefaults.buttonColors(
+                                // MODERN: light mode-এ কালো বাটন, dark mode-এ সাদা বাটন
+                                containerColor = if (isDark) OffWhite else OffBlack,
+                                contentColor = if (isDark) OffBlack else Color.White
+                            )
                         ) {
-                            items(files, key = { it.absolutePath }) { f ->
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .shadow(6.dp, RoundedCornerShape(16.dp))
-                                        .clip(RoundedCornerShape(16.dp))
-                                        .background(cardBg)
-                                        .border(1.dp, cardBorderColor, RoundedCornerShape(16.dp))
-                                        .clickable { actionFile = f }
-                                        .padding(14.dp),
-                                    verticalAlignment = Alignment.CenterVertically
+                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(iconSm))
+                            Spacer(Modifier.width(gapBtnW))
+                            Text("Add ${category.title.lowercase(Locale.getDefault())}", fontSize = bodyFont)
+                        }
+
+                        Spacer(Modifier.height(gapBtnH))
+
+                        if (files.isEmpty()) {
+                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(gapSmallH)
                                 ) {
                                     Box(
                                         modifier = Modifier
-                                            .size(52.dp)
-                                            .clip(RoundedCornerShape(14.dp))
-                                            .background(thumbBg),
+                                            .size(emptyCircle)
+                                            .clip(CircleShape)
+                                            .background(cardBg)
+                                            .border(1.dp, cardBorderColor, CircleShape),
                                         contentAlignment = Alignment.Center
                                     ) {
                                         Icon(
                                             categoryIcon,
                                             contentDescription = null,
-                                            tint = onPageColor,
-                                            modifier = Modifier.size(24.dp)
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.size(iconLg)
                                         )
                                     }
-                                    Spacer(Modifier.width(14.dp))
-                                    Column(Modifier.weight(1f)) {
-                                        Text(
-                                            f.name,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                            fontWeight = FontWeight.Medium,
-                                            color = MaterialTheme.colorScheme.onSurface
-                                        )
-                                        Spacer(Modifier.height(2.dp))
-                                        Text(
-                                            "${BlackHoleManager.fileSizeString(f)}  •  ${
-                                                SimpleDateFormat("dd MMM yyyy", Locale.getDefault())
-                                                    .format(Date(f.lastModified()))
-                                            }",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
+                                    Text(
+                                        "Nothing here yet",
+                                        fontWeight = FontWeight.SemiBold,
+                                        fontSize = emptyTitleFont,
+                                        color = onPageColor
+                                    )
+                                    Text(
+                                        "Tap Add to import files",
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        fontSize = smallFont,
+                                        textAlign = TextAlign.Center
+                                    )
+                                }
+                            }
+                        } else if (category == BlackHoleCategory.PHOTOS || category == BlackHoleCategory.VIDEOS) {
+                            LazyVerticalGrid(
+                                columns = GridCells.Fixed(photoCols),
+                                modifier = Modifier.fillMaxSize(),
+                                horizontalArrangement = Arrangement.spacedBy(gapGrid),
+                                verticalArrangement = Arrangement.spacedBy(gapGrid)
+                            ) {
+                                items(files.size) { index ->
+                                    val f = files[index]
+                                    Box(
+                                        modifier = Modifier
+                                            .aspectRatio(1f)
+                                            .shadow(shadowElev, RoundedCornerShape(cardCornerSm))
+                                            .clip(RoundedCornerShape(cardCornerSm))
+                                            .background(cardBg)
+                                            .border(1.dp, cardBorderColor, RoundedCornerShape(cardCornerSm))
+                                            .clickable { actionFile = f },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        if (category == BlackHoleCategory.PHOTOS) {
+                                            BlackHolePhotoThumbnail(file = f, modifier = Modifier.fillMaxSize())
+                                        } else {
+                                            // OPENFIX 3: real video frame,
+                                            // not a black box. While the
+                                            // frame is being made (first
+                                            // time only, background), the
+                                            // old black box + play icon
+                                            // shows, so the grid never
+                                            // looks broken.
+                                            BlackHoleVideoThumbnail(file = f, modifier = Modifier.fillMaxSize())
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            LazyColumn(
+                                modifier = Modifier.fillMaxSize(),
+                                verticalArrangement = Arrangement.spacedBy(gapListH)
+                            ) {
+                                items(files, key = { it.absolutePath }) { f ->
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .shadow(shadowElev, RoundedCornerShape(cardCornerSm))
+                                            .clip(RoundedCornerShape(cardCornerSm))
+                                            .background(cardBg)
+                                            .border(1.dp, cardBorderColor, RoundedCornerShape(cardCornerSm))
+                                            .clickable { actionFile = f }
+                                            .padding(listRowPad),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(listThumb)
+                                                .clip(RoundedCornerShape(thumbCorner))
+                                                .background(thumbBg),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                categoryIcon,
+                                                contentDescription = null,
+                                                tint = onPageColor,
+                                                modifier = Modifier.size(iconBar)
+                                            )
+                                        }
+                                        Spacer(Modifier.width(gapIconW))
+                                        Column(Modifier.weight(1f)) {
+                                            Text(
+                                                f.name,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                                fontWeight = FontWeight.Medium,
+                                                fontSize = folderNameFont,
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            )
+                                            Spacer(Modifier.height(gap2H))
+                                            Text(
+                                                "${BlackHoleManager.fileSizeString(f)}  •  ${
+                                                    SimpleDateFormat("dd MMM yyyy", Locale.getDefault())
+                                                        .format(Date(f.lastModified()))
+                                                }",
+                                                fontSize = smallFont,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -768,422 +788,431 @@ fun BlackHoleScreen(
                 }
             }
         }
-    }
 
-    // ══════════════════════════════════════
-    //  DELETE CONFIRM DIALOG (after import)
-    // ══════════════════════════════════════
-    val pd = pendingDelete
-    if (pd != null) {
-        AlertDialog(
-            onDismissRequest = { pendingDelete = null },
-            shape = RoundedCornerShape(24.dp),
-            title = {
-                Text("Delete original file?", fontWeight = FontWeight.Bold)
-            },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        "\"${pd.fileName}\" saved to Black Hole",
-                        fontWeight = FontWeight.Medium,
-                        color = onPageColor
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        "Delete the original from Gallery / Files as well?",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        val status = pd.deleteStatus
-                        // FIX: আগের বাগ এখানে ছিল — pd.originalUri (picker URI)
-                        // দিয়ে retry হতো, তাই সিস্টেম পারমিশন কাজ করত না।
-                        // এখন আসল MediaStore URI দিয়ে retry হবে।
-                        val uri = pd.mediaUri
-                        pendingDelete = null
-                        when (status) {
-                            is DeleteStatus.Deleted -> {
-                                // Already deleted during import
-                                Toast.makeText(context, "Deleted ✓", Toast.LENGTH_SHORT).show()
-                            }
-                            is DeleteStatus.NeedsConfirmation -> {
-                                // Android 11+ — launch system permission dialog
-                                pendingSystemDeleteUri = uri
-                                // IMPORT FIX: same guard — the system
-                                // confirm dialog must not close the blackhole.
-                                BlackHolePickerGuard.begin()
-                                systemDeleteLauncher.launch(
-                                    IntentSenderRequest.Builder(status.sender).build()
-                                )
-                            }
-                            is DeleteStatus.Failed -> {
-                                // Try one more time with resolved URI
-                                scope.launch {
-                                    val ok = BlackHoleManager.retryDelete(context, uri)
-                                    Toast.makeText(
-                                        context,
-                                        if (ok) "Deleted ✓"
-                                        else "Could not delete — please delete it from the gallery yourself",
-                                        Toast.LENGTH_LONG
-                                    ).show()
-                                }
-                            }
-                        }
-                    },
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.error
-                    )
-                ) { Text("Delete original") }
-            },
-            dismissButton = {
-                TextButton(onClick = { pendingDelete = null }) {
-                    Text("Keep original")
-                }
-            }
-        )
-    }
-
-    // ── File action sheet ──
-    val file = actionFile
-    if (file != null && selectedCategory != null) {
-        val cat = selectedCategory!!
-        // categoryIcon is not needed in the action sheet
-        AlertDialog(
-            onDismissRequest = { actionFile = null },
-            shape = RoundedCornerShape(24.dp),
-            title = {
-                Text(file.name, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    style = MaterialTheme.typography.titleMedium)
-            },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    if (cat == BlackHoleCategory.PHOTOS) {
-                        BlackHolePhotoThumbnail(
-                            file = file,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(180.dp)
-                                .clip(RoundedCornerShape(16.dp))
-                        )
-                    }
-                    Text(
-                        "${BlackHoleManager.fileSizeString(file)}  •  ${
-                            SimpleDateFormat("dd MMM yyyy", Locale.getDefault())
-                                .format(Date(file.lastModified()))
-                        }",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    HorizontalDivider()
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        FilledTonalButton(
-                            onClick = {
-                                actionFile = null
-                                openFile(file)
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(12.dp)
-                        ) { Text("Open") }
-
-                        FilledTonalButton(
-                            onClick = {
-                                actionFile = null
-                                scope.launch {
-                                    val ok = BlackHoleManager.downloadFile(context, file, cat)
-                                    Toast.makeText(
-                                        context,
-                                        if (ok) "Downloaded" else "Download failed",
-                                        Toast.LENGTH_SHORT
-                                    ).show()
-                                }
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(12.dp)
-                        ) { Text("Download") }
-
-                        FilledTonalButton(
-                            onClick = {
-                                renamingFile = file
-                                renameText = file.nameWithoutExtension
-                                actionFile = null
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(12.dp)
-                        ) { Text("Rename") }
-
-                        FilledTonalButton(
-                            onClick = {
-                                actionFile = null
-                                scope.launch {
-                                    val ok = BlackHoleManager.restoreFile(context, file, cat)
-                                    Toast.makeText(
-                                        context,
-                                        if (ok) "Restored to gallery" else "Restore failed",
-                                        Toast.LENGTH_LONG
-                                    ).show()
-                                    refreshKey++
-                                }
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(12.dp)
-                        ) { Text("Restore to Gallery") }
-
-                        Button(
-                            onClick = { deletingFile = file; actionFile = null },
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.errorContainer,
-                                contentColor = MaterialTheme.colorScheme.onErrorContainer
-                            )
-                        ) { Text("Delete permanently") }
-                    }
-                }
-            },
-            confirmButton = {},
-            dismissButton = { TextButton(onClick = { actionFile = null }) { Text("Cancel") } }
-        )
-    }
-
-    // ── OPENFIX: "Opening..." — shows INSTANTLY on tap, while the
-    // decrypt/copy runs on a background thread. No progress = the
-    // user thinks the tap did nothing. No dismiss: it closes itself
-    // when openFile finishes.
-    // OPENFIX 3: shows the REAL % (linear bar + "47%") while the
-    // preview is being prepared; the spinner only shows before the
-    // first progress report arrives.
-    val opening = openingFile
-    if (opening != null) {
-        AlertDialog(
-            onDismissRequest = {},
-            shape = RoundedCornerShape(24.dp),
-            title = { Text("Opening...") },
-            text = {
-                Column {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        CircularProgressIndicator(
-                            color = onPageColor,
-                            modifier = Modifier.size(24.dp)
-                        )
-                        Spacer(Modifier.width(14.dp))
+        // ══════════════════════════════════════
+        //  DELETE CONFIRM DIALOG (after import)
+        // ══════════════════════════════════════
+        val pd = pendingDelete
+        if (pd != null) {
+            AlertDialog(
+                onDismissRequest = { pendingDelete = null },
+                shape = RoundedCornerShape(dialogCorner),
+                title = {
+                    Text("Delete original file?", fontWeight = FontWeight.Bold, fontSize = folderNameFont, color = onPageColor)
+                },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(gapCardH)) {
                         Text(
-                            opening.name,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f)
+                            "\"${pd.fileName}\" saved to Black Hole",
+                            fontWeight = FontWeight.Medium,
+                            fontSize = bodyFont,
+                            color = onPageColor
+                        )
+                        Spacer(Modifier.height(gapTinyH))
+                        Text(
+                            "Delete the original from Gallery / Files as well?",
+                            fontSize = bodyFont,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    val op = openingProgress
-                    if (op != null) {
-                        Spacer(Modifier.height(12.dp))
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            val status = pd.deleteStatus
+                            // FIX: আগের বাগ এখানে ছিল — pd.originalUri (picker URI)
+                            // দিয়ে retry হতো, তাই সিস্টেম পারমিশন কাজ করত না।
+                            // এখন আসল MediaStore URI দিয়ে retry হবে।
+                            val uri = pd.mediaUri
+                            pendingDelete = null
+                            when (status) {
+                                is DeleteStatus.Deleted -> {
+                                    // Already deleted during import
+                                    Toast.makeText(context, "Deleted ✓", Toast.LENGTH_SHORT).show()
+                                }
+                                is DeleteStatus.NeedsConfirmation -> {
+                                    // Android 11+ — launch system permission dialog
+                                    pendingSystemDeleteUri = uri
+                                    // IMPORT FIX: same guard — the system
+                                    // confirm dialog must not close the blackhole.
+                                    BlackHolePickerGuard.begin()
+                                    systemDeleteLauncher.launch(
+                                        IntentSenderRequest.Builder(status.sender).build()
+                                    )
+                                }
+                                is DeleteStatus.Failed -> {
+                                    // Try one more time with resolved URI
+                                    scope.launch {
+                                        val ok = BlackHoleManager.retryDelete(context, uri)
+                                        Toast.makeText(
+                                            context,
+                                            if (ok) "Deleted ✓"
+                                            else "Could not delete — please delete it from the gallery yourself",
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                    }
+                                }
+                            }
+                        },
+                        shape = RoundedCornerShape(btnCorner),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.error
+                        )
+                    ) { Text("Delete original", fontSize = bodyFont) }
+                },
+                dismissButton = {
+                    TextButton(onClick = { pendingDelete = null }) {
+                        Text("Keep original", fontSize = bodyFont)
+                    }
+                }
+            )
+        }
+
+        // ── File action sheet ──
+        val file = actionFile
+        if (file != null && selectedCategory != null) {
+            val cat = selectedCategory!!
+            // categoryIcon is not needed in the action sheet
+            AlertDialog(
+                onDismissRequest = { actionFile = null },
+                shape = RoundedCornerShape(dialogCorner),
+                title = {
+                    Text(
+                        file.name, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        fontWeight = FontWeight.Medium, fontSize = folderNameFont, color = onPageColor
+                    )
+                },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(gapSmallH)) {
+                        if (cat == BlackHoleCategory.PHOTOS) {
+                            BlackHolePhotoThumbnail(
+                                file = file,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(sheetPhotoH)
+                                    .clip(RoundedCornerShape(cardCornerSm))
+                            )
+                        }
+                        Text(
+                            "${BlackHoleManager.fileSizeString(file)}  •  ${
+                                SimpleDateFormat("dd MMM yyyy", Locale.getDefault())
+                                    .format(Date(file.lastModified()))
+                            }",
+                            fontSize = smallFont,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        HorizontalDivider()
+                        Column(verticalArrangement = Arrangement.spacedBy(gapTinyH)) {
+                            FilledTonalButton(
+                                onClick = {
+                                    actionFile = null
+                                    openFile(file)
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(btnCorner)
+                            ) { Text("Open", fontSize = bodyFont) }
+
+                            FilledTonalButton(
+                                onClick = {
+                                    actionFile = null
+                                    scope.launch {
+                                        val ok = BlackHoleManager.downloadFile(context, file, cat)
+                                        Toast.makeText(
+                                            context,
+                                            if (ok) "Downloaded" else "Download failed",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(btnCorner)
+                            ) { Text("Download", fontSize = bodyFont) }
+
+                            FilledTonalButton(
+                                onClick = {
+                                    renamingFile = file
+                                    renameText = file.nameWithoutExtension
+                                    actionFile = null
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(btnCorner)
+                            ) { Text("Rename", fontSize = bodyFont) }
+
+                            FilledTonalButton(
+                                onClick = {
+                                    actionFile = null
+                                    scope.launch {
+                                        val ok = BlackHoleManager.restoreFile(context, file, cat)
+                                        Toast.makeText(
+                                            context,
+                                            if (ok) "Restored to gallery" else "Restore failed",
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                        refreshKey++
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(btnCorner)
+                            ) { Text("Restore to Gallery", fontSize = bodyFont) }
+
+                            Button(
+                                onClick = { deletingFile = file; actionFile = null },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(btnCorner),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.errorContainer,
+                                    contentColor = MaterialTheme.colorScheme.onErrorContainer
+                                )
+                            ) { Text("Delete permanently", fontSize = bodyFont) }
+                        }
+                    }
+                },
+                confirmButton = {},
+                dismissButton = { TextButton(onClick = { actionFile = null }) { Text("Cancel", fontSize = bodyFont) } }
+            )
+        }
+
+        // ── OPENFIX: "Opening..." — shows INSTANTLY on tap, while the
+        // decrypt/copy runs on a background thread. No progress = the
+        // user thinks the tap did nothing. No dismiss: it closes itself
+        // when openFile finishes.
+        // OPENFIX 3: shows the REAL % (linear bar + "47%") while the
+        // preview is being prepared; the spinner only shows before the
+        // first progress report arrives.
+        val opening = openingFile
+        if (opening != null) {
+            AlertDialog(
+                onDismissRequest = {},
+                shape = RoundedCornerShape(dialogCorner),
+                title = { Text("Opening...", fontSize = folderNameFont, color = onPageColor) },
+                text = {
+                    Column {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            CircularProgressIndicator(
+                                color = onPageColor,
+                                modifier = Modifier.size(iconBar)
+                            )
+                            Spacer(Modifier.width(gapIconW))
+                            Text(
+                                opening.name,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                fontSize = bodyFont,
+                                color = onPageColor,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                        val op = openingProgress
+                        if (op != null) {
+                            Spacer(Modifier.height(windowH * 0.016f))
+                            LinearProgressIndicator(
+                                progress = op,
+                                modifier = Modifier.fillMaxWidth(),
+                                color = onPageColor
+                            )
+                            Spacer(Modifier.height(gapXsH))
+                            Text(
+                                "${(op * 100).toInt()}%",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = smallFont
+                            )
+                        }
+                    }
+                },
+                confirmButton = {},
+                // OPENFIX 4: Cancel button. Stops the open job (only ever
+                // needed for an old still-encrypted file — plain files
+                // open instantly, so the dialog barely appears for them).
+                dismissButton = {
+                    TextButton(onClick = {
+                        openJob?.cancel()
+                        openJob = null
+                        openingFile = null
+                        openingProgress = null
+                    }) { Text("Cancel", fontSize = bodyFont) }
+                }
+            )
+        }
+
+        // ── OPENFIX 3: "Importing..." — the old code imported with no
+        // feedback at all, so the user could not tell whether the upload
+        // was running, and tapped Add again — creating the duplicate
+        // file. Now the real % shows, and the Add button is disabled
+        // until the import finishes.
+        val imp = importingProgress
+        if (imp != null) {
+            AlertDialog(
+                onDismissRequest = {},
+                shape = RoundedCornerShape(dialogCorner),
+                title = { Text("Importing...", fontSize = folderNameFont, color = onPageColor) },
+                text = {
+                    Column {
                         LinearProgressIndicator(
-                            progress = op,
+                            progress = imp,
                             modifier = Modifier.fillMaxWidth(),
                             color = onPageColor
                         )
-                        Spacer(Modifier.height(6.dp))
+                        Spacer(Modifier.height(gapCardH))
                         Text(
-                            "${(op * 100).toInt()}%",
+                            "${(imp * 100).toInt()}% — please wait, do not close the app",
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.bodySmall
+                            fontSize = smallFont
                         )
                     }
-                }
-            },
-            confirmButton = {},
-            // OPENFIX 4: Cancel button. Stops the open job (only ever
-            // needed for an old still-encrypted file — plain files
-            // open instantly, so the dialog barely appears for them).
-            dismissButton = {
-                TextButton(onClick = {
-                    openJob?.cancel()
-                    openJob = null
-                    openingFile = null
-                    openingProgress = null
-                }) { Text("Cancel") }
-            }
-        )
-    }
+                },
+                confirmButton = {},
+                dismissButton = {}
+            )
+        }
 
-    // ── OPENFIX 3: "Importing..." — the old code imported with no
-    // feedback at all, so the user could not tell whether the upload
-    // was running, and tapped Add again — creating the duplicate
-    // file. Now the real % shows, and the Add button is disabled
-    // until the import finishes.
-    val imp = importingProgress
-    if (imp != null) {
-        AlertDialog(
-            onDismissRequest = {},
-            shape = RoundedCornerShape(24.dp),
-            title = { Text("Importing...") },
-            text = {
-                Column {
-                    LinearProgressIndicator(
-                        progress = imp,
-                        modifier = Modifier.fillMaxWidth(),
-                        color = onPageColor
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        "${(imp * 100).toInt()}% — please wait, do not close the app",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                }
-            },
-            confirmButton = {},
-            dismissButton = {}
-        )
-    }
-
-    // ── Rename ──
-    val toRename = renamingFile
-    if (toRename != null) {
-        AlertDialog(
-            onDismissRequest = { renamingFile = null },
-            shape = RoundedCornerShape(24.dp),
-            title = { Text("Rename") },
-            text = {
-                OutlinedTextField(
-                    value = renameText,
-                    onValueChange = { renameText = it },
-                    singleLine = true,
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth()
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    if (BlackHoleManager.renameFile(toRename, renameText)) {
-                        Toast.makeText(context, "Renamed ✓", Toast.LENGTH_SHORT).show()
-                    } else {
-                        Toast.makeText(context, "Rename failed", Toast.LENGTH_SHORT).show()
-                    }
-                    renamingFile = null
-                    refreshKey++
-                }) { Text("Save") }
-            },
-            dismissButton = { TextButton(onClick = { renamingFile = null }) { Text("Cancel") } }
-        )
-    }
-
-    // ── Delete from Black Hole confirm ──
-    val toDelete = deletingFile
-    if (toDelete != null) {
-        AlertDialog(
-            onDismissRequest = { deletingFile = null },
-            shape = RoundedCornerShape(24.dp),
-            title = { Text("Delete permanently?") },
-            text = {
-                Text(
-                    "\"${toDelete.name}\" will be permanently deleted from Black Hole.",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        BlackHoleManager.deleteFile(toDelete)
-                        // OPENFIX 3: drop the cached preview + video
-                        // frame too, so a deleted file leaves nothing
-                        // decrypted behind in cache.
-                        BlackHoleOpener.dropCaches(context, toDelete)
-                        deletingFile = null
-                        refreshKey++
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                    shape = RoundedCornerShape(12.dp)
-                ) { Text("Delete") }
-            },
-            dismissButton = { TextButton(onClick = { deletingFile = null }) { Text("Cancel") } }
-        )
-    }
-
-    // ── Settings ── MODERN: black/white only. The default
-    // AlertDialog/Button colours come from the app theme
-    // (pink), so every colour here is set explicitly.
-    if (showSettingsDialog) {
-        AlertDialog(
-            onDismissRequest = { showSettingsDialog = false },
-            containerColor = cardBg,
-            shape = RoundedCornerShape(20.dp),
-            title = {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier.size(36.dp)
-                            .clip(CircleShape)
-                            .background(thumbBg),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            Icons.Filled.Lock,
-                            contentDescription = null,
-                            tint = onPageColor,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-                    Spacer(Modifier.width(10.dp))
-                    Text("Settings", fontWeight = FontWeight.Bold, color = onPageColor)
-                }
-            },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(
-                        "Secret code",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = onPageColor.copy(alpha = 0.6f),
-                        letterSpacing = 1.sp
-                    )
+        // ── Rename ──
+        val toRename = renamingFile
+        if (toRename != null) {
+            AlertDialog(
+                onDismissRequest = { renamingFile = null },
+                shape = RoundedCornerShape(dialogCorner),
+                title = { Text("Rename", fontSize = folderNameFont, color = onPageColor) },
+                text = {
                     OutlinedTextField(
-                        value = secretText,
-                        onValueChange = { secretText = it },
+                        value = renameText,
+                        onValueChange = { renameText = it },
                         singleLine = true,
-                        placeholder = { Text("Enter secret") },
-                        shape = RoundedCornerShape(16.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = onPageColor,
-                            unfocusedBorderColor = cardBorderColor,
-                            focusedTextColor = onPageColor,
-                            unfocusedTextColor = onPageColor,
-                            cursorColor = onPageColor,
-                            focusedPlaceholderColor = onPageColor.copy(alpha = 0.4f),
-                            unfocusedPlaceholderColor = onPageColor.copy(alpha = 0.4f)
-                        ),
+                        shape = RoundedCornerShape(btnCorner),
+                        textStyle = MaterialTheme.typography.bodyLarge.copy(fontSize = folderNameFont),
                         modifier = Modifier.fillMaxWidth()
                     )
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        if (secretText.isBlank()) {
-                            Toast.makeText(context, "Secret cannot be empty", Toast.LENGTH_SHORT).show()
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        if (BlackHoleManager.renameFile(toRename, renameText)) {
+                            Toast.makeText(context, "Renamed ✓", Toast.LENGTH_SHORT).show()
                         } else {
-                            BlackHolePrefs.setSecret(context, secretText)
-                            BlackHolePrefs.setThemeIcon(context, selectedIcon)
-                            settingsSaveKey++
-                            showSettingsDialog = false
-                            Toast.makeText(context, "Saved", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Rename failed", Toast.LENGTH_SHORT).show()
                         }
-                    },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = onPageColor,
-                        contentColor = pageBg
-                    ),
-                    shape = RoundedCornerShape(16.dp)
-                ) { Text("Save") }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = { showSettingsDialog = false },
-                    colors = ButtonDefaults.textButtonColors(contentColor = onPageColor)
-                ) { Text("Cancel") }
-            }
-        )
+                        renamingFile = null
+                        refreshKey++
+                    }) { Text("Save", fontSize = bodyFont) }
+                },
+                dismissButton = { TextButton(onClick = { renamingFile = null }) { Text("Cancel", fontSize = bodyFont) } }
+            )
+        }
+
+        // ── Delete from Black Hole confirm ──
+        val toDelete = deletingFile
+        if (toDelete != null) {
+            AlertDialog(
+                onDismissRequest = { deletingFile = null },
+                shape = RoundedCornerShape(dialogCorner),
+                title = { Text("Delete permanently?", fontSize = folderNameFont, color = onPageColor) },
+                text = {
+                    Text(
+                        "\"${toDelete.name}\" will be permanently deleted from Black Hole.",
+                        fontSize = bodyFont,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            BlackHoleManager.deleteFile(toDelete)
+                            // OPENFIX 3: drop the cached preview + video
+                            // frame too, so a deleted file leaves nothing
+                            // decrypted behind in cache.
+                            BlackHoleOpener.dropCaches(context, toDelete)
+                            deletingFile = null
+                            refreshKey++
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                        shape = RoundedCornerShape(btnCorner)
+                    ) { Text("Delete", fontSize = bodyFont) }
+                },
+                dismissButton = { TextButton(onClick = { deletingFile = null }) { Text("Cancel", fontSize = bodyFont) } }
+            )
+        }
+
+        // ── Settings ── MODERN: black/white only. The default
+        // AlertDialog/Button colours come from the app theme
+        // (pink), so every colour here is set explicitly.
+        if (showSettingsDialog) {
+            AlertDialog(
+                onDismissRequest = { showSettingsDialog = false },
+                containerColor = cardBg,
+                shape = RoundedCornerShape(cardCorner),
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier.size(settingsCircle)
+                                .clip(CircleShape)
+                                .background(thumbBg),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                Icons.Filled.Lock,
+                                contentDescription = null,
+                                tint = onPageColor,
+                                modifier = Modifier.size(iconSm)
+                            )
+                        }
+                        Spacer(Modifier.width(windowW * 0.028f))
+                        Text("Settings", fontWeight = FontWeight.Bold, fontSize = titleFont, color = onPageColor)
+                    }
+                },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(gapSmallH)) {
+                        Text(
+                            "Secret code",
+                            fontSize = labelFont,
+                            color = onPageColor.copy(alpha = 0.6f),
+                            letterSpacing = (minDim.value * 0.0028f).sp
+                        )
+                        OutlinedTextField(
+                            value = secretText,
+                            onValueChange = { secretText = it },
+                            singleLine = true,
+                            placeholder = { Text("Enter secret", fontSize = bodyFont) },
+                            shape = RoundedCornerShape(cardCornerSm),
+                            textStyle = MaterialTheme.typography.bodyLarge.copy(fontSize = folderNameFont),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = onPageColor,
+                                unfocusedBorderColor = cardBorderColor,
+                                focusedTextColor = onPageColor,
+                                unfocusedTextColor = onPageColor,
+                                cursorColor = onPageColor,
+                                focusedPlaceholderColor = onPageColor.copy(alpha = 0.4f),
+                                unfocusedPlaceholderColor = onPageColor.copy(alpha = 0.4f)
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            if (secretText.isBlank()) {
+                                Toast.makeText(context, "Secret cannot be empty", Toast.LENGTH_SHORT).show()
+                            } else {
+                                BlackHolePrefs.setSecret(context, secretText)
+                                BlackHolePrefs.setThemeIcon(context, selectedIcon)
+                                settingsSaveKey++
+                                showSettingsDialog = false
+                                Toast.makeText(context, "Saved", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = onPageColor,
+                            contentColor = pageBg
+                        ),
+                        shape = RoundedCornerShape(cardCornerSm)
+                    ) { Text("Save", fontSize = bodyFont) }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = { showSettingsDialog = false },
+                        colors = ButtonDefaults.textButtonColors(contentColor = onPageColor)
+                    ) { Text("Cancel", fontSize = bodyFont) }
+                }
+            )
+        }
     }
 }
 
@@ -1202,15 +1231,17 @@ private fun BlackHolePhotoThumbnail(file: File, modifier: Modifier = Modifier) {
             modifier = modifier
         )
     } else {
-        Box(
+        // % icon: 22% of this thumbnail's own smaller side.
+        BoxWithConstraints(
             modifier = modifier.background(MaterialTheme.colorScheme.surfaceVariant),
             contentAlignment = Alignment.Center
         ) {
+            val cellMin = minOf(maxWidth, maxHeight)
             Icon(
                 Icons.Filled.Image,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(24.dp)
+                modifier = Modifier.size(cellMin * 0.22f)
             )
         }
     }
@@ -1231,10 +1262,14 @@ private fun BlackHoleVideoThumbnail(file: File, modifier: Modifier = Modifier) {
         }
     }
     val bmp = bitmap
-    Box(
+    // % sizes: play badge 29% of this thumbnail's smaller side,
+    // play icon 16% of it. RoundedCornerShape(50) is already a
+    // percent (50% = fully round).
+    BoxWithConstraints(
         modifier = modifier.background(OffBlack),
         contentAlignment = Alignment.Center
     ) {
+        val cellMin = minOf(maxWidth, maxHeight)
         if (bmp != null) {
             Image(
                 bitmap = bmp.asImageBitmap(),
@@ -1245,7 +1280,7 @@ private fun BlackHoleVideoThumbnail(file: File, modifier: Modifier = Modifier) {
         }
         Box(
             modifier = Modifier
-                .size(32.dp)
+                .size(cellMin * 0.29f)
                 .clip(RoundedCornerShape(50))
                 .background(Color.White.copy(alpha = 0.18f)),
             contentAlignment = Alignment.Center
@@ -1254,7 +1289,7 @@ private fun BlackHoleVideoThumbnail(file: File, modifier: Modifier = Modifier) {
                 Icons.Filled.PlayArrow,
                 contentDescription = null,
                 tint = Color.White,
-                modifier = Modifier.size(18.dp)
+                modifier = Modifier.size(cellMin * 0.16f)
             )
         }
     }
@@ -1275,8 +1310,10 @@ private fun BlackHolePhotoImage(file: File, modifier: Modifier = Modifier) {
             modifier = modifier
         )
     } else {
-        Box(modifier = modifier, contentAlignment = Alignment.Center) {
-            CircularProgressIndicator(color = Color.White, modifier = Modifier.size(40.dp))
+        // % spinner: 11% of this viewer's own smaller side.
+        BoxWithConstraints(modifier = modifier, contentAlignment = Alignment.Center) {
+            val cellMin = minOf(maxWidth, maxHeight)
+            CircularProgressIndicator(color = Color.White, modifier = Modifier.size(cellMin * 0.111f))
         }
     }
 }
