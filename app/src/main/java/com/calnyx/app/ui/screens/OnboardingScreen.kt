@@ -1,7 +1,7 @@
 // FILE: app/src/main/java/com/calnyx/app/ui/screens/OnboardingScreen.kt
 // NEW FILE - first-run introduction. Shows once, on the very first
 // open after install (NavGraph gates on OnboardingPrefs.isDone).
-// 7 steps, swipe is off - move with Next / Back / Skip only:
+// 8 steps, swipe is off - move with Next / Back / Skip only:
 //   0 Welcome - app logo + name, what the app is.
 //   1 Calculators - Normal, Scientific, CalTape, Converter,
 //     Number System, ICT, Notepad, and how to use them.
@@ -12,7 +12,9 @@
 //     Each row has a Grant button; granting shows a check. The
 //     Next button stays DISABLED until every required permission
 //     is granted. Skip (top right) exits the whole introduction.
-//   6 All set - Start opens the calculator.
+//   6 Developer - who made the app: name, email, website.
+//     Email and website rows are tappable (mail / browser).
+//   7 All set - Start opens the calculator.
 // English only, black / white only. The permission list comes from
 // OnboardingPermissions - the same list the About dialog shows.
 // % ONLY (2026-11-07): every size is a % of the window (windowW /
@@ -20,13 +22,18 @@
 // anywhere except 1.dp hairline borders.
 // WEBSITE (2026-11-07): the developer intro on the Welcome page
 // is gone - it now introduces the APP instead. The developer
-// email is removed everywhere; the About dialog links the
-// website masudibnbelat.vercel.app instead (see NavGraph.kt).
+// email was removed everywhere, then brought back ONLY here, in
+// the Developer step (user request 2026-11-07 evening). The About
+// dialog still links only the website masudibnbelat.vercel.app
+// (see NavGraph.kt - its row is now titled "Developer Contact").
 package com.calnyx.app.ui.screens
 
 import android.app.Activity
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
@@ -60,10 +67,13 @@ import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.ContentPaste
+import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Functions
+import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.NoteAlt
 import androidx.compose.material.icons.filled.Numbers
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material.icons.filled.SwapHoriz
@@ -109,9 +119,16 @@ import kotlinx.coroutines.launch
 // % base for the whole intro: minDim = the window's short side.
 private data class IntroDims(val minDim: Dp, val windowW: Dp, val windowH: Dp)
 
-private const val PAGE_COUNT = 7
+// DEVELOPER (2026-11-07): shown only on the Developer intro step.
+private const val DEVELOPER_NAME = "Masud Ibn Belat"
+private const val DEVELOPER_EMAIL = "masudibnbelat@gmail.com"
+private const val DEVELOPER_WEBSITE_URL = "https://masudibnbelat.vercel.app"
+private const val DEVELOPER_WEBSITE_LABEL = "masudibnbelat.vercel.app"
+
+private const val PAGE_COUNT = 8
 private const val PAGE_PERMISSIONS = 5
-private const val PAGE_DONE = 6
+private const val PAGE_DEVELOPER = 6
+private const val PAGE_DONE = 7
 
 @Composable
 fun OnboardingScreen(darkTheme: Boolean, onFinish: () -> Unit) {
@@ -255,7 +272,8 @@ fun OnboardingScreen(darkTheme: Boolean, onFinish: () -> Unit) {
                         onToggle = ::toggle,
                         d = d
                     )
-                    6 -> DonePage(onPageColor, thumbBg, d)
+                    6 -> DeveloperPage(onPageColor, thumbBg, cardBg, cardBorder, d)
+                    7 -> DonePage(onPageColor, thumbBg, d)
                 }
             }
         }
@@ -500,6 +518,99 @@ private fun SpyClipboardPage(onPageColor: Color, thumbBg: Color, d: IntroDims) {
     FeatureRow(Icons.Default.Videocam, "Spy", "Secret camera recording with the front or back camera. Videos stay inside the app, never in the gallery.", onPageColor, thumbBg, d)
     FeatureRow(Icons.Default.ContentPaste, "Clipboard", "Everything you copy is saved offline - text and images. Open it from the menu any time.", onPageColor, thumbBg, d)
     PageSubtitle("Both work fully offline.", onPageColor, d)
+}
+
+// DEVELOPER (2026-11-07): new step before All set, user request.
+// Only three things, in a card like the Welcome page's "What is
+// CalNyx?" card: name, email, website. Email and website rows
+// are tappable (mail app / browser). % sizes only (IntroDims).
+@Composable
+private fun DeveloperPage(onPageColor: Color, thumbBg: Color, cardBg: Color, cardBorder: Color, d: IntroDims) {
+    val context = LocalContext.current
+    PageTitle("Developer", onPageColor, d)
+    PageSubtitle("CalNyx is made by one person. Reach out any time.", onPageColor, d)
+    Column(
+        modifier = Modifier.fillMaxWidth()
+            .clip(RoundedCornerShape(d.minDim * 0.044f))
+            .background(cardBg)
+            .border(1.dp, cardBorder, RoundedCornerShape(d.minDim * 0.044f))
+            .padding(d.minDim * 0.044f),
+        verticalArrangement = Arrangement.spacedBy(d.windowH * 0.019f)
+    ) {
+        ContactRow(
+            icon = Icons.Default.Person,
+            label = "Name",
+            value = DEVELOPER_NAME,
+            onPageColor = onPageColor,
+            thumbBg = thumbBg,
+            d = d,
+            onClick = null
+        )
+        ContactRow(
+            icon = Icons.Default.Email,
+            label = "Email",
+            value = DEVELOPER_EMAIL,
+            onPageColor = onPageColor,
+            thumbBg = thumbBg,
+            d = d,
+            onClick = {
+                try {
+                    context.startActivity(
+                        Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:$DEVELOPER_EMAIL"))
+                    )
+                } catch (_: Exception) {
+                    Toast.makeText(context, "Could not open email", Toast.LENGTH_SHORT).show()
+                }
+            }
+        )
+        ContactRow(
+            icon = Icons.Default.Language,
+            label = "Website",
+            value = DEVELOPER_WEBSITE_LABEL,
+            onPageColor = onPageColor,
+            thumbBg = thumbBg,
+            d = d,
+            onClick = {
+                try {
+                    context.startActivity(
+                        Intent(Intent.ACTION_VIEW, Uri.parse(DEVELOPER_WEBSITE_URL))
+                    )
+                } catch (_: Exception) {
+                    Toast.makeText(context, "Could not open the website", Toast.LENGTH_SHORT).show()
+                }
+            }
+        )
+    }
+    PageSubtitle("Tap the email or website row to open it.", onPageColor, d)
+}
+
+@Composable
+private fun ContactRow(
+    icon: ImageVector,
+    label: String,
+    value: String,
+    onPageColor: Color,
+    thumbBg: Color,
+    d: IntroDims,
+    onClick: (() -> Unit)?
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth()
+            .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier.size(d.minDim * 0.144f).clip(CircleShape).background(thumbBg),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(icon, contentDescription = null, tint = onPageColor, modifier = Modifier.size(d.minDim * 0.072f))
+        }
+        Spacer(modifier = Modifier.width(d.windowW * 0.033f))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = label, fontSize = (d.minDim * 0.036f).value.sp, color = onPageColor.copy(alpha = 0.75f))
+            Text(text = value, fontSize = (d.minDim * 0.044f).value.sp, fontWeight = FontWeight.Bold, color = onPageColor)
+        }
+    }
 }
 
 @Composable

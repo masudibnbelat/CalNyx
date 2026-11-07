@@ -48,7 +48,7 @@
 //     itself: app icon + CalNyx + version on top,
 //     a Check for updates button (opens the existing
 //     UpdateDialog), a description of the app, and below
-//     it a Website row - tap it to open
+//     it a Developer Contact row - tap it to open
 //     masudibnbelat.vercel.app in the browser.
 // FILE: app/src/main/java/com/calnyx/app/navigation/NavGraph.kt
 // DRAWER-THEME VERSION (2026-11-06) - replace your old NavGraph.kt
@@ -361,9 +361,10 @@ private val NavThumbDark = Color(0xFF262626)
 // Red is the ONLY extra colour, for specialty only. See header.
 private val NavRed = Color(0xFFC62828)
 
-// Website shown in the About dialog (2026-11-07): the developer
-// email was removed and replaced with this link. To change it,
-// edit this one line - the browser intent below uses it.
+// Website shown in the About dialog under "Developer Contact"
+// (2026-11-07): the developer email was removed and replaced
+// with this link. To change it, edit this one line - the
+// browser intent below uses it.
 private const val WEBSITE_URL = "https://masudibnbelat.vercel.app"
 
 // PRIVACY (2026-11-07): "was backgrounded" flag, PERSISTED in
@@ -1335,8 +1336,8 @@ private fun TopBarCircleButton(
 // "About this app" item. Black / white only, English only.
 // Top: app icon + CalNyx + version. Then a Check for updates
 // button (opens the existing UpdateDialog - no new update
-// mechanism), a description of the app, and a Website row
-// (tap it to open masudibnbelat.vercel.app in the browser).
+// mechanism), a description of the app, and a Developer Contact
+// row (tap it to open masudibnbelat.vercel.app in the browser).
 @Composable
 private fun AboutDialog(
         appVersion: String,
@@ -1578,9 +1579,9 @@ private fun AboutDialog(
                     }
                 }
                 HorizontalDivider(color = border)
-                // Website: tap to open it in the browser.
+                // Developer Contact: tap to open the website in the browser.
                 Text(
-                        text = "Website",
+                        text = "Developer Contact",
                         fontSize = fHead,
                         fontWeight = FontWeight.Bold,
                         color = onPageColor
