@@ -138,6 +138,19 @@
 // (pending block exists) clears the block and goes Home, and after
 // a successful unlock the decoy finishes itself, so Back inside
 // the unlocked app goes Home instead of back to the calculator.
+// STALE-PENDING FIX (2026-11-08): the secret code now unlocks only
+// on a LIVE decoy (pending + decoy flag). A stale pending left over
+// from an abandoned decoy used to hijack the secret code in the
+// normal calculator and open the old app instead of Black Hole.
+// Base: V14 decoy-back version, everything else unchanged.
+// FIX4 (2026-11-08): the live-decoy check now uses
+// AppLockManager.isLiveDecoy(), which reads the NEW decoy_active
+// flag - NOT the old isDecoyLaunch flag. The debug Toast proved the
+// old flag is false at "=" time while pending is intact, because
+// NavGraph clears it on EVERY ON_RESUME (one-shot pop to Normal).
+// The DBG Toasts from the diagnostic build are removed here.
+// No NavGraph change is needed: NavGraph keeps using the old flag
+// for its one-shot pop, and never touches the new one.
 package com.calnyx.app.ui.screens
 
 import androidx.compose.animation.*
@@ -255,12 +268,22 @@ fun NormalCalculatorScreen(
         // (no block) behaves exactly as before. ON_RESUME refresh:
         // the decoy is launched with SINGLE_TOP, so a reused
         // activity does not always recompose - resume re-reads it.
-        var isDecoy by remember { mutableStateOf(AppLockManager.getPending(context) != null) }
+        // STALE-PENDING FIX (2026-11-08): a decoy is LIVE only when
+        // pending exists AND the decoy flag is set. A pending left
+        // over from an abandoned decoy (flag cleared by the Service
+        // on Home / Recents / switch / screen off / manual open)
+        // must NOT count as a decoy here, or Back on the normal
+        // calculator would wrongly go Home.
+        // FIX4: isLiveDecoy() reads the NEW decoy_active flag, not
+        // the old isDecoyLaunch flag - NavGraph clears the old one
+        // on every ON_RESUME, so it is always false by the time
+        // the user acts on the decoy.
+        var isDecoy by remember { mutableStateOf(AppLockManager.isLiveDecoy(context)) }
         val decoyLifecycleOwner = LocalLifecycleOwner.current
         DisposableEffect(decoyLifecycleOwner) {
                 val observer = LifecycleEventObserver { _, event ->
                         if (event == Lifecycle.Event.ON_RESUME) {
-                                isDecoy = AppLockManager.getPending(context) != null
+                                isDecoy = AppLockManager.isLiveDecoy(context)
                         }
                 }
                 decoyLifecycleOwner.lifecycle.addObserver(observer)
@@ -269,6 +292,7 @@ fun NormalCalculatorScreen(
         BackHandler(enabled = isDecoy) {
                 AppLockManager.clearPending(context)
                 AppLockManager.clearDecoyLaunch(context)
+                AppLockManager.clearDecoyActive(context)
                 try {
                         val homeIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
                         homeIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -287,7 +311,27 @@ fun NormalCalculatorScreen(
                 if (label == "=" && BlackHolePrefs.matches(context, expression.trim())) {
                         viewModel.onButtonClick("AC")
                         val pending = AppLockManager.getPending(context)
-                        if (pending != null && AppLockManager.isEnabled(context) && AppLockManager.isLocked(context, pending)) {
+                        // STALE-PENDING FIX (2026-11-08): the secret
+                        // code unlocks a locked app ONLY on a LIVE
+                        // decoy. The old code checked pending alone,
+                        // and pending lived forever once set: after
+                        // the decoy was left by Home / Recents /
+                        // another app, or after an unlocked app was
+                        // used and CalNyx was opened by its icon,
+                        // the next secret code in the NORMAL
+                        // calculator opened that old app instead of
+                        // Black Hole. Now a stale pending is cleared
+                        // here as a last defence (the Service also
+                        // clears it on every abandon path) and Black
+                        // Hole opens.
+                        // FIX4: isLiveDecoy() reads the NEW
+                        // decoy_active flag. The OLD flag
+                        // (isDecoyLaunch) must never be read here:
+                        // the debug Toast proved it is false at "="
+                        // time while pending is intact, because
+                        // NavGraph clears it on every ON_RESUME.
+                        val liveDecoy = AppLockManager.isLiveDecoy(context)
+                        if (liveDecoy && pending != null && AppLockManager.isEnabled(context) && AppLockManager.isLocked(context, pending)) {
                                 AppLockManager.setUnlockedSession(context, pending)
                                 val launchIntent = context.packageManager.getLaunchIntentForPackage(pending)
                                 if (launchIntent != null) {
@@ -295,6 +339,8 @@ fun NormalCalculatorScreen(
                                         try {
                                                 context.startActivity(launchIntent)
                                                 AppLockManager.clearPending(context)
+                                                AppLockManager.clearDecoyLaunch(context)
+                                                AppLockManager.clearDecoyActive(context)
                                                 // DECOY DONE (2026-11-07): the locked app is open
                                                 // in its own task now. Finish this decoy
                                                 // calculator, so Back inside the unlocked app
@@ -308,10 +354,17 @@ fun NormalCalculatorScreen(
                                         }
                                 } else {
                                         AppLockManager.clearPending(context)
+                                        AppLockManager.clearDecoyLaunch(context)
+                                        AppLockManager.clearDecoyActive(context)
                                         AppLockManager.clearUnlockedSession(context)
                                         onOpenBlackHole()
                                 }
                         } else {
+                                if (pending != null) {
+                                        AppLockManager.clearPending(context)
+                                        AppLockManager.clearDecoyLaunch(context)
+                                        AppLockManager.clearDecoyActive(context)
+                                }
                                 onOpenBlackHole()
                         }
                         return

@@ -1,4 +1,22 @@
 // FILE: app/src/main/java/com/calnyx/app/applock/AppLockManager.kt
+// LOCK-ON-EXIT VERSION + STALE-PENDING TIMESTAMP + DECOY-ACTIVE
+// FLAG (2026-11-08, FIX4) - replace your old AppLockManager.kt with
+// this file. Only change vs the timestamp version: a SECOND decoy
+// flag (KEY_DECOY_ACTIVE) and the isLiveDecoy() helper. WHY: the
+// debug Toast proved the old flag is false at "=" time while pending
+// is intact - NavGraph clears the OLD flag (KEY_DECOY_LAUNCH) on
+// EVERY ON_RESUME, because it uses it as a one-shot signal to pop
+// to Normal once per decoy launch. So the unlock decision must never
+// read the old flag. The new flag is set/cleared only by the Service
+// and by NormalCalculatorScreen - NavGraph never touches it - and
+// isLiveDecoy() also requires the block to be less than 10 min old.
+// The old flag is left exactly as it was, so NavGraph's one-shot
+// pop-to-Normal keeps working.
+// replace your old AppLockManager.kt with this file. Only change
+// vs LOCK-ON-EXIT: setPending() now also stores the time the block
+// was set (KEY_PENDING_AT), and getPendingSetAt() reads it, so the
+// Service can clear a block abandoned long ago. Everything else
+// below is unchanged.
 // LOCK-ON-EXIT VERSION - replace your old AppLockManager.kt with this file.
 // Based on FIXED2 (session lastSeen + decoy flag + restricted-settings
 // helpers, all unchanged). Only change: the timer is GONE.
@@ -33,12 +51,14 @@ object AppLockManager {
     private const val KEY_ENABLED = "app_lock_enabled"
     private const val KEY_LOCKED = "locked_packages"
     private const val KEY_PENDING = "pending_package"
+    private const val KEY_PENDING_AT = "pending_package_set_at"
     private const val KEY_SESSION_PKG = "unlocked_session_package"
     private const val KEY_SESSION_STARTED_AT = "unlocked_session_started_at"
     private const val KEY_SESSION_LAST_SEEN = "unlocked_session_last_seen"
     private const val KEY_CALNYX_INTERVENED = "calnyx_intervened"
     private const val KEY_LAST_FOREGROUND = "last_foreground_package"
     private const val KEY_DECOY_LAUNCH = "calnyx_decoy_launch"
+    private const val KEY_DECOY_ACTIVE = "decoy_active"
 
     private fun prefs(context: Context) =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -55,6 +75,7 @@ object AppLockManager {
             edit.remove(KEY_CALNYX_INTERVENED)
             edit.remove(KEY_LAST_FOREGROUND)
             edit.remove(KEY_DECOY_LAUNCH)
+            edit.remove(KEY_DECOY_ACTIVE)
         }
         edit.apply()
     }
@@ -81,6 +102,41 @@ object AppLockManager {
         prefs(context).edit().remove(KEY_DECOY_LAUNCH).apply()
     }
 
+    // FIX4: the LIVE-decoy flag. Set by the Service at BLOCK, cleared
+    // only by the Service (abandon / screen off / stale / manual
+    // open) and by NormalCalculatorScreen (Back on decoy, successful
+    // unlock, stale cleanup). NavGraph NEVER touches this flag - it
+    // only ever reads/clears the OLD decoy-launch flag, which it
+    // consumes on every ON_RESUME to pop to Normal once per decoy
+    // launch. That consumption is exactly why the old flag read
+    // false at "=" time in the debug Toast while pending was intact.
+    fun setDecoyActive(context: Context, value: Boolean) {
+        prefs(context).edit().putBoolean(KEY_DECOY_ACTIVE, value).apply()
+    }
+
+    fun isDecoyActive(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_DECOY_ACTIVE, false)
+
+    fun clearDecoyActive(context: Context) {
+        prefs(context).edit().remove(KEY_DECOY_ACTIVE).apply()
+    }
+
+    // FIX4: the ONLY check the secret-code handler and the decoy
+    // Back handler should use. A block is live when a pending app
+    // exists, the decoy was launched for it and never abandoned,
+    // and the block is less than 10 minutes old (same stale limit
+    // as sessions - a block abandoned long ago never unlocks).
+    // Deliberately does NOT read isDecoyLaunch(): NavGraph clears
+    // that flag on every resume, so it is always false by the time
+    // the user types the secret.
+    fun isLiveDecoy(context: Context): Boolean {
+        val pending = getPending(context) ?: return false
+        if (!isDecoyActive(context)) return false
+        val setAt = getPendingSetAt(context)
+        if (setAt > 0L && System.currentTimeMillis() - setAt > 10L * 60L * 1000L) return false
+        return true
+    }
+
     fun getLockedPackages(context: Context): Set<String> =
         prefs(context).getStringSet(KEY_LOCKED, emptySet())?.toSet() ?: emptySet()
 
@@ -99,14 +155,27 @@ object AppLockManager {
     fun isLocked(context: Context, packageName: String): Boolean =
         packageName in getLockedPackages(context)
 
+    // STALE-PENDING FIX (2026-11-08): a pending block now carries
+    // the time it was set, so the Service can tell a live decoy
+    // from a block abandoned long ago (service restart / reboot).
+    // Only this timestamp is new; all other behaviour is unchanged.
     fun setPending(context: Context, packageName: String?) {
         val edit = prefs(context).edit()
-        if (packageName == null) edit.remove(KEY_PENDING) else edit.putString(KEY_PENDING, packageName)
+        if (packageName == null) {
+            edit.remove(KEY_PENDING)
+            edit.remove(KEY_PENDING_AT)
+        } else {
+            edit.putString(KEY_PENDING, packageName)
+            edit.putLong(KEY_PENDING_AT, System.currentTimeMillis())
+        }
         edit.apply()
     }
 
     fun getPending(context: Context): String? =
         prefs(context).getString(KEY_PENDING, null)
+
+    fun getPendingSetAt(context: Context): Long =
+        prefs(context).getLong(KEY_PENDING_AT, 0L)
 
     fun clearPending(context: Context) = setPending(context, null)
 
