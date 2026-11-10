@@ -1,4 +1,17 @@
 // NAVBAR % + SCROLLABLE DRAWER VERSION (2026-11-07) - REPLACE NavGraph.kt.
+// REOPEN RULE FIX (2026-11-08, V-REOPEN), base = dev-contact NavGraph:
+//  The saved route only fixed a FRESH start. Minimise + reopen keeps
+//  the live back stack, so Spy (or any tool screen) stayed on top and
+//  its drawer item stayed active - even while recording. Now the
+//  ON_START guard sends ANY non-calculator screen back to the
+//  remembered calculator (Normal, or Scientific / CalTape if that
+//  was the last calculator). A restore effect covers process death
+//  while in front, where the backgrounded flag is false. Spy
+//  RECORDING itself is untouched: the foreground service keeps
+//  recording, only the visible screen resets to the calculator.
+//  Decoy (App Lock) still always lands on Normal, vault privacy
+//  pop still runs first, rotation / picker return are unaffected
+//  (no backgrounded flag is set for them).
 //  Mini/split/floating-e drawer scroll hoto na, karon: (1) drawer width
 //  LocalConfiguration (DEVICE width) * 2/3 chilo - window choto holeo
 //  drawer device-er moto choura hoto, screen-er baire chole jeto;
@@ -414,6 +427,19 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
     val navStateDao = remember { NavStateDatabase.get(context).navStateDao() }
 
     val navController = rememberNavController()
+    // REOPEN RULE (2026-11-08): only Normal / Scientific / CalTape
+    // are remembered. Defined HERE (before the lifecycle observer
+    // below) because the observer and the restore effect both need
+    // it, and the old calculatorRoutes val is declared much later.
+    // The later val just reuses this set.
+    val rememberedCalculatorRoutes = setOf(
+        Screen.Normal.route,
+        Screen.Scientific.route,
+        Screen.CalTape.route
+    )
+    // Scope for the observer's DB read. The drawer `scope` below is
+    // declared after the observer, so it cannot be used here.
+    val navScope = rememberCoroutineScope()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
 
@@ -459,6 +485,37 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
                 route == Screen.AppLock.route
             ) {
                 popToNormal()
+            }
+        }
+        // RETURN-TO-CALCULATOR (2026-11-08): the saved route only
+        // fixes a FRESH start. Minimise + reopen keeps the live
+        // back stack, so Spy (or any tool screen) stayed on top
+        // and its drawer item stayed active. Read the saved
+        // calculator (Normal / Scientific / CalTape) and go there
+        // when the current screen is not one of them. Scientific /
+        // CalTape are left alone - they ARE remembered.
+        val goToSavedCalculator: () -> Unit = {
+            navScope.launch {
+                val saved = try {
+                    navStateDao.observe().first()?.route
+                } catch (_: Exception) {
+                    null
+                }
+                val target =
+                    if (saved != null && saved in rememberedCalculatorRoutes) saved
+                    else Screen.Normal.route
+                val current = navController.currentBackStackEntry?.destination?.route
+                if (current != null && current !in rememberedCalculatorRoutes) {
+                    try {
+                        navController.navigate(target) {
+                            popUpTo(navController.graph.findStartDestination().id) {
+                                inclusive = true
+                            }
+                            launchSingleTop = true
+                        }
+                    } catch (_: Exception) {
+                    }
+                }
             }
         }
         val observer = LifecycleEventObserver { _, event ->
@@ -514,9 +571,9 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
             //   guard pops a stale vault to Normal first), so the
             //   secret-code "=" handler runs with pending intact.
             if (event == Lifecycle.Event.ON_START) {
-                if (wasPrivacyBackgrounded(context) &&
-                    !BlackHolePickerGuard.isPickerOpen()
-                ) {
+                val wasBg = wasPrivacyBackgrounded(context)
+                val pickerOpen = BlackHolePickerGuard.isPickerOpen()
+                if (wasBg && !pickerOpen) {
                     popPrivateToNormal()
                 }
                 // DECOY (2026-11-07): App Lock ekta locked app-e tap
@@ -531,6 +588,14 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
                 // set hoy na, tai tokhon kichu kore na.
                 if (AppLockManager.isDecoyLaunch(context)) {
                     popToNormal()
+                } else if (wasBg && !pickerOpen) {
+                    // REOPEN RULE (2026-11-08): minimised from Spy /
+                    // Converter / any tool screen -> back to the
+                    // remembered calculator (Normal, or Scientific /
+                    // CalTape if that was the last calculator).
+                    // The vault pop above already ran first, and the
+                    // decoy branch above always wins over this one.
+                    goToSavedCalculator()
                 }
                 setPrivacyBackgrounded(context, false)
             }
@@ -705,13 +770,7 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
     // Only these three calculator screens are remembered across
     // close / reopen. A tool screen must NOT be remembered:
     // reopening must land on the Normal calculator.
-    val calculatorRoutes = remember {
-        setOf(
-            Screen.Normal.route,
-            Screen.Scientific.route,
-            Screen.CalTape.route
-        )
-    }
+    val calculatorRoutes = remember { rememberedCalculatorRoutes }
 
     var startRoute by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(Unit) {
@@ -727,6 +786,41 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
                 } else {
                     Screen.Normal.route
                 }
+    }
+
+    // RESTORE FIX (2026-11-08): process death while in front
+    // restores the back stack with the tool screen (Spy etc.) on
+    // top, and the ON_START guard above needs the backgrounded
+    // flag, which is false when the process died while in front.
+    // So on the first composition with a start route, a restored
+    // non-calculator top is sent to the saved calculator as well.
+    // Fresh starts are unaffected: the start destination is already
+    // a calculator route, so this returns at once. Decoy launches
+    // are unaffected too: the decoy branch above already forces
+    // Normal, and the ON_START guard is the one that pops there.
+    LaunchedEffect(startRoute) {
+        startRoute ?: return@LaunchedEffect
+        val restored = navController.currentBackStackEntry?.destination?.route
+                ?: return@LaunchedEffect
+        if (restored in calculatorRoutes) return@LaunchedEffect
+        if (AppLockManager.isDecoyLaunch(context)) return@LaunchedEffect
+        val saved = try {
+            navStateDao.observe().first()?.route
+        } catch (_: Exception) {
+            null
+        }
+        val target =
+                if (saved != null && saved in calculatorRoutes) saved
+                else Screen.Normal.route
+        try {
+            navController.navigate(target) {
+                popUpTo(navController.graph.findStartDestination().id) {
+                    inclusive = true
+                }
+                launchSingleTop = true
+            }
+        } catch (_: Exception) {
+        }
     }
 
     LaunchedEffect(currentRoute) {

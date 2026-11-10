@@ -1,12 +1,14 @@
 package com.calnyx.app.viewmodel
 
 import android.app.Application
+import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.calnyx.app.CalNyxApp
 import com.calnyx.app.data.CalNyxRepository
 import com.calnyx.app.data.HistoryEntity
 import kotlin.math.abs
+import kotlin.math.pow
 import kotlin.math.roundToLong
 import kotlin.random.Random
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -73,6 +75,37 @@ class CalculatorViewModel(application: Application) : AndroidViewModel(applicati
     // The raw Double of the last evaluate() call. calculate()
     // copies it into ansValue.
     private var lastRawResult: Double? = null
+
+    // NTH ROOT (2026-11-08): the root degree the user picks on the
+    // Normal screen (default 3 = cubic root). 2..99, saved in
+    // SharedPreferences so the picked degree survives reopen.
+    // exp4j function: nthroot(3,27) = 3, nthroot(4,16) = 2.
+    // Odd root of a negative number is negative (-27 -> -3);
+    // an even root of a negative number is not real -> NaN.
+    private val rootPrefs =
+            application.getSharedPreferences("calnyx_root", Context.MODE_PRIVATE)
+    private val _rootDegree =
+            MutableStateFlow(rootPrefs.getInt("root_degree", 3).coerceIn(2, 99))
+    val rootDegree: StateFlow<Int> = _rootDegree.asStateFlow()
+
+    fun setRootDegree(n: Int) {
+        val clamped = n.coerceIn(2, 99)
+        _rootDegree.value = clamped
+        rootPrefs.edit().putInt("root_degree", clamped).apply()
+    }
+
+    private val nthRootFunction =
+            object : Exp4jFunction("nthroot", 2) {
+                override fun apply(vararg args: Double): Double {
+                    val n = args[0]
+                    val x = args[1]
+                    if (n == 0.0) return Double.NaN
+                    if (x < 0.0) {
+                        return if (n % 2.0 == 1.0) -((-x).pow(1.0 / n)) else Double.NaN
+                    }
+                    return x.pow(1.0 / n)
+                }
+            }
 
     // Two-argument functions exp4j does not ship with: gcd(12,18), lcm(4,6)
     private val gcdFunction =
@@ -228,6 +261,7 @@ class CalculatorViewModel(application: Application) : AndroidViewModel(applicati
                         "tanh",
                         "log2",
                         "cbrt",
+                        "nthroot",
                         "floor",
                         "ceil",
                         "gcd",
@@ -311,6 +345,7 @@ class CalculatorViewModel(application: Application) : AndroidViewModel(applicati
                                             "e",
                                             "abs",
                                             "∛",
+                                            "NROOT",
                                             "log2",
                                             "floor",
                                             "ceil",
@@ -426,6 +461,24 @@ class CalculatorViewModel(application: Application) : AndroidViewModel(applicati
             "10^" -> insertAtCursor("10^(")
             "√" -> insertAtCursor("sqrt(")
             "∛" -> insertAtCursor("cbrt(")
+            // NROOT: nth root with the picked degree, e.g. degree 4
+            // inserts nthroot(4,  - the user types the number, then
+            // ")". After a number / ")" / "%" / "!" a "x" goes in
+            // first, so 2 + root key = 2*nthroot(4,16) (like Ans).
+            "NROOT" -> {
+                val current = _expression.value
+                val pos = _cursorPosition.value.coerceIn(0, current.length)
+                val before = if (pos > 0) current[pos - 1] else null
+                val prefix =
+                        if (before != null &&
+                                        (before.isDigit() ||
+                                                before == ')' ||
+                                                before == '%' ||
+                                                before == '!')
+                        ) "*"
+                        else ""
+                insertAtCursor(prefix + "nthroot(" + _rootDegree.value + ",")
+            }
             "floor" -> insertAtCursor("floor(")
             "ceil" -> insertAtCursor("ceil(")
             "gcd" -> insertAtCursor("gcd(")
@@ -708,9 +761,18 @@ class CalculatorViewModel(application: Application) : AndroidViewModel(applicati
         }
 
         return try {
-            val built = ExpressionBuilder(expr).variable("Ans").function(gcdFunction).function(lcmFunction).build()
+            val built =
+                    ExpressionBuilder(expr)
+                            .variable("Ans")
+                            .function(gcdFunction)
+                            .function(lcmFunction)
+                            .function(nthRootFunction)
+                            .build()
             built.setVariable("Ans", ansValue)
             val value = built.evaluate()
+            // Not a real number (e.g. even root of a negative
+            // number) -> Error, never "NaN" / "Infinity" on screen.
+            if (value.isNaN() || value.isInfinite()) return null
             lastRawResult = value
             formatResult(value)
         } catch (e: Exception) {

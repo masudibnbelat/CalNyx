@@ -1,4 +1,17 @@
 // % -BASED RESPONSIVE V14 - AYOTAKAR KEY-ER RADIUS BESI (2026-11-07) - REPLACE NormalCalculatorScreen.kt.
+// V15 ROOT + FRACTION (2026-11-08), base = FIX4 file (calnyx-applock-flag-fix/):
+//  (1) NTH ROOT: swipe-down (scientific) mode-te uporer √ key bodle
+//      ⁿ√ hoy (default ³√ = cubic). Tap korle nthroot(n, boshe.
+//      Long-press √ key -> picker: 2..10 tap, ba nijer number
+//      (2..99) type kore Apply. Degree save thake (ViewModel prefs).
+//  (2) 3-ROW DISPLAY: expression line ektu upore + font ektu choto
+//      (portrait 21.7% -> 20% minDim), niche result, tar niche
+//      FRACTION row: decimal answer thakle khata-r moto upore
+//      numerator, majhe dag, niche denominator (1/2, 1/3, 3/2).
+//      Integer / Error / kono kachakachi fraction na thakle row-ta
+//      0 height - layout bodlay na. Sob size ager motoi % -e.
+//  Baki sob FIX4-er motoi: decoy Back, isLiveDecoy unlock, caret,
+//  selection, drawer swipe, History pager - kichu bodlayni.
 //  V13-er ayotakar key thik chilo, kintu radius kom chilo.
 //  V14: radius 20% -> 35% (key-er choto dik-er) - corner aro
 //  gol dekhabe, tobuo ayotakar thakbe. Aro besi chaile (pill
@@ -171,6 +184,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -191,6 +205,8 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.*
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextLayoutResult
@@ -213,6 +229,7 @@ import com.calnyx.app.viewmodel.CalculatorViewModel
 import com.calnyx.app.viewmodel.HistoryViewModel
 import java.text.SimpleDateFormat
 import java.util.*
+import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
@@ -241,6 +258,11 @@ fun NormalCalculatorScreen(
         val history by historyViewModel.history.collectAsState()
         var scientificExpanded by remember { mutableStateOf(false) }
         var pullAccum by remember { mutableFloatStateOf(0f) }
+        // NTH ROOT (V15): degree ViewModel-e save thake (default 3).
+        // Picker khola / custom number-er text - screen state.
+        val rootDegree by viewModel.rootDegree.collectAsState()
+        var showRootPicker by remember { mutableStateOf(false) }
+        var customRootText by remember { mutableStateOf("") }
         val pagerState = rememberPagerState(initialPage = 1, pageCount = { 2 })
         val scope = rememberCoroutineScope()
         val view = LocalView.current
@@ -414,7 +436,7 @@ fun NormalCalculatorScreen(
                 val topSpacerHeight = when {
                         isMiniWindow -> windowH * 0.02f // mini-te 2% height
                         isSmallWindow -> windowH * 0.04f // small-e 4%
-                        else -> windowH * 0.065f // normal 6.5%
+                        else -> windowH * 0.045f // normal 4.5% (V15: 3-row display-er jonno expression ektu upore)
                 }
                 Box(
                 modifier =
@@ -519,9 +541,17 @@ fun NormalCalculatorScreen(
                                 val cornerPct = screenW * 0.07f
                                 // Font %: choto dik-er % (minDim)
                                 // portrait: 78sp / 360 = 21.7%, landscape: 60sp / 360 = 15%
-                                val expressionFontSize = if (isLandscape) (minDim.value * 0.15f * compactFontScale).sp else (minDim.value * 0.217f * compactFontScale).sp
+                                val expressionFontSize = if (isLandscape) (minDim.value * 0.14f * compactFontScale).sp else (minDim.value * 0.20f * compactFontScale).sp // V15: 21.7% -> 20% (3 row-er jonno ektu choto, line upore)
                                 val finalFontSize = if (isLandscape) (minDim.value * 0.178f * compactFontScale).sp else (minDim.value * 0.239f * compactFontScale).sp
                                 val previewFontSize = if (isLandscape) (minDim.value * 0.078f * compactFontScale).sp else (minDim.value * 0.10f * compactFontScale).sp
+                                // FRACTION ROW (V15): choto font (minDim-er 4.8%), height 7% -
+                                // numerator + dag + denominator - ei tuku tei dhore.
+                                val fractionFontSize = if (isLandscape) (minDim.value * 0.042f * compactFontScale).sp else (minDim.value * 0.048f * compactFontScale).sp
+                                val fractionH = when {
+                                        screenH < 380.dp -> screenH * 0.001f
+                                        isMiniWindow -> screenH * 0.045f
+                                        else -> screenH * 0.07f
+                                }
                                 val exprFloor = if (isLandscape) minDim.value * 0.111f else minDim.value * 0.144f
                                 val finalFloor = if (isLandscape) minDim.value * 0.111f else minDim.value * 0.144f
                                 // Caret / handle %: width-er %
@@ -1398,6 +1428,56 @@ drawRoundRect(
                                                                 }
                                                         }
                                                 }
+                                                // FRACTION ROW (V15) - 3rd row: decimal answer
+                                                // thakle khata-r moto vagno (numerator / dag /
+                                                // denominator). Source: "=" -er por final, type
+                                                // korar somoy live preview. Integer / Error /
+                                                // kachakachi fraction na thakle height 0%.
+                                                val fractionSource =
+                                                        finalResult
+                                                                ?: if (expression.isNotEmpty()) result else null
+                                                val fraction =
+                                                        remember(fractionSource) {
+                                                                fractionSource?.let { decimalToFraction(it) }
+                                                        }
+                                                Box(
+                                                        modifier =
+                                                                Modifier.fillMaxWidth()
+                                                                        .height(if (fraction != null) fractionH else screenH * 0f)
+                                                                        .padding(horizontal = padDispH),
+                                                        contentAlignment = Alignment.CenterEnd
+                                                ) {
+                                                        if (fraction != null) {
+                                                                val fracWidth =
+                                                                        (maxOf(fraction.first.length, fraction.second.length) * fractionFontSize.value * 0.62f).dp
+                                                                Column(
+                                                                        horizontalAlignment = Alignment.CenterHorizontally
+                                                                ) {
+                                                                        Text(
+                                                                                text = fraction.first,
+                                                                                fontSize = fractionFontSize,
+                                                                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+                                                                                textAlign = TextAlign.Center,
+                                                                                maxLines = 1,
+                                                                                softWrap = false
+                                                                        )
+                                                                        Box(
+                                                                                modifier =
+                                                                                        Modifier.width(fracWidth)
+                                                                                                .height(1.dp)
+                                                                                                .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f))
+                                                                        )
+                                                                        Text(
+                                                                                text = fraction.second,
+                                                                                fontSize = fractionFontSize,
+                                                                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+                                                                                textAlign = TextAlign.Center,
+                                                                                maxLines = 1,
+                                                                                softWrap = false
+                                                                        )
+                                                                }
+                                                        }
+                                                }
                                                 Spacer(modifier = Modifier.height(bottomSpacerH))
                                                 }
                                 }
@@ -1413,12 +1493,39 @@ val keypadSection: @Composable () -> Unit = {
                                                 horizontalArrangement = Arrangement.spacedBy(gapKeyH),
                                                 verticalAlignment = Alignment.CenterVertically
                                         ) {
-                                                TopRoundKey(
-                                                        rectangular = isCompactWindow,
-                                                        text = "√",
-                                                        fontSize = 37,
+                                                // NTH ROOT (V15): normal mode-e √ (square root),
+                                                // niche swipe (scientific) korle ⁿ√ hoy - degree
+                                                // onujayi ³√ / ⁴√ / ⁵√ ... Tap = nthroot(n,
+                                                // bosano. Long-press = degree picker khola.
+                                                SwapKey(
+                                                        scientificExpanded = scientificExpanded,
                                                         modifier = Modifier.weight(1f).fillMaxHeight(),
-                                                        onClick = { handleKeyLabel("√") }
+                                                        normal = {
+                                                                TopRoundKey(
+                                                                        rectangular = isCompactWindow,
+                                                                        text = "√",
+                                                                        fontSize = 37,
+                                                                        modifier = Modifier.fillMaxSize(),
+                                                                        onClick = { handleKeyLabel("√") },
+                                                                        onLongClick = {
+                                                                                customRootText = rootDegree.toString()
+                                                                                showRootPicker = true
+                                                                        }
+                                                                )
+                                                        },
+                                                        scientific = {
+                                                                TopRoundKey(
+                                                                        rectangular = isCompactWindow,
+                                                                        text = superscriptNumber(rootDegree) + "√",
+                                                                        fontSize = 37,
+                                                                        modifier = Modifier.fillMaxSize(),
+                                                                        onClick = { handleKeyLabel("NROOT") },
+                                                                        onLongClick = {
+                                                                                customRootText = rootDegree.toString()
+                                                                                showRootPicker = true
+                                                                        }
+                                                                )
+                                                        }
                                                 )
                                                 TopRoundKey(
                                                         rectangular = isCompactWindow,
@@ -1746,6 +1853,22 @@ val keypadSection: @Composable () -> Unit = {
                                                 }
                                         }
                         }
+                        // NTH ROOT PICKER (V15): long-press √ key-e khole.
+                        if (showRootPicker) {
+                                RootDegreePickerDialog(
+                                        minDim = minDim,
+                                        screenW = screenW,
+                                        screenH = screenH,
+                                        currentDegree = rootDegree,
+                                        customText = customRootText,
+                                        onCustomTextChange = { customRootText = it.filter { ch -> ch.isDigit() }.take(2) },
+                                        onPick = { n ->
+                                                viewModel.setRootDegree(n)
+                                                showRootPicker = false
+                                        },
+                                        onDismiss = { showRootPicker = false }
+                                )
+                        }
 if (isLandscape) {
                                 Row(modifier = Modifier.fillMaxSize()) {
                                         Column(modifier = Modifier.weight(0.58f).fillMaxHeight()) { keypadSection() }
@@ -1843,6 +1966,7 @@ private fun SwapKey(
         }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun TopRoundKey(
         text: String,
@@ -1850,7 +1974,8 @@ private fun TopRoundKey(
         fontSize: Int = 28,
         bold: Boolean = false,
         rectangular: Boolean = false, // V12: choto window-e ayotakar
-        onClick: () -> Unit
+        onClick: () -> Unit,
+        onLongClick: (() -> Unit)? = null
 ) {
         BoxWithConstraints(
                 modifier = modifier,
@@ -1869,7 +1994,12 @@ private fun TopRoundKey(
                                 sizeModifier
                                         .clip(keyShape)
                                         .background(MaterialTheme.colorScheme.surfaceVariant)
-                                        .clickable(interactionSource = topInteraction, indication = null, onClick = onClick),
+                                        .combinedClickable(
+                                                interactionSource = topInteraction,
+                                                indication = null,
+                                                onClick = onClick,
+                                                onLongClick = onLongClick
+                                        ),
                         contentAlignment = Alignment.Center
                 ) {
                         Text(
@@ -2015,14 +2145,153 @@ private fun isSameDay(a: Calendar, b: Calendar): Boolean {
                 a.get(Calendar.DAY_OF_YEAR) == b.get(Calendar.DAY_OF_YEAR)
 }
 
+
+// NTH ROOT helpers (V15)
+private fun superscriptNumber(n: Int): String {
+        val map = mapOf('0' to '⁰', '1' to '¹', '2' to '²', '3' to '³', '4' to '⁴', '5' to '⁵', '6' to '⁶', '7' to '⁷', '8' to '⁸', '9' to '⁹')
+        return n.toString().map { map[it] ?: it }.joinToString("")
+}
+
+// FRACTION (V15): decimal answer -> kachakachi p/q (khata-r moto).
+// Continued fraction, denominator <= 999, error < 1e-6 (answer
+// 8 decimal-e round kora, tai 1/3, 1/7, 355/113 sob dhore).
+// Integer / 0 / Error / kono kachakachi fraction na thakle null.
+private fun decimalToFraction(raw: String): Pair<String, String>? {
+        val value = raw.replace(",", "").toDoubleOrNull() ?: return null
+        if (value.isNaN() || value.isInfinite() || value == 0.0) return null
+        if (value % 1.0 == 0.0) return null
+        var x = abs(value)
+        val target = abs(value) // x bodle jay (reciprocal), tai tulona asol value-r sathei
+        var numPrev = 0L
+        var denPrev = 1L
+        var num = 1L
+        var den = 0L
+        var iter = 0
+        while (iter++ < 20) {
+                val a = x.toLong()
+                val numNext = a * num + numPrev
+                val denNext = a * den + denPrev
+                if (denNext > 999L) break
+                numPrev = num
+                denPrev = den
+                num = numNext
+                den = denNext
+                if (den == 0L) break
+                if (abs(num.toDouble() / den.toDouble() - target) < 1e-6) {
+                        val sign = if (value < 0) "-" else ""
+                        return sign + num.toString() to den.toString()
+                }
+                val frac = x - a
+                if (frac < 1e-12) break
+                x = 1.0 / frac
+        }
+        return null
+}
+
+// NTH ROOT PICKER (V15): degree bechhe neoa. Chip-e tap korlei
+// set hoye jay; nijer number (2..99) type kore Apply chaple
+// set hoy. Sob size % -e (minDim / screenW / screenH).
+@Composable
+private fun RootDegreePickerDialog(
+        minDim: Dp,
+        screenW: Dp,
+        screenH: Dp,
+        currentDegree: Int,
+        customText: String,
+        onCustomTextChange: (String) -> Unit,
+        onPick: (Int) -> Unit,
+        onDismiss: () -> Unit
+) {
+        Dialog(onDismissRequest = onDismiss) {
+                Surface(
+                        modifier = Modifier.width(screenW * 0.84f),
+                        shape = RoundedCornerShape(minDim * 0.05f),
+                        color = MaterialTheme.colorScheme.surface
+                ) {
+                        Column(
+                                modifier = Modifier.padding(horizontal = screenW * 0.05f, vertical = screenH * 0.02f),
+                                verticalArrangement = Arrangement.spacedBy(screenH * 0.012f)
+                        ) {
+                                Text(
+                                        text = "Root degree",
+                                        fontSize = (minDim.value * 0.055f).sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                        text = "Tap a number, or type your own (2-99). Long-press the √ key to open this again.",
+                                        fontSize = (minDim.value * 0.038f).sp,
+                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f)
+                                )
+                                for (row in listOf(listOf(2, 3, 4, 5, 6), listOf(7, 8, 9, 10))) {
+                                        Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.spacedBy(screenW * 0.02f)
+                                        ) {
+                                                for (n in row) {
+                                                        val selected = n == currentDegree
+                                                        Box(
+                                                                modifier =
+                                                                        Modifier.weight(1f)
+                                                                                .height(screenH * 0.06f)
+                                                                                .clip(RoundedCornerShape(minDim * 0.03f))
+                                                                                .background(if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.surfaceVariant)
+                                                                                .clickable { onPick(n) },
+                                                                contentAlignment = Alignment.Center
+                                                        ) {
+                                                                Text(
+                                                                        text = n.toString(),
+                                                                        fontSize = (minDim.value * 0.05f).sp,
+                                                                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                                                                        color = if (selected) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.onSurface
+                                                                )
+                                                        }
+                                                }
+                                                if (row.size < 5) Spacer(modifier = Modifier.weight(1f))
+                                        }
+                                }
+                                OutlinedTextField(
+                                        value = customText,
+                                        onValueChange = onCustomTextChange,
+                                        label = { Text("Custom (2-99)", fontSize = (minDim.value * 0.038f).sp) },
+                                        singleLine = true,
+                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                        textStyle = androidx.compose.ui.text.TextStyle(fontSize = (minDim.value * 0.048f).sp),
+                                        modifier = Modifier.fillMaxWidth()
+                                )
+                                Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.End
+                                ) {
+                                        TextButton(onClick = onDismiss) {
+                                                Text("Cancel", fontSize = (minDim.value * 0.042f).sp)
+                                        }
+                                        TextButton(
+                                                onClick = {
+                                                        val n = customText.toIntOrNull()
+                                                        if (n != null && n in 2..99) onPick(n)
+                                                }
+                                        ) {
+                                                Text("Apply", fontSize = (minDim.value * 0.042f).sp)
+                                        }
+                                }
+                        }
+                }
+        }
+}
+
 private fun formatForDisplay(raw: String): String {
         var display =
                 raw.replace("sqrt(", "√(")
+                        .replace("cbrt(", "∛(")
                         .replace("log10(", "log(")
                         .replace("pi", "π")
                         .replace("*", "×")
                         .replace("/", "÷")
                         .replace("-", "−")
+        display = Regex("nthroot\\((\\d+),").replace(display) { m ->
+                superscriptNumber(m.groupValues[1].toIntOrNull() ?: 3) + "√("
+        }
         return display.replace(Regex("\\d+(\\.\\d+)?")) { match ->
                 val parts = match.value.split(".")
                 val grouped = parts[0].reversed().chunked(3).joinToString(",").reversed()
@@ -2052,6 +2321,21 @@ private fun formatWithMap(raw: String): FormattedExpression {
         var i = 0
         while (i < raw.length) {
                 when {
+                        raw.startsWith("nthroot(", i) -> {
+                                val comma = raw.indexOf(',', i)
+                                if (comma > 0) {
+                                        val n = raw.substring(i + 8, comma).toIntOrNull() ?: 3
+                                        emit(superscriptNumber(n) + "√(", i, comma + 1)
+                                        i = comma + 1
+                                } else {
+                                        emit(raw[i].toString(), i, i + 1)
+                                        i += 1
+                                }
+                        }
+                        raw.startsWith("cbrt(", i) -> {
+                                emit("∛(", i, i + 5)
+                                i += 5
+                        }
                         raw.startsWith("sqrt(", i) -> {
                                 emit("√(", i, i + 5)
                                 i += 5
