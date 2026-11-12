@@ -1,5 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- FILE: app/src/main/AndroidManifest.xml -->
+<!-- LAUNCHER VERSION (2026-11-12) - replace your old AndroidManifest.xml with this. -->
+<!-- Based on CLIPBOARD VERSION (the full manifest you pasted 2026-11-12). -->
+<!-- ONLY Launcher change, everything else byte-identical: -->
+<!-- 1. NEW activity .launcher.LauncherActivity (exported=true, -->
+<!--    launchMode="singleTask") with MAIN + HOME + DEFAULT filter, -->
+<!--    so CalNyx can be set as the default Home app. -->
+<!-- 2. NO new permission, NO new <queries> block - the existing -->
+<!--    <queries> MAIN + LAUNCHER intent already covers the launcher -->
+<!--    app list, so it is NOT added again. -->
+<!-- 3. MainActivity keeps its MAIN + LAUNCHER filter as-is, so the -->
+<!--    CalNyx icon still shows in its own launcher. -->
 <!-- CLIPBOARD VERSION - replace your old AndroidManifest.xml with this. -->
 <!-- Based on BLUEFILM-CAMERA (the full manifest you pasted 2026-11-06). -->
 <!-- ONLY Clipboard changes, everything else byte-identical: -->
@@ -144,6 +155,21 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- Launcher (NEW 2026-11-12): CalNyx home screen, no app drawer.
+             HOME filter, so the user can set CalNyx as the default Home app.
+             MainActivity keeps its LAUNCHER filter, so the CalNyx icon
+             still shows in its own launcher list. -->
+        <activity
+            android:name=".launcher.LauncherActivity"
+            android:exported="true"
+            android:launchMode="singleTask">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.HOME" />
+                <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
 
