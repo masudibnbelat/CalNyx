@@ -27,6 +27,7 @@ import android.graphics.PointF
 import android.util.TypedValue
 import android.view.MotionEvent
 import android.view.View
+import androidx.compose.ui.graphics.toArgb
 import com.calnyx.app.ui.theme.CalNyxRed
 
 enum class DrawTool {
