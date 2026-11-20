@@ -10,13 +10,16 @@
 // listVideosInFolder() + folderCount() (disk I/O) for every
 // folder on every recomposition, including the 500 ms
 // recording-timer ticks. No logic / colour / % change otherwise.
-// SCREEN RECORD (2026-11-20) - REPLACE. Adds a Mode toggle
-// (Camera / Screen) in Settings: Screen records the whole
-// screen via MediaProjection (ScreenRecordService), with the
-// same Mic + Quality settings. The floating ball stays during
-// a screen recording and opens the recording toolbar (pen /
-// circle / square / triangle / clear / stop). Camera recording
-// is unchanged.
+// SCREEN RECORD (2026-11-20) - REPLACE. Settings has ONE
+// "Record" section with three buttons: Back camera, Front
+// camera, Screen Record (screen = the whole screen via
+// MediaProjection, ScreenRecordService, same Mic + Quality).
+// Only ONE of the three is ever active. The floating ball
+// stays during a screen recording and opens the recording
+// toolbar (pen / circle / square / triangle / clear / stop).
+// Camera recording is unchanged.
+// (The separate Mode section is gone - it left a camera
+// button highlighted even in Screen mode, which was wrong.)
 // THEME VARIABLES VERSION (2026-11-20) - colours only, no logic /
 // design / text change: every colour in this file now comes from
 // the theme (Color.kt) through MaterialTheme.colorScheme - nothing
@@ -621,54 +624,22 @@ fun BlueFilmScreen(
                     verticalArrangement = Arrangement.spacedBy(gap)
                 ) {
                     Text("Settings", fontWeight = FontWeight.Bold, fontSize = fSection, color = primary)
-                    // SCREEN RECORD (2026-11-20): Camera = front /
-                    // back camera video (as before); Screen = the
-                    // whole screen, with the floating ball as the
-                    // tools button (pen / shapes / clear / stop)
-                    // while it records. Mic + Quality below apply
-                    // to both modes.
-                    Text("Mode", fontWeight = FontWeight.SemiBold, fontSize = fBody, color = primary)
+                    // RECORD (2026-11-20): ONE section, three
+                    // buttons - Back camera, Front camera, Screen
+                    // Record. Only one is ever active: a camera
+                    // button counts only when the mode is camera,
+                    // Screen counts only when the mode is screen.
+                    // Mic + Quality below apply to all three.
+                    Text("Record", fontWeight = FontWeight.SemiBold, fontSize = fBody, color = primary)
                     Row(modifier = Modifier.fillMaxWidth()) {
                         Box(
                             modifier = Modifier.weight(1f)
                                 .clip(RoundedCornerShape(cornerBtn))
-                                .background(if (recordMode == "camera") buttonBg else cardBg)
+                                .background(if (recordMode == "camera" && facing == CameraCharacteristics.LENS_FACING_BACK) buttonBg else cardBg)
                                 .border(1.dp, cardBorder, RoundedCornerShape(cornerBtn))
                                 .clickable(enabled = !isRecording && !isStarting) {
                                     recordMode = "camera"
                                     ScreenRecordService.saveMode(context, "camera")
-                                }
-                                .padding(vertical = padY),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text("Camera", fontWeight = FontWeight.SemiBold, fontSize = fBody,
-                                color = if (recordMode == "camera") buttonText else primary)
-                        }
-                        Spacer(modifier = Modifier.width(screenW * 0.02f))
-                        Box(
-                            modifier = Modifier.weight(1f)
-                                .clip(RoundedCornerShape(cornerBtn))
-                                .background(if (recordMode == "screen") buttonBg else cardBg)
-                                .border(1.dp, cardBorder, RoundedCornerShape(cornerBtn))
-                                .clickable(enabled = !isRecording && !isStarting) {
-                                    recordMode = "screen"
-                                    ScreenRecordService.saveMode(context, "screen")
-                                }
-                                .padding(vertical = padY),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text("Screen", fontWeight = FontWeight.SemiBold, fontSize = fBody,
-                                color = if (recordMode == "screen") buttonText else primary)
-                        }
-                    }
-                    Text("Camera", fontWeight = FontWeight.SemiBold, fontSize = fBody, color = primary)
-                    Row(modifier = Modifier.fillMaxWidth()) {
-                        Box(
-                            modifier = Modifier.weight(1f)
-                                .clip(RoundedCornerShape(cornerBtn))
-                                .background(if (facing == CameraCharacteristics.LENS_FACING_BACK) buttonBg else cardBg)
-                                .border(1.dp, cardBorder, RoundedCornerShape(cornerBtn))
-                                .clickable(enabled = recordMode == "camera" && !isRecording && !isStarting) {
                                     facing = CameraCharacteristics.LENS_FACING_BACK
                                     BlueFilmService.saveFacing(context, facing)
                                 }
@@ -676,15 +647,17 @@ fun BlueFilmScreen(
                             contentAlignment = Alignment.Center
                         ) {
                             Text("Back camera", fontWeight = FontWeight.SemiBold, fontSize = fBody,
-                                color = if (facing == CameraCharacteristics.LENS_FACING_BACK) buttonText else primary)
+                                color = if (recordMode == "camera" && facing == CameraCharacteristics.LENS_FACING_BACK) buttonText else primary)
                         }
                         Spacer(modifier = Modifier.width(screenW * 0.02f))
                         Box(
                             modifier = Modifier.weight(1f)
                                 .clip(RoundedCornerShape(cornerBtn))
-                                .background(if (facing == CameraCharacteristics.LENS_FACING_FRONT) buttonBg else cardBg)
+                                .background(if (recordMode == "camera" && facing == CameraCharacteristics.LENS_FACING_FRONT) buttonBg else cardBg)
                                 .border(1.dp, cardBorder, RoundedCornerShape(cornerBtn))
-                                .clickable(enabled = recordMode == "camera" && !isRecording && !isStarting) {
+                                .clickable(enabled = !isRecording && !isStarting) {
+                                    recordMode = "camera"
+                                    ScreenRecordService.saveMode(context, "camera")
                                     facing = CameraCharacteristics.LENS_FACING_FRONT
                                     BlueFilmService.saveFacing(context, facing)
                                 }
@@ -692,8 +665,23 @@ fun BlueFilmScreen(
                             contentAlignment = Alignment.Center
                         ) {
                             Text("Front camera", fontWeight = FontWeight.SemiBold, fontSize = fBody,
-                                color = if (facing == CameraCharacteristics.LENS_FACING_FRONT) buttonText else primary)
+                                color = if (recordMode == "camera" && facing == CameraCharacteristics.LENS_FACING_FRONT) buttonText else primary)
                         }
+                    }
+                    Box(
+                        modifier = Modifier.fillMaxWidth()
+                            .clip(RoundedCornerShape(cornerBtn))
+                            .background(if (recordMode == "screen") buttonBg else cardBg)
+                            .border(1.dp, cardBorder, RoundedCornerShape(cornerBtn))
+                            .clickable(enabled = !isRecording && !isStarting) {
+                                recordMode = "screen"
+                                ScreenRecordService.saveMode(context, "screen")
+                            }
+                            .padding(vertical = padY),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("Screen Record", fontWeight = FontWeight.SemiBold, fontSize = fBody,
+                            color = if (recordMode == "screen") buttonText else primary)
                     }
                     Text("Quality", fontWeight = FontWeight.SemiBold, fontSize = fBody, color = primary)
                     Row(modifier = Modifier.fillMaxWidth()) {

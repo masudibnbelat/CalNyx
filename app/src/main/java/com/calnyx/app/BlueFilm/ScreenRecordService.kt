@@ -11,11 +11,18 @@
 //    camera), 720p / 1080p from the same Settings. Files save
 //    to the same Blue Film folders, "SR_" prefix, plain .mp4.
 //  - While recording, a transparent full-screen overlay shows
-//    the marks (ScreenDrawView: pen / circle / rectangle /
-//    triangle, red). The overlay is NOT touchable by default,
-//    so the phone works normally under it; picking a tool in
-//    the toolbar makes it touchable until the tool is picked
-//    again or the ball is tapped.
+//    the marks (ScreenDrawView: pen / circle / rectangle, red,
+//    plus emoji stickers). The overlay is NOT touchable by
+//    default, so the phone works normally under it - a video
+//    playing underneath keeps playing, and no tap reaches it.
+//    Picking a tool in the toolbar makes it touchable until
+//    the tool is picked again, cleared, or the ball is tapped:
+//    while a tool is active the overlay eats EVERY touch, so
+//    nothing underneath reacts - only the mark lands.
+//  - The overlay is a View, so it is created on the MAIN
+//    thread (the recorder itself runs on a background thread).
+//    Adding it from the background thread could swallow
+//    touches - that was the pen not drawing.
 //  - The floating ball STAYS during recording and opens the
 //    recording toolbar (ScreenRecordToolbarActivity) while a
 //    recording runs. If the ball is OFF, a small white mini
@@ -71,6 +78,7 @@ class ScreenRecordService : Service() {
         private const val ACTION_SET_TOOL = "com.calnyx.app.bluefilm.SCREEN_SET_TOOL"
         private const val ACTION_CLEAR_MARKS = "com.calnyx.app.bluefilm.SCREEN_CLEAR_MARKS"
         private const val ACTION_SET_DRAW_MODE = "com.calnyx.app.bluefilm.SCREEN_SET_DRAW_MODE"
+        private const val ACTION_SET_EMOJI = "com.calnyx.app.bluefilm.SCREEN_SET_EMOJI"
         private const val PREFS = "bluefilm_prefs"
         private const val KEY_MODE = "record_mode"
         private const val NOTIF_ID = 2002
@@ -90,6 +98,12 @@ class ScreenRecordService : Service() {
 
         @Volatile
         var currentTool: DrawTool = DrawTool.NONE
+            private set
+
+        // The emoji picked in the toolbar, stamped by the EMOJI
+        // tool. Kept while the recording runs.
+        @Volatile
+        var currentEmoji: String = "⭐"
             private set
 
         // Recording mode: "camera" (default) or "screen".
@@ -146,6 +160,19 @@ class ScreenRecordService : Service() {
             }
         }
 
+        // Remember the picked emoji for the stamp tool.
+        fun setEmoji(context: Context, emoji: String) {
+            currentEmoji = emoji
+            val intent = Intent(context, ScreenRecordService::class.java).apply {
+                action = ACTION_SET_EMOJI
+                putExtra("emoji", emoji)
+            }
+            try {
+                context.startService(intent)
+            } catch (_: Exception) {
+            }
+        }
+
         // Drawing on / off without changing the picked tool.
         // The ball tap calls this with false BEFORE opening the
         // toolbar, or the touchable overlay would sit above the
@@ -192,6 +219,12 @@ class ScreenRecordService : Service() {
     private var isStopping: Boolean = false
     private var recordThread: HandlerThread? = null
     private var recordHandler: Handler? = null
+    // Overlay windows are Views - they belong on the MAIN
+    // thread. The recorder setup runs on a background thread,
+    // so overlay work is posted here. (A View added from a
+    // background thread can swallow touches - this was the
+    // pen not drawing.)
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     // Draw overlay: full-screen transparent window + the view.
     private var windowManager: WindowManager? = null
@@ -222,7 +255,7 @@ class ScreenRecordService : Service() {
                 startRecording(intent)
                 return START_NOT_STICKY
             }
-            ACTION_SET_TOOL, ACTION_CLEAR_MARKS, ACTION_SET_DRAW_MODE -> {
+            ACTION_SET_TOOL, ACTION_CLEAR_MARKS, ACTION_SET_DRAW_MODE, ACTION_SET_EMOJI -> {
                 // Tool intents only make sense while recording.
                 // If the service is not running, do not linger.
                 if (!isRecording && !isStarting) {
@@ -243,6 +276,10 @@ class ScreenRecordService : Service() {
                     ACTION_CLEAR_MARKS -> drawView?.clearMarks()
                     ACTION_SET_DRAW_MODE ->
                         setOverlayTouchable(intent.getBooleanExtra("enabled", false))
+                    ACTION_SET_EMOJI -> {
+                        currentEmoji = intent.getStringExtra("emoji") ?: currentEmoji
+                        drawView?.stampText = currentEmoji
+                    }
                 }
                 return START_NOT_STICKY
             }
@@ -391,13 +428,16 @@ class ScreenRecordService : Service() {
             isStarting = false
             isRecording = true
             startedAtMillis = System.currentTimeMillis()
-            addDrawOverlay()
-            maybeShowMiniBall()
-            // The ball must stay tappable while drawing: it was
-            // added before the overlay, so bring it above it.
-            try {
-                FloatingBallService.bringToFront(this)
-            } catch (_: Exception) {
+            // Overlay windows are main-thread work - post them.
+            // The ball is brought above the overlay so it stays
+            // tappable while drawing.
+            mainHandler.post {
+                addDrawOverlay()
+                maybeShowMiniBall()
+                try {
+                    FloatingBallService.bringToFront(this)
+                } catch (_: Exception) {
+                }
             }
         } catch (_: Exception) {
             isStarting = false
@@ -409,12 +449,17 @@ class ScreenRecordService : Service() {
     // The draw overlay: full-screen, transparent, NOT touchable
     // by default (the phone works normally under it). Picking a
     // tool makes it touchable - see setOverlayTouchable.
+    // Runs on the MAIN thread only (see mainHandler).
     private fun addDrawOverlay() {
         if (overlayView != null) return
         if (!FloatingBallService.canDrawOverlays(this)) return
         val wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         windowManager = wm
         val view = ScreenDrawView(this)
+        // A tool picked before the overlay existed is not lost:
+        // the new view starts with the current tool + emoji.
+        view.tool = currentTool
+        view.stampText = currentEmoji
         drawView = view
         val container = FrameLayout(this)
         container.addView(
@@ -449,7 +494,12 @@ class ScreenRecordService : Service() {
             overlayView = null
             overlayParams = null
             drawView = null
+            return
         }
+        // A tool was already active when the overlay appeared:
+        // make it touchable at once, or the first taps would
+        // fall through to the app below.
+        if (currentTool != DrawTool.NONE) setOverlayTouchable(true)
     }
 
     private fun setOverlayTouchable(touchable: Boolean) {

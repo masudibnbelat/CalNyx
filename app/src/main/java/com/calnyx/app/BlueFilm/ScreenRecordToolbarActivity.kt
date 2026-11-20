@@ -7,11 +7,13 @@
 // background or Back to close - the recording keeps running.
 //
 // Tools (icon + label, % sizes, theme colours):
-//   Pen (freehand), Circle, Rectangle, Triangle, Clear, Stop.
-// Tapping a tool selects it AND closes the panel, so the user
-// can draw at once; tapping the active tool again turns it off.
-// Clear wipes all marks and KEEPS the panel open (clear, then
-// pick the next tool). Stop ends the recording and closes.
+//   Pen (freehand), Circle, Rectangle, Emoji (stickers),
+//   Clear, Stop. Tapping a tool selects it AND closes the
+//   panel, so the user can draw at once; tapping the active
+//   tool again turns it off. Emoji opens a sticker picker
+//   first - tapping a sticker selects it and closes. Clear
+//   wipes all marks AND turns the tool off, so the screen is
+//   normal again. Stop ends the recording and closes.
 // The header shows a red dot + the elapsed time (1 / sec); if
 // the recording ends elsewhere, the panel closes itself.
 package com.calnyx.app.BlueFilm
@@ -35,10 +37,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ChangeHistory
-import androidx.compose.material.icons.filled.CropSquare
+import androidx.compose.material.icons.filled.CropLandscape
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.EmojiEmotions
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Card
@@ -69,6 +71,14 @@ class ScreenRecordToolbarActivity : ComponentActivity() {
 
     private var elapsedSec by mutableStateOf(0L)
     private var activeTool by mutableStateOf(DrawTool.NONE)
+    private var showEmojiPicker by mutableStateOf(false)
+
+    // The stickers the picker offers. One tap stamps it.
+    private val stickers = listOf(
+        "😀", "😂", "😍", "👍",
+        "👏", "❤️", "🔥", "⭐",
+        "🎉", "😮", "😢", "🙏"
+    )
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -158,66 +168,100 @@ class ScreenRecordToolbarActivity : ComponentActivity() {
                                         color = colorScheme.onSurfaceVariant
                                     )
                                 }
-                                // Tools, 3 per row. Same icon-circle
-                                // style as the Hardcore cards: icon in
-                                // a circle, label under it. The active
-                                // tool is filled (inverted).
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(gap)
-                                ) {
-                                    ToolButton(
-                                        label = "Pen",
-                                        icon = Icons.Default.Edit,
-                                        selected = activeTool == DrawTool.PEN,
-                                        minDim = minDim,
-                                        modifier = Modifier.weight(1f),
-                                        onClick = { onToolClick(DrawTool.PEN) }
+                                if (showEmojiPicker) {
+                                    // Sticker picker: tap one to
+                                    // stamp it on the screen.
+                                    Text(
+                                        "Stickers",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = fTitle,
+                                        color = colorScheme.onBackground
                                     )
-                                    ToolButton(
-                                        label = "Circle",
-                                        icon = Icons.Default.RadioButtonUnchecked,
-                                        selected = activeTool == DrawTool.CIRCLE,
-                                        minDim = minDim,
-                                        modifier = Modifier.weight(1f),
-                                        onClick = { onToolClick(DrawTool.CIRCLE) }
+                                    for (row in stickers.chunked(4)) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceEvenly
+                                        ) {
+                                            for (sticker in row) {
+                                                Text(
+                                                    sticker,
+                                                    fontSize = (minDim * 0.1f).value.sp,
+                                                    modifier = Modifier.clickable { onEmojiPicked(sticker) }
+                                                        .padding(minDim * 0.011f)
+                                                )
+                                            }
+                                        }
+                                    }
+                                    Text(
+                                        "‹ Tools",
+                                        fontWeight = FontWeight.SemiBold,
+                                        fontSize = fBody,
+                                        color = colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.clickable { showEmojiPicker = false }
+                                            .padding(vertical = minDim * 0.011f)
                                     )
-                                    ToolButton(
-                                        label = "Square",
-                                        icon = Icons.Default.CropSquare,
-                                        selected = activeTool == DrawTool.RECT,
-                                        minDim = minDim,
-                                        modifier = Modifier.weight(1f),
-                                        onClick = { onToolClick(DrawTool.RECT) }
-                                    )
-                                }
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(gap)
-                                ) {
-                                    ToolButton(
-                                        label = "Triangle",
-                                        icon = Icons.Default.ChangeHistory,
-                                        selected = activeTool == DrawTool.TRIANGLE,
-                                        minDim = minDim,
-                                        modifier = Modifier.weight(1f),
-                                        onClick = { onToolClick(DrawTool.TRIANGLE) }
-                                    )
-                                    ToolButton(
-                                        label = "Clear",
-                                        icon = Icons.Default.DeleteSweep,
-                                        minDim = minDim,
-                                        modifier = Modifier.weight(1f),
-                                        onClick = { onClearClick() }
-                                    )
-                                    ToolButton(
-                                        label = "Stop",
-                                        icon = Icons.Default.Stop,
-                                        danger = true,
-                                        minDim = minDim,
-                                        modifier = Modifier.weight(1f),
-                                        onClick = { onStopClick() }
-                                    )
+                                } else {
+                                    // Tools, 3 per row. Same icon-circle
+                                    // style as the Hardcore cards: icon in
+                                    // a circle, label under it. The active
+                                    // tool is filled (inverted).
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(gap)
+                                    ) {
+                                        ToolButton(
+                                            label = "Pen",
+                                            icon = Icons.Default.Edit,
+                                            selected = activeTool == DrawTool.PEN,
+                                            minDim = minDim,
+                                            modifier = Modifier.weight(1f),
+                                            onClick = { onToolClick(DrawTool.PEN) }
+                                        )
+                                        ToolButton(
+                                            label = "Circle",
+                                            icon = Icons.Default.RadioButtonUnchecked,
+                                            selected = activeTool == DrawTool.CIRCLE,
+                                            minDim = minDim,
+                                            modifier = Modifier.weight(1f),
+                                            onClick = { onToolClick(DrawTool.CIRCLE) }
+                                        )
+                                        ToolButton(
+                                            label = "Rectangle",
+                                            icon = Icons.Default.CropLandscape,
+                                            selected = activeTool == DrawTool.RECT,
+                                            minDim = minDim,
+                                            modifier = Modifier.weight(1f),
+                                            onClick = { onToolClick(DrawTool.RECT) }
+                                        )
+                                    }
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(gap)
+                                    ) {
+                                        ToolButton(
+                                            label = "Emoji",
+                                            icon = Icons.Default.EmojiEmotions,
+                                            selected = activeTool == DrawTool.EMOJI,
+                                            minDim = minDim,
+                                            modifier = Modifier.weight(1f),
+                                            onClick = { onEmojiClick() }
+                                        )
+                                        ToolButton(
+                                            label = "Clear",
+                                            icon = Icons.Default.DeleteSweep,
+                                            minDim = minDim,
+                                            modifier = Modifier.weight(1f),
+                                            onClick = { onClearClick() }
+                                        )
+                                        ToolButton(
+                                            label = "Stop",
+                                            icon = Icons.Default.Stop,
+                                            danger = true,
+                                            minDim = minDim,
+                                            modifier = Modifier.weight(1f),
+                                            onClick = { onStopClick() }
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -239,10 +283,34 @@ class ScreenRecordToolbarActivity : ComponentActivity() {
         finish()
     }
 
-    // Clear wipes every mark. The panel STAYS open - clear,
+    // Emoji button: already active -> turn it off (like the
+    // other tools). Otherwise open the sticker picker.
+    private fun onEmojiClick() {
+        if (ScreenRecordService.currentTool == DrawTool.EMOJI) {
+            ScreenRecordService.setTool(this, DrawTool.NONE)
+            activeTool = DrawTool.NONE
+            finish()
+        } else {
+            showEmojiPicker = true
+        }
+    }
+
+    // A sticker was picked: remember it, arm the stamp tool,
+    // close the panel - tap the screen to stamp it.
+    private fun onEmojiPicked(emoji: String) {
+        ScreenRecordService.setEmoji(this, emoji)
+        ScreenRecordService.setTool(this, DrawTool.EMOJI)
+        activeTool = DrawTool.EMOJI
+        finish()
+    }
+
+    // Clear wipes every mark AND turns the active tool off, so
+    // the screen is normal again. The panel STAYS open - clear,
     // then pick the next tool.
     private fun onClearClick() {
         ScreenRecordService.clearMarks(this)
+        ScreenRecordService.setTool(this, DrawTool.NONE)
+        activeTool = DrawTool.NONE
     }
 
     private fun onStopClick() {

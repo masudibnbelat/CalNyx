@@ -4,18 +4,20 @@
 //
 // The view lives in a transparent full-screen overlay window
 // owned by ScreenRecordService. It draws every mark the user
-// made (pen / circle / rectangle / triangle) in the app's red
-// (CalNyxRed from Color.kt - the "something special" colour),
+// made (pen / circle / rectangle, red, plus emoji stickers),
 // so the marks are visible on any screen content AND in the
 // recorded video, because the overlay itself is recorded.
 //
 // Touch rule: the view only consumes touches while a drawing
 // tool is active. With no tool (DrawTool.NONE) onTouchEvent
 // returns false AND the window carries FLAG_NOT_TOUCHABLE (set
-// by the service), so the phone works normally under it. Shapes
-// get a light translucent fill (so a marked corner is also
-// covered / dimmed) plus the red outline; the pen is a red
-// stroke only. Clear wipes every mark at once.
+// by the service), so the phone works normally under it - a
+// video playing underneath keeps playing, and no tap reaches
+// it. While a tool IS active the overlay eats every touch, so
+// nothing underneath reacts: only the pen / shape / sticker
+// lands. Shapes get a light translucent fill (so a marked
+// corner is also covered / dimmed) plus the red outline; the
+// pen is a red stroke only. Clear wipes every mark at once.
 package com.calnyx.app.BlueFilm
 
 import android.content.Context
@@ -31,7 +33,7 @@ import androidx.compose.ui.graphics.toArgb
 import com.calnyx.app.ui.theme.CalNyxRed
 
 enum class DrawTool {
-    NONE, PEN, CIRCLE, RECT, TRIANGLE
+    NONE, PEN, CIRCLE, RECT, EMOJI
 }
 
 sealed class DrawMark {
@@ -40,7 +42,8 @@ sealed class DrawMark {
     // Shapes: drag from one corner to the opposite one.
     data class Circle(val start: PointF, var end: PointF) : DrawMark()
     data class Rect(val start: PointF, var end: PointF) : DrawMark()
-    data class Triangle(val start: PointF, var end: PointF) : DrawMark()
+    // Emoji sticker: one tap stamps it at that spot.
+    data class Emoji(val position: PointF, val text: String) : DrawMark()
 }
 
 class ScreenDrawView(context: Context) : View(context) {
@@ -48,6 +51,9 @@ class ScreenDrawView(context: Context) : View(context) {
     // The active tool, set by ScreenRecordService. NONE means
     // "not drawing" - touches pass straight through.
     var tool: DrawTool = DrawTool.NONE
+    // The emoji picked in the toolbar, stamped when the EMOJI
+    // tool is active.
+    var stampText: String? = null
 
     private val marks = mutableListOf<DrawMark>()
     private var current: DrawMark? = null
@@ -75,6 +81,13 @@ class ScreenDrawView(context: Context) : View(context) {
         style = Paint.Style.FILL
     }
 
+    // Emoji stickers are drawn as text, in the system's own
+    // colour emoji font - no colour of ours on them.
+    private val emojiPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        textAlign = Paint.Align.CENTER
+        textSize = dp(56f)
+    }
+
     fun clearMarks() {
         marks.clear()
         current = null
@@ -86,12 +99,17 @@ class ScreenDrawView(context: Context) : View(context) {
         val point = PointF(event.x, event.y)
         when (event.action) {
             MotionEvent.ACTION_DOWN -> {
+                // Emoji: one tap stamps one sticker at that spot.
+                if (tool == DrawTool.EMOJI) {
+                    marks.add(DrawMark.Emoji(point, stampText ?: "⭐"))
+                    invalidate()
+                    return true
+                }
                 current = when (tool) {
                     DrawTool.PEN -> DrawMark.Freehand(mutableListOf(point))
                     DrawTool.CIRCLE -> DrawMark.Circle(point, point)
                     DrawTool.RECT -> DrawMark.Rect(point, point)
-                    DrawTool.TRIANGLE -> DrawMark.Triangle(point, point)
-                    DrawTool.NONE -> null
+                    DrawTool.NONE, DrawTool.EMOJI -> null
                 }
                 invalidate()
                 return true
@@ -102,7 +120,7 @@ class ScreenDrawView(context: Context) : View(context) {
                     is DrawMark.Freehand -> mark.points.add(point)
                     is DrawMark.Circle -> mark.end = point
                     is DrawMark.Rect -> mark.end = point
-                    is DrawMark.Triangle -> mark.end = point
+                    is DrawMark.Emoji -> Unit
                 }
                 invalidate()
                 return true
@@ -151,20 +169,15 @@ class ScreenDrawView(context: Context) : View(context) {
                 canvas.drawRect(left, top, right, bottom, fillPaint)
                 canvas.drawRect(left, top, right, bottom, strokePaint)
             }
-            is DrawMark.Triangle -> {
-                // Apex top-centre, base along the bottom edge.
-                val left = minOf(mark.start.x, mark.end.x)
-                val right = maxOf(mark.start.x, mark.end.x)
-                val top = minOf(mark.start.y, mark.end.y)
-                val bottom = maxOf(mark.start.y, mark.end.y)
-                val centreX = (left + right) / 2f
-                val path = Path()
-                path.moveTo(centreX, top)
-                path.lineTo(right, bottom)
-                path.lineTo(left, bottom)
-                path.close()
-                canvas.drawPath(path, fillPaint)
-                canvas.drawPath(path, strokePaint)
+            is DrawMark.Emoji -> {
+                // drawText takes the baseline - lift it so the
+                // emoji sits centred on the tapped spot.
+                canvas.drawText(
+                    mark.text,
+                    mark.position.x,
+                    mark.position.y + emojiPaint.textSize * 0.35f,
+                    emojiPaint
+                )
             }
         }
     }
