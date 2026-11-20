@@ -1,3 +1,15 @@
+// BLUE FILM RENAME + MIC BUTTON + OPTIMIZATION (2026-11-20) -
+// REPLACE. (1) The page is "Blue Film" again (title, "Saved to
+// Blue Film." note, default folder "My Blue Film" in the Store).
+// (2) MICROPHONE BUTTON: a Microphone On/Off toggle in Settings,
+// next to Camera and Quality - the video records with sound
+// only when the toggle is ON and the permission is granted
+// (BlueFilmService.savedMicEnabled). (3) OPTIMIZATION: folder
+// covers + video counts are computed once in refreshAll() and
+// kept in remembered state - the folders grid used to call
+// listVideosInFolder() + folderCount() (disk I/O) for every
+// folder on every recomposition, including the 500 ms
+// recording-timer ticks. No logic / colour / % change otherwise.
 // THEME VARIABLES VERSION (2026-11-20) - colours only, no logic /
 // design / text change: every colour in this file now comes from
 // the theme (Color.kt) through MaterialTheme.colorScheme - nothing
@@ -262,8 +274,19 @@ fun BlueFilmScreen(
     var deleteFile by remember { mutableStateOf<File?>(null) }
     var facing by remember { mutableStateOf(BlueFilmService.savedFacing(context)) }
     var quality by remember { mutableStateOf(BlueFilmService.savedQuality(context)) }
+    // MIC BUTTON (2026-11-20): the user's choice, saved in
+    // SharedPreferences. The video records with sound only
+    // when this is ON and the permission is granted.
+    var micOn by remember { mutableStateOf(BlueFilmService.savedMicEnabled(context)) }
     var showSettings by remember { mutableStateOf(false) }
     var folders by remember { mutableStateOf(BlueFilmStore.listFolders(context)) }
+    // OPTIMIZATION (2026-11-20): folder covers + video counts,
+    // computed once here (first composition) and kept fresh by
+    // refreshAll(). The folders grid reads these instead of
+    // calling listVideosInFolder() + folderCount() (disk I/O)
+    // for every folder on every recomposition.
+    var folderCovers by remember { mutableStateOf<Map<String, File?>>(folders.associateWith { BlueFilmStore.listVideosInFolder(context, it).firstOrNull() }) }
+    var folderCounts by remember { mutableStateOf<Map<String, Int>>(folders.associateWith { BlueFilmStore.folderCount(context, it) }) }
     var currentFolder by remember { mutableStateOf<String?>(null) }
     var videos by remember { mutableStateOf<List<File>>(emptyList()) }
     var newFolderName by remember { mutableStateOf("") }
@@ -290,6 +313,10 @@ fun BlueFilmScreen(
         } else {
             emptyList()
         }
+        // Keep the remembered folder covers + counts in step -
+        // see the OPTIMIZATION note at the state declarations.
+        folderCovers = folders.associateWith { BlueFilmStore.listVideosInFolder(context, it).firstOrNull() }
+        folderCounts = folders.associateWith { BlueFilmStore.folderCount(context, it) }
     }
 
     fun openFolder(folder: String) {
@@ -303,7 +330,7 @@ fun BlueFilmScreen(
         videos = BlueFilmStore.listVideosInFolder(context, folder)
     }
 
-    // MIC: Camera + Microphone are asked together, so a Spy video
+    // MIC: Camera + Microphone are asked together, so a Blue Film video
     // records with sound. If the mic is denied, the video still
     // records - silently - and the note says so, instead of the
     // recording silently having no sound.
@@ -394,7 +421,7 @@ fun BlueFilmScreen(
             } else if (wasRecording) {
                 elapsedSec = 0L
                 refreshAll()
-                note = "Saved to Spy."
+                note = "Saved to Blue Film."
             }
             wasRecording = rec
             delay(500)
@@ -523,7 +550,7 @@ fun BlueFilmScreen(
                 }
                 Spacer(modifier = Modifier.width(screenW * 0.03f))
                 Text(
-                    "Spy",
+                    "Blue Film",
                     fontWeight = FontWeight.Bold,
                     fontSize = fTitle,
                     color = primary,
@@ -610,6 +637,45 @@ fun BlueFilmScreen(
                         ) {
                             Text("1080p", fontWeight = FontWeight.SemiBold, fontSize = fBody,
                                 color = if (quality == 1080) buttonText else primary)
+                        }
+                    }
+                    // MICROPHONE BUTTON (2026-11-20): On = the video
+                    // records WITH sound (when the permission is
+                    // granted); Off = silent video. Same two-box
+                    // style as Camera and Quality, same rule:
+                    // cannot change while a recording runs.
+                    Text("Microphone", fontWeight = FontWeight.SemiBold, fontSize = fBody, color = primary)
+                    Row(modifier = Modifier.fillMaxWidth()) {
+                        Box(
+                            modifier = Modifier.weight(1f)
+                                .clip(RoundedCornerShape(cornerBtn))
+                                .background(if (micOn) buttonBg else cardBg)
+                                .border(1.dp, cardBorder, RoundedCornerShape(cornerBtn))
+                                .clickable(enabled = !isRecording && !isStarting) {
+                                    micOn = true
+                                    BlueFilmService.saveMicEnabled(context, true)
+                                }
+                                .padding(vertical = padY),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("On", fontWeight = FontWeight.SemiBold, fontSize = fBody,
+                                color = if (micOn) buttonText else primary)
+                        }
+                        Spacer(modifier = Modifier.width(screenW * 0.02f))
+                        Box(
+                            modifier = Modifier.weight(1f)
+                                .clip(RoundedCornerShape(cornerBtn))
+                                .background(if (!micOn) buttonBg else cardBg)
+                                .border(1.dp, cardBorder, RoundedCornerShape(cornerBtn))
+                                .clickable(enabled = !isRecording && !isStarting) {
+                                    micOn = false
+                                    BlueFilmService.saveMicEnabled(context, false)
+                                }
+                                .padding(vertical = padY),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("Off", fontWeight = FontWeight.SemiBold, fontSize = fBody,
+                                color = if (!micOn) buttonText else primary)
                         }
                     }
                     Box(
@@ -1023,7 +1089,7 @@ fun BlueFilmScreen(
                         horizontalArrangement = Arrangement.spacedBy(screenW * 0.02f)
                     ) {
                         rowFolders.forEach { folder ->
-                            val first = BlueFilmStore.listVideosInFolder(context, folder).firstOrNull()
+                            val first = folderCovers[folder]
                             val cover = first?.let { thumbBitmaps[BlueFilmStore.displayName(it)] }
                             Column(
                                 modifier = Modifier.weight(1f)
@@ -1071,7 +1137,7 @@ fun BlueFilmScreen(
                                         overflow = TextOverflow.Ellipsis
                                     )
                                     Text(
-                                        "${BlueFilmStore.folderCount(context, folder)} videos",
+                                        "${folderCounts[folder] ?: 0} videos",
                                         fontSize = fCount,
                                         color = secondary,
                                         maxLines = 1

@@ -1,4 +1,15 @@
 // FILE: app/src/main/java/com/calnyx/app/BlueFilm/BlueFilmStore.kt
+// BLUE FILM RENAME + OPTIMIZATION (2026-11-20) - REPLACE.
+//  - RENAME: the page is "Blue Film" again, so the default
+//    folder is "My Blue Film" again. ensureMigrated() moves the
+//    intermediate "My Spy" folder back (only when "My Blue
+//    Film" does not already exist - if both exist, both stay).
+//    The old .bfenc migration below is unchanged.
+//  - OPTIMIZATION: ensureMigrated() now runs at most once per
+//    process lifetime (a @Volatile flag) - listFolders() calls
+//    it on every refresh, and re-scanning the folders each
+//    time was wasted work. The flag resets on process restart
+//    and the migration itself is idempotent, so nothing is lost.
 // PLAIN VERSION (2026-11-06) - REPLACE the old BlueFilmStore.kt.
 // Based on the FOLDERS version. ENCRYPTION IS GONE:
 //  - Recordings are now plain .mp4 files in filesDir/bluefilm/,
@@ -13,12 +24,13 @@
 //  - ONE-TIME MIGRATION (first open after this update):
 //    ensureMigrated() converts old encrypted .bfenc videos to
 //    plain .mp4 with BlueFilmCrypto (decrypt once, delete the
-//    .bfenc on success), and renames the default folder
-//    "My Blue Film" -> "My Spy". A .bfenc that fails to decrypt
+//    .bfenc on success), and moves the intermediate default
+//    folder "My Spy" back to "My Blue Film". A .bfenc that fails
 //    (the old damaged ones) is left alone - it simply does not
 //    list. BlueFilmCrypto.kt STAYS in the project for this one
 //    migration only; no new recording is ever encrypted.
-//  - DEFAULT_FOLDER is now "My Spy" (page renamed Spy).
+//  - DEFAULT_FOLDER is now "My Blue Film" again (page renamed
+//    back to Blue Film).
 //  - Everything else is unchanged: folders, New Folder, Move,
 //    Rename video/folder, Delete video/folder, sizes, dates.
 package com.calnyx.app.BlueFilm
@@ -43,7 +55,7 @@ import java.util.Locale
 object BlueFilmStore {
 
     const val EXT = ".mp4"
-    const val DEFAULT_FOLDER = "My Spy"
+    const val DEFAULT_FOLDER = "My Blue Film"
     private const val DIR = "bluefilm"
 
     fun dir(context: Context): File =
@@ -65,7 +77,9 @@ object BlueFilmStore {
     }
 
     // ONE-TIME MIGRATION, first open after the plain update:
-    //  (1) the default folder "My Blue Film" becomes "My Spy";
+    //  (1) the intermediate default folder "My Spy" moves back
+    //      to "My Blue Film" (only when "My Blue Film" does not
+    //      already exist - if both exist, both stay as they are);
     //  (2) loose root .bfenc files move into the default folder;
     //  (3) every .bfenc video is decrypted ONCE to a plain .mp4
     //      of the same name (via .tmp, then rename) and the
@@ -73,13 +87,22 @@ object BlueFilmStore {
     //  A file that fails to decrypt (old damaged recordings)
     //  is left alone and simply does not list. Nothing here
     //  ever throws: one bad file must not hide the rest.
+    //  OPTIMIZATION (2026-11-20): runs at most once per process
+    //  lifetime - listFolders() calls this on every refresh.
+    //  The flag resets on process restart and the migration is
+    //  idempotent, so a restart simply re-checks.
+    @Volatile
+    private var migrated = false
+
     fun ensureMigrated(context: Context) {
+        if (migrated) return
+        migrated = true
         val root = dir(context)
         try {
-            val oldDefault = File(root, "My Blue Film")
+            val intermediate = File(root, "My Spy")
             val newDefault = File(root, DEFAULT_FOLDER)
-            if (oldDefault.exists() && oldDefault.isDirectory && !newDefault.exists()) {
-                oldDefault.renameTo(newDefault)
+            if (intermediate.exists() && intermediate.isDirectory && !newDefault.exists()) {
+                intermediate.renameTo(newDefault)
             }
         } catch (_: Exception) {}
         val target = folderDir(context, DEFAULT_FOLDER)

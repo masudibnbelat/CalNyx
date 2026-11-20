@@ -1,4 +1,13 @@
 // FILE: app/src/main/java/com/calnyx/app/BlueFilm/BlueFilmService.kt
+// MIC BUTTON + BLUE FILM RENAME (2026-11-20) - REPLACE.
+//  - MIC BUTTON: the microphone can now be turned On/Off from
+//    the Settings card in the Screen. savedMicEnabled() /
+//    saveMicEnabled() keep the choice in SharedPreferences
+//    (default ON - same behaviour as before for existing
+//    users). startRecording() records sound only when the
+//    toggle is ON and RECORD_AUDIO is granted.
+//  - The page is "Blue Film" again - no code change here, the
+//    service never showed the name.
 // PLAIN VERSION (2026-11-06) - REPLACE the old BlueFilmService.kt.
 // Based on V8.2. ONLY change: NO ENCRYPTION on stop any more.
 //  - The recorder still writes a plain .mp4 temp file.
@@ -56,6 +65,7 @@ class BlueFilmService : Service() {
         private const val PREFS = "bluefilm_prefs"
         private const val KEY_FACING = "camera_facing"
         private const val KEY_QUALITY = "video_quality"
+        private const val KEY_MIC = "mic_enabled"
         private const val NOTIF_ID = 2001
         private const val CHANNEL_ID = "bluefilm_rec"
 
@@ -93,6 +103,19 @@ class BlueFilmService : Service() {
         fun saveQuality(context: Context, quality: Int) {
             context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
                 .edit().putInt(KEY_QUALITY, quality).apply()
+        }
+
+        // MIC BUTTON (2026-11-20): the user's On/Off choice from
+        // the Settings card. Default ON, so existing users keep
+        // recording with sound exactly as before.
+        fun savedMicEnabled(context: Context): Boolean {
+            return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .getBoolean(KEY_MIC, true)
+        }
+
+        fun saveMicEnabled(context: Context, enabled: Boolean) {
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .edit().putBoolean(KEY_MIC, enabled).apply()
         }
 
         fun start(context: Context, facing: Int) {
@@ -220,11 +243,13 @@ class BlueFilmService : Service() {
             stopSelf()
             return
         }
-        // MIC: audio only when the permission is granted right
-        // now. The screen asks for Camera + Microphone together;
-        // if the mic was denied, this stays false and the video
-        // records without sound, exactly as before.
-        recordAudio = ContextCompat.checkSelfPermission(
+        // MIC: audio only when the microphone toggle is ON in
+        // Settings (savedMicEnabled) AND the permission is
+        // granted right now. Either one off = the video records
+        // silently, exactly as before. The mic is never opened
+        // without the permission, so a denied mic can never
+        // crash a recording.
+        recordAudio = savedMicEnabled(this) && ContextCompat.checkSelfPermission(
             this, android.Manifest.permission.RECORD_AUDIO
         ) == PackageManager.PERMISSION_GRANTED
         isStarting = true

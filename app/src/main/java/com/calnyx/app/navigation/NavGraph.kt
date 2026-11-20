@@ -359,7 +359,7 @@ sealed class Screen(
                     Icons.Default.SignalCellularAlt
             )
     object BlueFilm :
-            Screen("blue_film", "Spy", "Secret camera recorder", Icons.Default.Videocam)
+            Screen("blue_film", "Blue Film", "Secret camera recorder", Icons.Default.Videocam)
     object Clipboard :
             Screen(
                     "clipboard",
@@ -1616,7 +1616,7 @@ private fun AboutDialog(
                 }
                 // What the app is.
                 Text(
-                        text = "CalNyx is an all-in-one calculator for everyday use \u2014 Normal, Scientific, CalTape, Converter, Number System and ICT \u2014 with a hidden Black Hole vault for private photos, videos, documents and audio, an App Lock, Moan and Hardcore controls, a floating ball, Spy camera recording and a Clipboard history. Everything works offline and stays on this phone.",
+                        text = "CalNyx is an all-in-one calculator for everyday use \u2014 Normal, Scientific, CalTape, Converter, Number System and ICT \u2014 with a hidden Black Hole vault for private photos, videos, documents and audio, an App Lock, Moan and Hardcore controls, a floating ball, Blue Film camera recording and a Clipboard history. Everything works offline and stays on this phone.",
                         fontSize = fBody,
                         color = onPageColor,
                         textAlign = TextAlign.Center
