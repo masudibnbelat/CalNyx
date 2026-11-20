@@ -100,6 +100,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
@@ -657,14 +658,29 @@ private fun FinalWelcomePage(
         // user sees it, then the dissolve runs.
         val fadeProgress = ((progress - 0.15f) / 0.85f).coerceIn(0f, 1f)
 
-        val digitPaint = remember(cellPx, onPageColor) {
-            Paint().apply {
+        // The digits are pre-rendered to tiny bitmaps once (no
+        // nativeCanvas - this project's Compose Canvas has no
+        // nativeCanvas member, so text is drawn off-screen with
+        // plain android Canvas + Paint and the Canvas below just
+        // blits the bitmaps with a per-cell alpha).
+        val digitBitmaps = remember(cellPx, onPageColor) {
+            val size = ceil(cellPx).toInt().coerceAtLeast(1)
+            val paint = Paint().apply {
                 typeface = Typeface.DEFAULT_BOLD
                 isAntiAlias = true
                 textAlign = Paint.Align.CENTER
                 textSize = cellPx * 0.82f
                 color = onPageColor.toArgb()
             }
+            val fm = paint.fontMetrics
+            val baseline = size / 2f - (fm.ascent + fm.descent) / 2f
+            fun makeBitmap(digit: String): ImageBitmap {
+                val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+                val c = Canvas(bmp)
+                c.drawText(digit, size / 2f, baseline, paint)
+                return bmp.asImageBitmap()
+            }
+            mapOf("6" to makeBitmap("6"), "9" to makeBitmap("9"))
         }
         ComposeCanvas(
             modifier = Modifier.size(
@@ -672,9 +688,7 @@ private fun FinalWelcomePage(
                 height = with(density) { grid.heightPx.toDp() }
             )
         ) {
-            val nativeCanvas = drawContext.canvas.nativeCanvas
-            val fm = digitPaint.fontMetrics
-            val baselineShift = (fm.ascent + fm.descent) / 2f
+            val bmpSize = digitBitmaps["6"]?.width?.toFloat() ?: cellPx
             grid.cells.forEach { cell ->
                 val alpha = if (cell.isLetter) {
                     1f
@@ -682,8 +696,12 @@ private fun FinalWelcomePage(
                     1f - ((fadeProgress - cell.delay) / 0.3f).coerceIn(0f, 1f)
                 }
                 if (alpha <= 0.01f) return@forEach
-                digitPaint.alpha = (alpha * 255f).toInt().coerceIn(0, 255)
-                nativeCanvas.drawText(cell.digit, cell.cx, cell.cy - baselineShift, digitPaint)
+                val bmp = digitBitmaps[cell.digit] ?: return@forEach
+                drawImage(
+                    image = bmp,
+                    topLeft = Offset(cell.cx - bmpSize / 2f, cell.cy - bmpSize / 2f),
+                    alpha = alpha
+                )
             }
         }
     }
