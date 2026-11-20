@@ -90,6 +90,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -553,12 +554,12 @@ private fun SizePill(sizeBytes: Long, font: TextUnit, padH: Dp, padV: Dp) {
 private fun PrimaryButton(
     text: String,
     icon: ImageVector,
-    onClick: () -> Unit,
     height: Dp,
     corner: Dp,
     font: TextUnit,
     iconSize: Dp,
-    gap: Dp
+    gap: Dp,
+    onClick: () -> Unit
 ) {
     Box(
         modifier = Modifier
