@@ -1,3 +1,10 @@
+// THEME VARIABLES CHECK (2026-11-20): verified - already fully on
+// MaterialTheme.colorScheme (background / onBackground / surface /
+// surfaceVariant / onSurfaceVariant / outline). Sizes already %
+// (BoxWithConstraints sw/sh/minDim); only 1.dp hairline borders.
+// No code change needed - file verified as-is. The result ticker
+// here (animateFloatAsState, ~0.4s, exact snap at rest) is the
+// reference animation now used in NormalCalculatorScreen too.
 // FILE: app/src/main/java/com/calnyx/app/ui/screens/ConverterCalculatorScreen.kt
 // % VERSION (2026-11-07) - REPLACE. B/W base, logic UNCHANGED.
 // Only change: the last fixed dp/sp are now % (swipe threshold,

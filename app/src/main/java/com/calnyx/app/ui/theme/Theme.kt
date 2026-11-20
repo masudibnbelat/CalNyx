@@ -4,6 +4,14 @@
 // so reopening the app shows the mode the user last picked (light
 // stays light, dark stays dark) instead of falling back to dark.
 // The two colour schemes are unchanged.
+// DARK THEME (2026-11-20): the dark scheme now also wires the
+// surface container tones, so dialogs / sheets / menus that use
+// the theme default get the same 3 greys (#1F1F1F / #333333 /
+// #434343) instead of Material's default dark tones.
+// LIGHT THEME (2026-11-20): the surface / text slots are aligned
+// to the CalNyx B/W design (off-white bg, white cards, near-black
+// text) and the surface containers are wired too, so a screen
+// that reads the theme looks exactly as it did before.
 package com.calnyx.app.ui.theme
 
 import android.app.Activity
@@ -48,6 +56,11 @@ private val LightColorScheme = lightColorScheme(
     surfaceVariant = md_theme_light_surfaceVariant,
     onSurfaceVariant = md_theme_light_onSurfaceVariant,
     outline = md_theme_light_outline,
+    surfaceContainerLowest = md_theme_light_surfaceContainerLowest,
+    surfaceContainerLow = md_theme_light_surfaceContainerLow,
+    surfaceContainer = md_theme_light_surfaceContainer,
+    surfaceContainerHigh = md_theme_light_surfaceContainerHigh,
+    surfaceContainerHighest = md_theme_light_surfaceContainerHighest,
 )
 
 private val DarkColorScheme = darkColorScheme(
@@ -74,6 +87,11 @@ private val DarkColorScheme = darkColorScheme(
     surfaceVariant = md_theme_dark_surfaceVariant,
     onSurfaceVariant = md_theme_dark_onSurfaceVariant,
     outline = md_theme_dark_outline,
+    surfaceContainerLowest = md_theme_dark_surfaceContainerLowest,
+    surfaceContainerLow = md_theme_dark_surfaceContainerLow,
+    surfaceContainer = md_theme_dark_surfaceContainer,
+    surfaceContainerHigh = md_theme_dark_surfaceContainerHigh,
+    surfaceContainerHighest = md_theme_dark_surfaceContainerHighest,
 )
 
 @Composable

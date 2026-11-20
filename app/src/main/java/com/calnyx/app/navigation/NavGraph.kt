@@ -1,3 +1,32 @@
+// NETWORK + THEME VARIABLES VERSION (2026-11-20) - REPLACE NavGraph.kt.
+//  1. NEW Screen.Network ("network", "Network", Icons.Default.SignalCellularAlt),
+//     in menuScreens after Screen.Moan, with its own composable below.
+//     Network is a tool screen (in persistRoutes, NOT in calculatorRoutes),
+//     so reopening saves Normal instead, like every other tool screen.
+//  2. COLOURS: the hardcoded Nav* palette (NavOffWhite / NavOffBlack /
+//     NavCardWhite / NavCardBlack / NavBorder* / NavDrawerEdgeDark /
+//     NavThumb*) is gone - pageBg / cardBg / onPageColor / borders now
+//     come from the theme (Color.kt) through MaterialTheme.colorScheme.
+//     The red drawer badge is CalNyxRed now (same value as NavRed).
+//     The update status colours (green / yellow / red) stay as they
+//     are - they are the user's explicit exception to the B/W rule
+//     (green = up to date, yellow = checking, red = update available).
+//     The drawer scrim stays black, as before.
+//  3. LauncherSettings is NOT in this file any more (removed 2026-11-14,
+//     user decision) - only its old header comment above remains.
+// LAUNCHER SETTINGS VERSION (2026-11-12) - REPLACE NavGraph.kt.
+// NO-ANIMATION FIX (2026-11-12): NavHost transitions removed - Enter/Exit None.
+// The fade+slide transition showed the old screen behind the new one
+// and felt slow. Navigation is now instant. Drawer slide/scrim kept
+// (that is the drawer itself, not a screen transition).
+//  Based on NAVBAR % + SCROLLABLE DRAWER (the full NavGraph pasted 2026-11-12).
+//  ONLY Launcher Settings changes, everything else byte-identical:
+//  1. NEW Screen.LauncherSettings ("launcher_settings", "Launcher", Icons.Default.Home).
+//  2. menuScreens: Screen.LauncherSettings added last, after Screen.Clipboard.
+//  3. NEW NavHost entry composable(Screen.LauncherSettings.route) -> LauncherSettingsScreen(onOpenDrawer = { drawerOpen = true }).
+//  4. NEW imports: Icons.Default.Home and com.calnyx.app.launcher.LauncherSettingsScreen.
+//  Reopen rule unchanged: LauncherSettings is in persistRoutes but NOT in calculatorRoutes,
+//  so reopening saves Normal instead, like every other tool screen.
 // NAVBAR % + SCROLLABLE DRAWER VERSION (2026-11-07) - REPLACE NavGraph.kt.
 // REOPEN RULE FIX (2026-11-08, V-REOPEN), base = dev-contact NavGraph:
 //  The saved route only fixed a FRESH start. Minimise + reopen keeps
@@ -144,6 +173,8 @@
 package com.calnyx.app.navigation
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -180,15 +211,16 @@ import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Functions
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.VolumeUp
-import androidx.compose.material.icons.filled.NoteAlt
 import androidx.compose.material.icons.filled.Numbers
 import androidx.compose.material.icons.filled.ReceiptLong
+import androidx.compose.material.icons.filled.SignalCellularAlt
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.Update
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -265,13 +297,14 @@ import com.calnyx.app.ui.screens.BlueFilmScreen
 import com.calnyx.app.ui.screens.AppLockScreen
 import com.calnyx.app.ui.screens.HardcoreScreen
 import com.calnyx.app.ui.screens.MoanScreen
+import com.calnyx.app.ui.screens.NetworkScreen
+import com.calnyx.app.ui.theme.CalNyxRed
 import com.calnyx.app.ui.screens.CalTapeCalculatorScreen
 import com.calnyx.app.ui.screens.ClipboardScreen
 import com.calnyx.app.ui.screens.ConverterCalculatorScreen
 import com.calnyx.app.ui.screens.HistoryScreen
 import com.calnyx.app.ui.screens.IctCalculatorScreen
 import com.calnyx.app.ui.screens.NormalCalculatorScreen
-import com.calnyx.app.ui.screens.NotepadCalculatorScreen
 import com.calnyx.app.ui.screens.NumberSystemCalculatorScreen
 import com.calnyx.app.ui.screens.ScientificCalculatorScreen
 import com.calnyx.app.ui.screens.BlackHoleScreen
@@ -290,7 +323,6 @@ sealed class Screen(
     object Normal : Screen("normal", "Normal", "Everyday calculator", Icons.Default.Calculate)
     object Scientific :
             Screen("scientific", "Scientific", "Advanced functions", Icons.Default.Functions)
-    object Notepad : Screen("notepad", "Notepad", "Notes with calculations", Icons.Default.NoteAlt)
     object CalTape :
             Screen("caltape", "CalTape", "Tape with sheets & totals", Icons.Default.ReceiptLong)
     object Converter :
@@ -316,9 +348,16 @@ sealed class Screen(
             )
     object History : Screen("history", "History", "Past calculations", Icons.Default.History)
     object Hardcore :
-            Screen("hardcore", "Hardware", "Power, network & ball", Icons.Default.PowerSettingsNew)
+            Screen("hardcore", "Hardcore", "Power & ball", Icons.Default.PowerSettingsNew)
     object Moan :
-            Screen("moan", "Sound", "Sound", Icons.Default.VolumeUp)
+            Screen("moan", "Moan", "Sound", Icons.Default.VolumeUp)
+    object Network :
+            Screen(
+                    "network",
+                    "Network",
+                    "WhatsApp chat & network switcher",
+                    Icons.Default.SignalCellularAlt
+            )
     object BlueFilm :
             Screen("blue_film", "Spy", "Secret camera recorder", Icons.Default.Videocam)
     object Clipboard :
@@ -328,7 +367,6 @@ sealed class Screen(
                     "Copied text & images",
                     Icons.Default.ContentPaste
             )
-
     // Hidden blackhole — menuScreens-এ যোগ করা হয়নি, তাই মেনুতে
     // দেখাবে না। শুধু Normal calculator-এ সিক্রেট হিসাব
     // লিখে = চাপলেই এই রুটে যাওয়া যাবে।
@@ -357,22 +395,19 @@ val menuScreens =
                 Screen.Ict,
                 Screen.Hardcore,
                 Screen.Moan,
+                Screen.Network,
                 Screen.BlueFilm,
                 Screen.Clipboard,
         )
 
-// MODERN palette: only off-white / off-black / grey. No purple, no colour accents.
-private val NavOffWhite = Color(0xFFF6F4EF)
-private val NavOffBlack = Color(0xFF0E0E0E)
-private val NavCardWhite = Color(0xFFFFFFFF)
-private val NavCardBlack = Color(0xFF262626)
-private val NavBorderLight = Color(0xFFE9E6DF)
-private val NavBorderDark = Color(0xFF2B2B2B)
-private val NavDrawerEdgeDark = Color(0xFF3D3D3D)
-private val NavThumbLight = Color(0xFFEFEDE8)
-private val NavThumbDark = Color(0xFF262626)
-// Red is the ONLY extra colour, for specialty only. See header.
-private val NavRed = Color(0xFFC62828)
+// The old MODERN palette (NavOffWhite / NavOffBlack / NavCardWhite /
+// NavCardBlack / NavBorderLight / NavBorderDark / NavDrawerEdgeDark /
+// NavThumbLight / NavThumbDark) is gone - those colours now live in
+// the theme (Color.kt) and are read through MaterialTheme.colorScheme
+// inside the composables below. The red drawer badge is CalNyxRed
+// (same value the old NavRed had). The update status colours
+// (green / yellow / red, below) stay - they are the user's explicit
+// exception to the black/white-only rule.
 
 // Website shown in the About dialog under "Developer Contact"
 // (2026-11-07): the developer email was removed and replaced
@@ -760,10 +795,12 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
         }
     }
 
-    // MODERN colours, derived from darkTheme only.
-    val pageBg = if (darkTheme) NavOffBlack else NavOffWhite
-    val cardBg = if (darkTheme) NavCardBlack else NavCardWhite
-    val onPageColor = if (darkTheme) NavOffWhite else NavOffBlack
+    // All colours come from the theme (Color.kt) - see the note at
+    // the top of this file.
+    val colorScheme = MaterialTheme.colorScheme
+    val pageBg = colorScheme.background
+    val cardBg = colorScheme.surfaceContainer
+    val onPageColor = colorScheme.onBackground
 
     // All menu routes (for detecting a tool screen below).
     val persistRoutes = remember { menuScreens.map { it.route }.toSet() }
@@ -845,7 +882,7 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
         scope.launch {
             // Let the panel slide away before navigating,
             // like ModalNavigationDrawer's close() did.
-            delay(280)
+            delay(0)
             after()
             if (route != null && route != currentRoute) {
                 navController.navigate(route) {
@@ -877,11 +914,11 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
         val drawerWidth = if (isMiniWindow) windowW * 0.85f else windowW * 0.667f
         val drawerOffset by animateDpAsState(
             targetValue = if (drawerOpen) 0.dp else drawerWidth,
-            animationSpec = tween(300), label = "drawerOffset"
+            animationSpec = tween(0), label = "drawerOffset"
         )
         val scrimAlpha by animateFloatAsState(
             targetValue = if (drawerOpen) 0.65f else 0f,
-            animationSpec = tween(280), label = "scrimAlpha"
+            animationSpec = tween(0), label = "scrimAlpha"
         )
         // Drawer % vars - sob drawerWidth / windowH-er %.
         val drawerPadH = drawerWidth * 0.067f // 16dp / 240dp
@@ -911,22 +948,10 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
                     navController = navController,
                     startDestination = start,
                     modifier = Modifier.fillMaxSize(),
-                    enterTransition = {
-                        fadeIn(animationSpec = tween(320)) +
-                                slideInHorizontally(animationSpec = tween(320)) { it / 4 }
-                    },
-                    exitTransition = {
-                        fadeOut(animationSpec = tween(200)) +
-                                slideOutHorizontally(animationSpec = tween(320)) { -it / 6 }
-                    },
-                    popEnterTransition = {
-                        fadeIn(animationSpec = tween(320)) +
-                                slideInHorizontally(animationSpec = tween(320)) { -it / 4 }
-                    },
-                    popExitTransition = {
-                        fadeOut(animationSpec = tween(200)) +
-                                slideOutHorizontally(animationSpec = tween(320)) { it / 6 }
-                    }
+                    enterTransition = { EnterTransition.None },
+                    exitTransition = { ExitTransition.None },
+                    popEnterTransition = { EnterTransition.None },
+                    popExitTransition = { ExitTransition.None }
             ) {
                 composable(Screen.Normal.route) {
                     NormalCalculatorScreen(
@@ -951,9 +976,6 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
                         onToggleTheme = onToggleTheme,
                         onOpenDrawer = { drawerOpen = true }
                     )
-                }
-                composable(Screen.Notepad.route) {
-                    NotepadCalculatorScreen(darkTheme = darkTheme, onToggleTheme = onToggleTheme)
                 }
                 composable(Screen.CalTape.route) {
                     CalTapeCalculatorScreen(
@@ -993,6 +1015,9 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
                 }
                 composable(Screen.Moan.route) {
                     MoanScreen(darkTheme = darkTheme, onOpenDrawer = { drawerOpen = true })
+                }
+                composable(Screen.Network.route) {
+                    NetworkScreen(darkTheme = darkTheme, onOpenDrawer = { drawerOpen = true })
                 }
                 composable(Screen.BlueFilm.route) {
                     BlueFilmScreen(darkTheme = darkTheme, onOpenDrawer = { drawerOpen = true })
@@ -1054,8 +1079,8 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
                                     currentRoute != Screen.BlackHole.route &&
                                     currentRoute != Screen.BlackHoleSetup.route &&
                                     currentRoute != Screen.AppLock.route,
-                    enter = fadeIn(animationSpec = tween(250)),
-                    exit = fadeOut(animationSpec = tween(250))
+                    enter = fadeIn(animationSpec = tween(0)),
+                    exit = fadeOut(animationSpec = tween(0))
             ) {
                 Row(
                         modifier =
@@ -1146,7 +1171,7 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
                         .background(cardBg)
                         .border(
                             drawerBorder,
-                            if (darkTheme) NavDrawerEdgeDark else NavBorderLight
+                            colorScheme.outline
                         )
                         .pointerInput(drawerWidth) {
                             var acc = 0f
@@ -1178,14 +1203,14 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
                                 modifier = Modifier.size(headerCircle)
                                     .shadow(drawerWidth * 0.025f, CircleShape)
                                     .clip(CircleShape)
-                                    .background(if (darkTheme) NavOffWhite else NavOffBlack)
+                                    .background(colorScheme.onSurface)
                                     .clickable { drawerOpen = false; onToggleTheme() },
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(
                                     if (darkTheme) Icons.Default.LightMode else Icons.Default.DarkMode,
                                     contentDescription = "Toggle theme",
-                                    tint = if (darkTheme) NavOffBlack else NavOffWhite,
+                                    tint = colorScheme.surface,
                                     modifier = Modifier.size(headerIcon)
                                 )
                             }
@@ -1201,7 +1226,7 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
                                     Text(
                                         text = "Version $appVersion",
                                         fontSize = drawerVersionFont,
-                                        color = Color.Gray
+                                        color = colorScheme.onSurfaceVariant
                                     )
                                 }
                             }
@@ -1219,7 +1244,7 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
                             }
                         }
                         Spacer(modifier = Modifier.height(drawerGapH))
-                        HorizontalDivider(color = if (darkTheme) NavBorderDark else NavBorderLight)
+                        HorizontalDivider(color = colorScheme.outline)
                         Spacer(modifier = Modifier.height(drawerGapS))
                         // Tools list (SCROLLABLE - V fix): weight(1f) +
                         // verticalScroll, tai mini/split/floating-e list
@@ -1260,14 +1285,14 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
                                             Box(
                                                 modifier = Modifier.size(drawerBadge)
                                                     .clip(CircleShape)
-                                                    .background(NavRed)
+                                                    .background(CalNyxRed)
                                             )
                                         }
                                     },
                                     colors = NavigationDrawerItemDefaults.colors(
-                                        selectedContainerColor = if (darkTheme) NavOffWhite else NavOffBlack,
-                                        selectedIconColor = if (darkTheme) NavOffBlack else NavOffWhite,
-                                        selectedTextColor = if (darkTheme) NavOffBlack else NavOffWhite,
+                                        selectedContainerColor = colorScheme.onSurface,
+                                        selectedIconColor = colorScheme.surface,
+                                        selectedTextColor = colorScheme.surface,
                                         unselectedContainerColor = Color.Transparent,
                                         unselectedIconColor = onPageColor,
                                         unselectedTextColor = onPageColor
@@ -1287,7 +1312,7 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
                         // below. Available: "Update available" red +
                         // old -> new version below, red. Tap always
                         // opens the UpdateDialog.
-                        HorizontalDivider(color = if (darkTheme) NavBorderDark else NavBorderLight)
+                        HorizontalDivider(color = colorScheme.outline)
                         Spacer(modifier = Modifier.height(drawerGapS))
                         NavigationDrawerItem(
                             label = {
@@ -1441,9 +1466,13 @@ private fun AboutDialog(
         onCheckUpdate: () -> Unit
 ) {
     val context = LocalContext.current
-    val cardBg = if (darkTheme) NavCardBlack else NavCardWhite
-    val onPageColor = if (darkTheme) NavOffWhite else NavOffBlack
-    val border = if (darkTheme) NavBorderDark else NavBorderLight
+    // All colours come from the theme (Color.kt) - see the note at
+    // the top of this file. darkTheme is kept only because the
+    // caller passes it; colours no longer depend on it.
+    val colorScheme = MaterialTheme.colorScheme
+    val cardBg = colorScheme.surfaceContainer
+    val onPageColor = colorScheme.onBackground
+    val border = colorScheme.outline
     // % SIZES (2026-11-07): About dialog-e ar kono fixed dp/sp nei -
     // sob screenMin-er %. Normal 360dp phone-e ager motoi dekhabe.
     val dlgCorner = screenMin * 0.067f   // 24dp
@@ -1558,7 +1587,7 @@ private fun AboutDialog(
                     Text(
                             text = "Version $appVersion",
                             fontSize = fSub,
-                            color = Color.Gray
+                            color = colorScheme.onSurfaceVariant
                     )
                 }
                 // Update: opens the existing UpdateDialog.
@@ -1587,7 +1616,7 @@ private fun AboutDialog(
                 }
                 // What the app is.
                 Text(
-                        text = "CalNyx is an all-in-one calculator for everyday use \u2014 Normal, Scientific, CalTape, Converter, Number System, ICT and Notepad \u2014 with a hidden Black Hole vault for private photos, videos, documents and audio, an App Lock, Sound and Hardware controls, a floating ball, Spy camera recording and a Clipboard history. Everything works offline and stays on this phone.",
+                        text = "CalNyx is an all-in-one calculator for everyday use \u2014 Normal, Scientific, CalTape, Converter, Number System and ICT \u2014 with a hidden Black Hole vault for private photos, videos, documents and audio, an App Lock, Moan and Hardcore controls, a floating ball, Spy camera recording and a Clipboard history. Everything works offline and stays on this phone.",
                         fontSize = fBody,
                         color = onPageColor,
                         textAlign = TextAlign.Center
@@ -1634,7 +1663,7 @@ private fun AboutDialog(
                                         permission.description
                                     },
                                     fontSize = fSub,
-                                    color = Color.Gray
+                                    color = colorScheme.onSurfaceVariant
                             )
                         }
                         if (isToggle) {

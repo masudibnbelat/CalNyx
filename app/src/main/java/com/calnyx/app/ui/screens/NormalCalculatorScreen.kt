@@ -143,6 +143,19 @@
 //  Logic ager file-er motoi 100% same: swipe, drawer, History pager,
 //  Ans, E, selection, BlackHole secret, AppLock, pull-down scientific,
 //  landscape split, selection overlay - kichu bodlayni, shudhu size % -e.
+// V17 THEME + RESULT TICKER (2026-11-20):
+//  (1) THEME: file-ta age thekei pray puropuri colorScheme-e chilo -
+//      ekmatro hardcode chilo Error-er lal (0xFFE53935) - ekhon
+//      CalNyxRed variable. Baki sob (key, display, caret, dialog)
+//      age thekei theme variable theke asche, kichu bodlayni.
+//  (2) TICKER (Converter-er moto, scramble-er bodle): "=" chaple
+//      final answer ager answer theke notun answer-er dike gunte
+//      gunte asbe (~0.4s), tarpor exact value-e bosbe. Scramble
+//      (random digit) tule deoa - user Converter-er counting
+//      animation-i cheyechilo. Ticker state screen level-e (hoisted)
+//      - AnimatedContent-er vitore rakhle proti "=" -e state reset
+//      hoye jeto. Live preview-e na, shudhu final answer-e. Copy
+//      button asol answer-i copy kore (display na).
 // FILE: app/src/main/java/com/calnyx/app/ui/screens/NormalCalculatorScreen.kt
 // REPLACE the whole file.
 // DECOY BACK FIX (2026-11-07): Back on the decoy calculator used to
@@ -225,6 +238,7 @@ import android.content.Intent
 import android.app.Activity
 import com.calnyx.app.applock.AppLockManager
 import com.calnyx.app.blackhole.BlackHolePrefs
+import com.calnyx.app.ui.theme.CalNyxRed
 import com.calnyx.app.viewmodel.CalculatorViewModel
 import com.calnyx.app.viewmodel.HistoryViewModel
 import java.text.SimpleDateFormat
@@ -255,6 +269,25 @@ fun NormalCalculatorScreen(
         val cursorPosition by viewModel.cursorPosition.collectAsState()
         val result by viewModel.result.collectAsState()
         val finalResult by viewModel.finalResult.collectAsState()
+        // RESULT TICKER (2026-11-20, V17 - Converter-er moto):
+        // final answer-ta ager answer theke notun answer-er dike
+        // gunte gunte asbe (animateFloatAsState, 400ms), tarpor
+        // exact value-e bosbe. Boro result (>= 1e12) ba non-numeric
+        // result ticker chharai ekbare dekhabe (Converter-er motoi).
+        // lastFinalValue mone rakhe, jate "=" chaple ticker 0 theke
+        // na, ager answer theke gona shuru kore. State-ta screen
+        // level-e (hoisted) - AnimatedContent-er vitore rakhle proti
+        // "=" -e state reset hoye jeto, ar count hoto na.
+        var lastFinalValue by remember { mutableStateOf(0.0) }
+        LaunchedEffect(finalResult) {
+                finalResult?.toDoubleOrNull()?.let { lastFinalValue = it }
+        }
+        val tickerTarget = finalResult?.toDoubleOrNull() ?: lastFinalValue
+        val animatedTicker by animateFloatAsState(
+                targetValue = if (abs(tickerTarget) < 1e12) tickerTarget.toFloat() else 0f,
+                animationSpec = tween(400, easing = FastOutSlowInEasing),
+                label = "resultTicker"
+        )
         val history by historyViewModel.history.collectAsState()
         var scientificExpanded by remember { mutableStateOf(false) }
         var pullAccum by remember { mutableFloatStateOf(0f) }
@@ -600,16 +633,39 @@ Column(
                                                                                 horizontalAlignment =
                                                                                         Alignment.End
                                                                         ) {
-                                                                                val formattedFinal =
+                                                                                // Ticker display: gona cholakalin animated
+                                                                                // value dekhabe, kachakachi ele exact
+                                                                                // final value-e bosbe (Converter-er
+                                                                                // settled check-er moto). Font size final
+                                                                                // answer-er length theke hisab - gona
+                                                                                // cholakalin font bodlay na.
+                                                                                val finalFormatted =
                                                                                         remember(final) {
                                                                                                 formatForDisplay(
                                                                                                         final
                                                                                                 )
                                                                                         }
+                                                                                val tickerRaw = run {
+                                                                                        val target = final.toDoubleOrNull()
+                                                                                        if (target == null || abs(target) >= 1e12) {
+                                                                                                final
+                                                                                        } else {
+                                                                                                val animatedValue = animatedTicker.toDouble()
+                                                                                                val settled = abs(animatedValue - target) <= max(1e-6, abs(target) * 1e-5)
+                                                                                                if (settled) final
+                                                                                                else animatedValue.toString().removeSuffix(".0")
+                                                                                        }
+                                                                                }
+                                                                                val formattedFinal =
+                                                                                        remember(tickerRaw) {
+                                                                                                formatForDisplay(
+                                                                                                        tickerRaw
+                                                                                                )
+                                                                                        }
                                                                                 val adaptiveFinalFontSize =
-                                                                                        remember(formattedFinal) {
+                                                                                        remember(finalFormatted) {
                                                                                                 val excess =
-                                                                                                        (formattedFinal.length - 7)
+                                                                                                        (finalFormatted.length - 7)
                                                                                                                 .coerceAtLeast(0)
                                                                                                 (finalFontSize.value - minDim.value * 0.0055f * excess).coerceAtLeast(finalFloor).sp
                                                                                         }
@@ -1416,7 +1472,7 @@ drawRoundRect(
                                                                                         // ERROR RED (2026-11-07): when
                                                                                         // "=" fails, result is "Error"
                                                                                         // - show it red, not white.
-                                                                                        if (result == "Error") Color(0xFFE53935)
+                                                                                        if (result == "Error") CalNyxRed
                                                                                         else MaterialTheme
                                                                                                 .colorScheme
                                                                                                 .onSurface,
@@ -2393,3 +2449,4 @@ private fun formatWithMap(raw: String): FormattedExpression {
         }
         return FormattedExpression(sb.toString(), fmtToRaw.toIntArray(), rawToFmt)
 }
+

@@ -1,4 +1,16 @@
 // FILE: app/src/main/java/com/calnyx/app/ui/screens/ScientificCalculatorScreen.kt
+// THEME VARIABLES + DEAD-SPACE FIX (2026-11-20) - REPLACE.
+//  (1) COLOURS are now variables: the 12 hardcoded Color(0xFF...)
+//      literals in SciKeyCell moved to Color.kt (SciFunc / SciDigit /
+//      SciPurple / SciAmber / SciRed / SciGreen, dark + light each) -
+//      the design itself is UNCHANGED: Scientific stays the one
+//      screen where colour is allowed (user's explicit exception).
+//      SHIFT-on amber text, AC red, = green - same shades as before.
+//  (2) DEAD SPACE: the keypad put a Spacer AFTER every row, so a
+//      gap sat under the last row too. Now the Column uses
+//      Arrangement.spacedBy(keyGapV) - gaps only BETWEEN rows, the
+//      keypad fills to the bottom. Sizes were already % (V3) -
+//      nothing fixed to change there.
 // REDESIGN V3 % (2026-11-07) - REPLACE. V2 base, logic + colours
 // UNCHANGED. Only change: every size is now a % of the window
 // (BoxWithConstraints: windowW/windowH/minDim). No fixed dp/sp
@@ -71,6 +83,19 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.calnyx.app.ui.theme.SciAmber
+import com.calnyx.app.ui.theme.SciDigitContainerDark
+import com.calnyx.app.ui.theme.SciDigitContainerLight
+import com.calnyx.app.ui.theme.SciFuncContainerDark
+import com.calnyx.app.ui.theme.SciFuncContainerLight
+import com.calnyx.app.ui.theme.SciFuncContentDark
+import com.calnyx.app.ui.theme.SciFuncContentLight
+import com.calnyx.app.ui.theme.SciGreen
+import com.calnyx.app.ui.theme.SciPurpleContainerDark
+import com.calnyx.app.ui.theme.SciPurpleContainerLight
+import com.calnyx.app.ui.theme.SciPurpleContentDark
+import com.calnyx.app.ui.theme.SciPurpleContentLight
+import com.calnyx.app.ui.theme.SciRed
 import com.calnyx.app.viewmodel.CalculatorViewModel
 import com.calnyx.app.viewmodel.HistoryViewModel
 import java.text.SimpleDateFormat
@@ -459,7 +484,12 @@ fun ScientificCalculatorScreen(
         // Keypad — rows share the remaining height, % gaps.
         // No entrance animation any more: the whole keypad is
         // there at once instead of fading in row by row.
-        Column(modifier = Modifier.weight(1f).then(drawerSwipe)) {
+        // Gaps live BETWEEN rows only (spacedBy) - the old Spacer
+        // after every row left a dead gap under the last row too.
+        Column(
+            modifier = Modifier.weight(1f).then(drawerSwipe),
+            verticalArrangement = Arrangement.spacedBy(keyGapV)
+        ) {
             (functionRows + digitRows).forEach { row ->
                 Row(
                     modifier = Modifier
@@ -481,7 +511,6 @@ fun ScientificCalculatorScreen(
                         )
                     }
                 }
-                Spacer(modifier = Modifier.height(keyGapV))
             }
         }
 
@@ -598,18 +627,19 @@ private fun SciKeyCell(
     // COLOURS (2026-11-07 redesign - colour is allowed on this
     // screen now): digits neutral, function keys soft blue,
     // Deg/Rad soft purple, SHIFT amber, AC red, = green,
-    // backspace inverted. Light + dark values are explicit so
-    // both themes stay right.
+    // backspace inverted. All values are variables in Color.kt
+    // now (SciFunc / SciDigit / SciPurple / SciAmber / SciRed /
+    // SciGreen) - same shades as before, one place to edit.
     val containerColor: Color
     val contentColor: Color
     when (key.style) {
         SciKeyStyle.FUNCTION -> {
-            containerColor = if (darkTheme) Color(0xFF25313F) else Color(0xFFDCE7F5)
-            contentColor = if (darkTheme) Color(0xFFA9C8E8) else Color(0xFF1B3A5D)
+            containerColor = if (darkTheme) SciFuncContainerDark else SciFuncContainerLight
+            contentColor = if (darkTheme) SciFuncContentDark else SciFuncContentLight
         }
 
         SciKeyStyle.DIGIT -> {
-            containerColor = if (darkTheme) Color(0xFF26262B) else Color(0xFFF0EEE9)
+            containerColor = if (darkTheme) SciDigitContainerDark else SciDigitContainerLight
             contentColor = MaterialTheme.colorScheme.onSurface
         }
 
@@ -623,29 +653,29 @@ private fun SciKeyCell(
             // SHIFT - amber; inverted (amber text) while it is on.
             if (shiftMode) {
                 containerColor = MaterialTheme.colorScheme.onBackground
-                contentColor = Color(0xFFFFB300)
+                contentColor = SciAmber
             } else {
-                containerColor = Color(0xFFFFB300)
-                contentColor = Color(0xFF000000)
+                containerColor = SciAmber
+                contentColor = Color.Black
             }
         }
 
         SciKeyStyle.PURPLE -> {
             // Deg/Rad - soft purple.
-            containerColor = if (darkTheme) Color(0xFF322B4D) else Color(0xFFE4DFF5)
-            contentColor = if (darkTheme) Color(0xFFC9BFF0) else Color(0xFF4A3A8C)
+            containerColor = if (darkTheme) SciPurpleContainerDark else SciPurpleContainerLight
+            contentColor = if (darkTheme) SciPurpleContentDark else SciPurpleContentLight
         }
 
         SciKeyStyle.RED -> {
             // AC - red.
-            containerColor = Color(0xFFE53935)
-            contentColor = Color(0xFFFFFFFF)
+            containerColor = SciRed
+            contentColor = Color.White
         }
 
         SciKeyStyle.EQUAL -> {
             // = - green.
-            containerColor = Color(0xFF34A853)
-            contentColor = Color(0xFFFFFFFF)
+            containerColor = SciGreen
+            contentColor = Color.White
         }
     }
 

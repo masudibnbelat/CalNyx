@@ -1,3 +1,14 @@
+// THEME VARIABLES VERSION (2026-11-20) - colours only, no logic /
+// design / text change: every colour in this file now comes from
+// the theme (Color.kt) through MaterialTheme.colorScheme - nothing
+// is hardcoded any more. Change a value in Color.kt and this
+// screen changes with it. Mapping:
+//   pageBg          = colorScheme.background
+//   onPageColor     = colorScheme.onBackground
+//   cardBorderColor = colorScheme.outline
+//   thumbBg         = colorScheme.surfaceVariant
+// darkTheme is kept only because NavGraph passes it; colours no
+// longer depend on it.
 // FILE: app/src/main/java/com/calnyx/app/ui/screens/BlackHoleSetupScreen.kt
 // MODERN VERSION - replace your old BlackHoleSetupScreen.kt with this file.
 // Logic is UNCHANGED (first-time setup asks no old secret, changing
@@ -55,7 +66,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -74,12 +84,14 @@ fun BlackHoleSetupScreen(
     var newSecret by remember { mutableStateOf("") }
     var confirmSecret by remember { mutableStateOf("") }
 
-    // MODERN palette: only off-white / off-black / grey.
-    val isDark = darkTheme
-    val pageBg = if (isDark) Color(0xFF0E0E0E) else Color(0xFFF6F4EF)
-    val onPageColor = if (isDark) Color(0xFFF6F4EF) else Color(0xFF0E0E0E)
-    val cardBorderColor = if (isDark) Color(0xFF2B2B2B) else Color(0xFFE9E6DF)
-    val thumbBg = if (isDark) Color(0xFF262626) else Color(0xFFEFEDE8)
+    // All colours come from the theme (Color.kt) - see the note at
+    // the top of this file. darkTheme is kept only because NavGraph
+    // passes it; colours no longer depend on it.
+    val colorScheme = MaterialTheme.colorScheme
+    val pageBg = colorScheme.background
+    val onPageColor = colorScheme.onBackground
+    val cardBorderColor = colorScheme.outline
+    val thumbBg = colorScheme.surfaceVariant
 
     val fieldColors = OutlinedTextFieldDefaults.colors(
         focusedBorderColor = onPageColor,

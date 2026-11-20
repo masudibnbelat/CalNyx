@@ -1,33 +1,33 @@
 // FILE: app/src/main/java/com/calnyx/app/clipboard/ClipboardService.kt
-// NEW FILE - Clipboard feature (2026-11-06).
+// REPLACE FILE - Clipboard fix (2026-11-20).
 // Target: app/src/main/java/com/calnyx/app/clipboard/ClipboardService.kt
 // First package line: package com.calnyx.app.clipboard
 // First class line: class ClipboardService : Service()
-// Foreground service that listens for clipboard changes and saves
-// every copy into Room. Three capture paths exist (see README):
-//  (1) this listener while the service runs,
-//  (2) checkNow() when the Clipboard screen opens,
-//  (3) BootReceiver + MainActivity start this service.
-// HONEST ANDROID LIMIT (do not remove this note): on Android 10+
-// the system blocks BACKGROUND clipboard reads. If CalNyx was
-// fully killed (swiped away / force-stopped / never opened since
-// boot), copies made in that window are NOT caught live — they
-// only appear the next time the user opens CalNyx, when checkNow()
-// reads the current clip once. The existing AppLock
-// AccessibilityService is a separate feature; this clipboard
-// capture does NOT depend on it, and no new AccessibilityService
-// is added here.
-// Notification: a silent, low-importance, ongoing notification
-// ("Clipboard running"). On Android 13+ POST_NOTIFICATIONS may
-// be denied — startForeground is wrapped in try/catch so the
-// service never crashes for that; the listener still runs.
+//
+// WHAT CHANGED vs the 2026-11-06 version (3 fixes):
+// 1. ROOT CAUSE: the listener no longer tries to READ the clipboard
+//    itself. On Android 10+ a background read returns null, so the
+//    old saveCurrentClip() silently saved nothing - that was the
+//    whole bug. Now the listener is only a SIGNAL: it tries one
+//    read via ClipboardCapture.saveNow() (works when CalNyx happens
+//    to be focused), and on BLOCKED it launches the transparent
+//    ClipboardCaptureActivity, which becomes focused and reads.
+//    The duplicated read code that used to live here AND in
+//    checkNow() is gone - both call ClipboardCapture.saveNow().
+// 2. checkNow() is unchanged in behaviour (foreground read on
+//    screen open) but now delegates to the same saveNow(), so the
+//    screen and the service can no longer double-save one copy:
+//    dedup is persistent in ClipboardCapture, shared by all callers.
+// 3. Nothing else changed: same channel ("clipboard", LOW), same
+//    notification id 1001, same dataSync foreground type, same
+//    START_STICKY, same prune-on-start. Manifest already declares
+//    the service + FOREGROUND_SERVICE_DATA_SYNC - no new permission.
 package com.calnyx.app.clipboard
 
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
-import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
@@ -46,8 +46,19 @@ class ClipboardService : Service() {
     private lateinit var repository: ClipboardRepository
     private var clipboardManager: ClipboardManager? = null
 
+    // Signal only. The read happens in ClipboardCapture.saveNow()
+    // when focused, or in ClipboardCaptureActivity when blocked.
     private val clipListener = ClipboardManager.OnPrimaryClipChangedListener {
-        scope.launch { saveCurrentClip() }
+        scope.launch {
+            val result = try {
+                ClipboardCapture.saveNow(applicationContext)
+            } catch (_: Exception) {
+                SaveResult.BLOCKED
+            }
+            if (result == SaveResult.BLOCKED) {
+                ClipboardCapture.tryCapture(applicationContext)
+            }
+        }
     }
 
     override fun onCreate() {
@@ -121,36 +132,8 @@ class ClipboardService : Service() {
         } catch (_: Exception) {
             // Android 13+ POST_NOTIFICATIONS denied, or a device
             // restriction: never crash for this. The listener
-            // above still runs while the process is alive.
-        }
-    }
-
-    /** Reads the current primary clip once and saves it if new. */
-    private suspend fun saveCurrentClip() {
-        try {
-            val manager = clipboardManager
-                ?: getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-                ?: return
-            if (!manager.hasPrimaryClip()) return
-            val clip: ClipData = manager.primaryClip ?: return
-            if (clip.itemCount == 0) return
-            val item = clip.getItemAt(0)
-            val description = clip.description
-            // Image first: a copied image has a Uri with an image MIME type.
-            val uri = item.uri
-            if (uri != null &&
-                (description?.hasMimeType("image/*") == true ||
-                    item.text == null)
-            ) {
-                repository.insertImage(uri)
-                return
-            }
-            val text = item.coerceToText(applicationContext)?.toString() ?: return
-            repository.insertText(text)
-        } catch (_: SecurityException) {
-            // Android 10+ background clipboard read blocked: silent.
-            // checkNow() on the next screen open catches it then.
-        } catch (_: Exception) {
+            // above still runs while the process is alive, and
+            // AppLockService (already running) re-triggers capture.
         }
     }
 
@@ -167,42 +150,27 @@ class ClipboardService : Service() {
                     context.startService(intent)
                 }
             } catch (_: Exception) {
-                // Foreground-service start denied (e.g. app was in
-                // background on some OEM builds): the screen's
-                // checkNow() still covers copies when opened.
+                // Foreground-service start denied from the background
+                // (Android 12+ BackgroundServiceStartNotAllowed, or
+                // an OEM restriction). The capture activity - which
+                // IS allowed to start from AppLockService - is the
+                // path that still works then; it reads directly and
+                // the service is restarted from the Clipboard screen.
             }
         }
 
         /**
-         * Reads the current clip ONCE (foreground, so Android 10+
-         * allows it) and saves it if it is new. Called from the
-         * Clipboard screen's LaunchedEffect. Safe to call even when
-         * the service is not running; never throws.
+         * Reads the current clip ONCE. Call from a focused context
+         * (Clipboard screen open, CalNyx in front): Android 10+
+         * allows the read there. Safe to call even when the service
+         * is not running; never throws. One copy saved while CalNyx
+         * was fully killed appears here, on next open.
          */
         fun checkNow(context: Context) {
             val appContext = context.applicationContext
             CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
                 try {
-                    val repository = ClipboardRepository(appContext)
-                    val manager =
-                        appContext.getSystemService(Context.CLIPBOARD_SERVICE)
-                            as? ClipboardManager ?: return@launch
-                    if (!manager.hasPrimaryClip()) return@launch
-                    val clip: ClipData = manager.primaryClip ?: return@launch
-                    if (clip.itemCount == 0) return@launch
-                    val item = clip.getItemAt(0)
-                    val uri = item.uri
-                    if (uri != null &&
-                        (clip.description?.hasMimeType("image/*") == true ||
-                            item.text == null)
-                    ) {
-                        repository.insertImage(uri)
-                        return@launch
-                    }
-                    val text = item.coerceToText(appContext)?.toString() ?: return@launch
-                    repository.insertText(text)
-                } catch (_: SecurityException) {
-                    // Background read blocked — silent, as documented.
+                    ClipboardCapture.saveNow(appContext)
                 } catch (_: Exception) {
                 }
             }

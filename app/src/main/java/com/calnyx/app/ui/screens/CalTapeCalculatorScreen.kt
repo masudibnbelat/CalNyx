@@ -1,3 +1,23 @@
+// THEME VARIABLES VERSION (2026-11-20) - colours only, no logic /
+// design / text change: the tape palette no longer hardcodes any
+// colour - every slot now comes from the theme (Color.kt) through
+// MaterialTheme.colorScheme. Change a value in Color.kt and this
+// screen changes with it. Mapping (TapePalette slots):
+//   bg       = colorScheme.background
+//   keyNum   = colorScheme.surfaceContainer
+//   keyFn    = colorScheme.surfaceVariant
+//   keyBack  = colorScheme.surfaceVariant
+//   keyBorder= dark: none (as before), light: colorScheme.outline
+//   strip    = colorScheme.surfaceVariant
+//   drawerBg = colorScheme.surfaceVariant
+//   text     = colorScheme.onBackground
+//   dim      = colorScheme.onSurfaceVariant
+//   green / red / live / enter = colorScheme.onBackground
+//   (B/W rule: they were already the text colour in both themes)
+// The Sheets drawer border is colorScheme.outline too. The drawer
+// scrim stays Color.Black at 55% (a scrim is black in both themes,
+// like Material 3's own), and the PDF stays all black - print
+// output, not UI theme.
 package com.calnyx.app.ui.screens
 
 import android.content.ContentValues
@@ -68,6 +88,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
@@ -166,37 +187,11 @@ private data class TapePalette(
     val enter: Color
 )
 
-private val DarkTapePalette = TapePalette(
-    bg = Color(0xFF0E0E0E),
-    keyNum = Color(0xFF1B1B1B),
-    keyFn = Color(0xFF262626),
-    keyBack = Color(0xFF262626),
-    keyBorder = null,
-    strip = Color(0xFF1B1B1B),
-    drawerBg = Color(0xFF333333),
-    text = Color(0xFFF6F4EF),
-    dim = Color(0xFF8A8A8A),
-    green = Color(0xFFF6F4EF),
-    red = Color(0xFFF6F4EF),
-    live = Color(0xFFF6F4EF),
-    enter = Color(0xFFF6F4EF)
-)
-
-private val LightTapePalette = TapePalette(
-    bg = Color(0xFFF6F4EF),
-    keyNum = Color(0xFFFFFFFF),
-    keyFn = Color(0xFFEFEDE8),
-    keyBack = Color(0xFFEFEDE8),
-    keyBorder = Color(0xFFE9E6DF),
-    strip = Color(0xFFEFEDE8),
-    drawerBg = Color(0xFFE3E1DC),
-    text = Color(0xFF0E0E0E),
-    dim = Color(0xFF6B6B6B),
-    green = Color(0xFF0E0E0E),
-    red = Color(0xFF0E0E0E),
-    live = Color(0xFF0E0E0E),
-    enter = Color(0xFF0E0E0E)
-)
+// The old hardcoded DarkTapePalette / LightTapePalette are gone -
+// the palette is now built from the theme inside the composable
+// below (see "val palette"), so Color.kt is the single source of
+// truth. The TapePalette shape itself is unchanged: every place
+// that read palette.bg / palette.keyNum / ... works as before.
 
 private val moneyFormat = DecimalFormat("#,##0.00")
 
@@ -216,7 +211,25 @@ fun CalTapeCalculatorScreen(
     onOpenDrawer: () -> Unit = {},
     viewModel: CalTapeViewModel = viewModel()
 ) {
-    val palette = if (darkTheme) DarkTapePalette else LightTapePalette
+    // Palette built from the theme (Color.kt) - see the note at the
+    // top of this file. darkTheme only decides the key border now
+    // (dark never had one); every colour comes from colorScheme.
+    val colorScheme = MaterialTheme.colorScheme
+    val palette = TapePalette(
+        bg = colorScheme.background,
+        keyNum = colorScheme.surfaceContainer,
+        keyFn = colorScheme.surfaceVariant,
+        keyBack = colorScheme.surfaceVariant,
+        keyBorder = if (darkTheme) null else colorScheme.outline,
+        strip = colorScheme.surfaceVariant,
+        drawerBg = colorScheme.surfaceVariant,
+        text = colorScheme.onBackground,
+        dim = colorScheme.onSurfaceVariant,
+        green = colorScheme.onBackground,
+        red = colorScheme.onBackground,
+        live = colorScheme.onBackground,
+        enter = colorScheme.onBackground
+    )
 
     val lines by viewModel.lines.collectAsState()
     val input by viewModel.input.collectAsState()
@@ -642,7 +655,7 @@ fun CalTapeCalculatorScreen(
                 modifier = Modifier.width(sheetDrawerW)
                     .border(
                         sheetDrawerW * 0.004f,
-                        if (darkTheme) Color(0xFF5A5A5A) else Color(0xFFC9C5BC),
+                        colorScheme.outline,
                         RoundedCornerShape(topEnd = sheetDrawerW * 0.057f, bottomEnd = sheetDrawerW * 0.057f)
                     )
             ) {

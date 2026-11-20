@@ -1,3 +1,20 @@
+// THEME VARIABLES VERSION (2026-11-20) - colours only, no logic /
+// design / text change: every colour in this file now comes from
+// the theme (Color.kt) through MaterialTheme.colorScheme - nothing
+// is hardcoded any more. Change a value in Color.kt and this
+// screen changes with it. Mapping:
+//   pageBg          = colorScheme.background
+//   cardBg          = colorScheme.surfaceContainer
+//   cardBorderColor = colorScheme.outline
+//   onPageColor     = colorScheme.onBackground
+//   thumbBg         = colorScheme.surfaceVariant
+//   Add button      = onSurface / surface (dark: white button,
+//                     light: black button - same as before)
+//   Video thumb bg  = Color.Black (a video area is always black,
+//                     in both themes - deliberate, not a theme colour)
+//   Play badge / spinner = Color.White (on the black video area)
+// darkTheme is kept only because NavGraph passes it; colours no
+// longer depend on it.
 // FILE: app/src/main/java/com/calnyx/app/ui/screens/BlackHoleScreen.kt
 // % -BASED RESPONSIVE MODERN VERSION (2026-11-07) - REPLACE BlackHoleScreen.kt.
 // MULTI-SELECT IMPORT (2026-11-07): GetContent() -> GetMultipleContents(),
@@ -107,16 +124,10 @@ import java.util.*
 
 // The old emoji theme-icon picker is removed with the picker below.
 
-// MODERN palette: only off-white / off-black / grey. No purple, pink,
-// teal or orange accents anywhere on this screen.
-private val OffWhite = Color(0xFFF6F4EF)
-private val OffBlack = Color(0xFF0E0E0E)
-private val CardWhite = Color(0xFFFFFFFF)
-private val CardBlack = Color(0xFF1B1B1B)
-private val BorderLight = Color(0xFFE9E6DF)
-private val BorderDark = Color(0xFF2B2B2B)
-private val ThumbBgLight = Color(0xFFEFEDE8)
-private val ThumbBgDark = Color(0xFF262626)
+// The old MODERN palette (OffWhite / OffBlack / CardWhite /
+// CardBlack / BorderLight / BorderDark / ThumbBgLight / ThumbBgDark)
+// is gone - those colours now live in the theme (Color.kt) and are
+// read through MaterialTheme.colorScheme in the composable below.
 
 private val categoryInfo = mapOf(
     BlackHoleCategory.PHOTOS    to Icons.Filled.Image,
@@ -149,14 +160,15 @@ fun BlackHoleScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    // MODERN theme: page and cards follow dark/light, but only in
-    // off-white / off-black / grey.
-    val isDark = darkTheme
-    val pageBg = if (isDark) OffBlack else OffWhite
-    val cardBg = if (isDark) CardBlack else CardWhite
-    val cardBorderColor = if (isDark) BorderDark else BorderLight
-    val onPageColor = if (isDark) OffWhite else OffBlack
-    val thumbBg = if (isDark) ThumbBgDark else ThumbBgLight
+    // All colours come from the theme (Color.kt) - see the note at
+    // the top of this file. darkTheme is kept only because NavGraph
+    // passes it; colours no longer depend on it.
+    val colorScheme = MaterialTheme.colorScheme
+    val pageBg = colorScheme.background
+    val cardBg = colorScheme.surfaceContainer
+    val cardBorderColor = colorScheme.outline
+    val onPageColor = colorScheme.onBackground
+    val thumbBg = colorScheme.surfaceVariant
 
     var selectedCategory by remember { mutableStateOf<BlackHoleCategory?>(null) }
     var files by remember { mutableStateOf<List<File>>(emptyList()) }
@@ -710,8 +722,8 @@ fun BlackHoleScreen(
                             shape = RoundedCornerShape(cardCornerSm),
                             colors = ButtonDefaults.buttonColors(
                                 // MODERN: light mode-এ কালো বাটন, dark mode-এ সাদা বাটন
-                                containerColor = if (isDark) OffWhite else OffBlack,
-                                contentColor = if (isDark) OffBlack else Color.White
+                                containerColor = colorScheme.onSurface,
+                                contentColor = colorScheme.surface
                             )
                         ) {
                             Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(iconSm))
@@ -1349,7 +1361,7 @@ private fun BlackHoleVideoThumbnail(file: File, modifier: Modifier = Modifier) {
     // play icon 16% of it. RoundedCornerShape(50) is already a
     // percent (50% = fully round).
     BoxWithConstraints(
-        modifier = modifier.background(OffBlack),
+        modifier = modifier.background(Color.Black),
         contentAlignment = Alignment.Center
     ) {
         val cellMin = minOf(maxWidth, maxHeight)

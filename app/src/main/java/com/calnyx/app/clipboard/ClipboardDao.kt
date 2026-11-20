@@ -1,11 +1,13 @@
 // FILE: app/src/main/java/com/calnyx/app/clipboard/ClipboardDao.kt
-// NEW FILE - Clipboard feature (2026-11-06).
+// REPLACE FILE - Clipboard fix (2026-11-20).
 // Target: app/src/main/java/com/calnyx/app/clipboard/ClipboardDao.kt
 // First package line: package com.calnyx.app.clipboard
 // First interface line: @Dao interface ClipboardDao
-// All reads are Flows so the screen updates the moment a new
-// copy lands, with no manual refresh. search() matches the
-// copied text AND the image note, so images are findable too.
+// ONE change vs the 2026-11-06 version: search() now has ESCAPE '\'
+// on both LIKEs, so a query containing % or _ (escaped by
+// ClipboardRepository.search()) matches literally instead of
+// matching almost everything. All reads are still Flows, newest
+// first, search still matches copied text AND the image note.
 package com.calnyx.app.clipboard
 
 import androidx.room.Dao
@@ -22,8 +24,8 @@ interface ClipboardDao {
 
     @Query(
         "SELECT * FROM clipboard_items " +
-            "WHERE text LIKE '%' || :query || '%' " +
-            "OR note LIKE '%' || :query || '%' " +
+            "WHERE text LIKE '%' || :query || '%' ESCAPE '\\' " +
+            "OR note LIKE '%' || :query || '%' ESCAPE '\\' " +
             "ORDER BY createdAt DESC"
     )
     fun search(query: String): Flow<List<ClipboardItem>>

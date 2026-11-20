@@ -1,3 +1,34 @@
+// CLIPBOARD FIX (2026-11-20) - only the blocks marked CLIPBOARD are new.
+// Base: YOUR live file (BYPASS / FIX7 / LOCK-ON-EXIT, v7 toast) -
+// every line of the lock / Recents / split / floating / uninstall /
+// overlay / poll logic below is unchanged. The FIXED2-based
+// AppLockService delivered earlier for the clipboard fix is
+// SUPERSEDED - do NOT use it, it would regress all of that.
+//   1. onServiceConnected(): eventTypes gains TYPE_VIEW_CLICKED
+//      (code overwrites the XML eventTypes here, so the XML config
+//      needs NO change) + registers a ClipboardManager listener +
+//      (re)starts ClipboardService, so the clipboard listener is
+//      alive whenever App Lock is. The old ClipboardService was
+//      only started from the Clipboard screen + boot, so after an
+//      OEM kill it never came back even though the ball and App
+//      Lock did.
+//   2. onAccessibilityEvent(): a tap on a button literally labelled
+//      "Copy" launches the transparent ClipboardCaptureActivity.
+//      That branch returns BEFORE any lock logic, so it can never
+//      lock, unlock, or end a session.
+//   3. clipListener: a clipboard change is only a SIGNAL. It tries
+//      one direct read (works if CalNyx is focused); on BLOCKED it
+//      launches ClipboardCaptureActivity, which becomes focused and
+//      reads. This service itself never reads the clipboard - on
+//      Android 10+ that read returns null in the background, same
+//      as it did in ClipboardService. Its job is only to be the
+//      always-on trigger that MAY start an activity from the
+//      background (it already does this for the decoy calculator).
+//   4. SERVICE_CODE_VERSION 7 -> 8, so the one-time toast reads
+//      "App lock v8 active" - the same proof pattern as FIX3: if
+//      it never shows after toggling Accessibility OFF/ON, the
+//      phone is still running the old service code.
+// Toggle Accessibility OFF/ON after apprun, as with FIX7.
 // BYPASS FIX (2026-11-08) - split-screen / floating window /
 // PiP / uninstall. Base: the FIX4 file - everything below the
 // FIX4 header is unchanged except the decoy launch, which is
@@ -318,11 +349,20 @@
 // Debug: adb logcat -s CalNyxAppLock  (filter by pid for clean log)
 package com.calnyx.app.applock
 
+import com.calnyx.app.clipboard.ClipboardCapture
+import com.calnyx.app.clipboard.ClipboardService
+import com.calnyx.app.clipboard.SaveResult
 import com.calnyx.app.moan.OrientationGuard
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.BroadcastReceiver
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
@@ -387,6 +427,22 @@ class AppLockService : AccessibilityService() {
         }
     }
 
+    // CLIPBOARD: own scope + clipboard listener (see header).
+    private val clipScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var clipboardManager: ClipboardManager? = null
+    private val clipListener = ClipboardManager.OnPrimaryClipChangedListener {
+        clipScope.launch {
+            val result = try {
+                ClipboardCapture.saveNow(this@AppLockService)
+            } catch (_: Exception) {
+                SaveResult.BLOCKED
+            }
+            if (result == SaveResult.BLOCKED) {
+                ClipboardCapture.tryCapture(this@AppLockService)
+            }
+        }
+    }
+
     private var lastForegroundPkg: String? = null
 
     // DECOY-SHOWING FIX: true only AFTER a CalNyx decoy event has
@@ -399,7 +455,7 @@ class AppLockService : AccessibilityService() {
     // FIX3: bump this on every service-code delivery. The first
     // connect of a new version shows one "App lock vN active"
     // toast, so the user can see the new code is really running.
-    private val SERVICE_CODE_VERSION = 7
+    private val SERVICE_CODE_VERSION = 8
 
     // How long ago the current pending block was set, in ms.
     // Long.MAX_VALUE when there is no timestamp (pending set by an
@@ -1392,7 +1448,8 @@ class AppLockService : AccessibilityService() {
         // survives.
         val info = serviceInfo ?: AccessibilityServiceInfo()
         info.eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED or
-            AccessibilityEvent.TYPE_WINDOWS_CHANGED
+            AccessibilityEvent.TYPE_WINDOWS_CHANGED or
+            AccessibilityEvent.TYPE_VIEW_CLICKED // CLIPBOARD: copy-tap trigger
         info.feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
         info.flags = info.flags or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
         info.notificationTimeout = 0
@@ -1453,6 +1510,20 @@ class AppLockService : AccessibilityService() {
         }
         // FIX3: start the 1.2s poll (split / floating safety net).
         blockHandler.postDelayed(pollRunnable, 1200L)
+        // CLIPBOARD: this service outlives the ClipboardService on
+        // Realme (OEM kill / reboot). Register the listener here and
+        // restart the service, so background capture is alive
+        // whenever App Lock is.
+        try {
+            clipboardManager =
+                getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+            clipboardManager?.addPrimaryClipChangedListener(clipListener)
+        } catch (_: Exception) {
+        }
+        try {
+            ClipboardService.start(this)
+        } catch (_: Exception) {
+        }
         // FIX3: prove the new code is actually running. The first
         // time this version connects it shows one short toast -
         // if the user never sees it after toggling Accessibility,
@@ -1462,8 +1533,42 @@ class AppLockService : AccessibilityService() {
             val prefs = getSharedPreferences("calnyx_applock_service", MODE_PRIVATE)
             if (prefs.getInt("service_code_version", 0) != SERVICE_CODE_VERSION) {
                 prefs.edit().putInt("service_code_version", SERVICE_CODE_VERSION).apply()
-                Toast.makeText(this, "App lock v7 active", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "App lock v8 active", Toast.LENGTH_SHORT).show()
             }
+        } catch (_: Exception) {
+        }
+    }
+
+    // CLIPBOARD: a tap on a button labelled "Copy" means a copy just
+    // happened - no clipboard listener needed. Launch the transparent
+    // capture activity; it reads and finishes. Never touches lock state.
+    private fun handleCopyClick(event: AccessibilityEvent) {
+        try {
+            var isCopy = event.text.any {
+                it.toString().trim().equals("Copy", ignoreCase = true)
+            }
+            if (!isCopy) {
+                val src = try {
+                    event.source
+                } catch (_: Exception) {
+                    null
+                }
+                if (src != null) {
+                    try {
+                        val label = src.text?.toString()?.trim() ?: ""
+                        val desc = src.contentDescription?.toString()?.trim() ?: ""
+                        isCopy = label.equals("Copy", ignoreCase = true) ||
+                            desc.equals("Copy", ignoreCase = true)
+                    } catch (_: Exception) {
+                    } finally {
+                        try {
+                            src.recycle()
+                        } catch (_: Exception) {
+                        }
+                    }
+                }
+            }
+            if (isCopy) ClipboardCapture.tryCapture(this)
         } catch (_: Exception) {
         }
     }
@@ -1532,6 +1637,11 @@ class AppLockService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         val eventType = event?.eventType ?: return
+        // CLIPBOARD: copy-tap trigger. Returns before any lock logic.
+        if (eventType == AccessibilityEvent.TYPE_VIEW_CLICKED) {
+            handleCopyClick(event)
+            return
+        }
         if (eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
             eventType != AccessibilityEvent.TYPE_WINDOWS_CHANGED
         ) return
@@ -1755,6 +1865,12 @@ class AppLockService : AccessibilityService() {
 
     override fun onDestroy() {
         if (instance == this) instance = null
+        // CLIPBOARD: stop listening when the service dies.
+        try {
+            clipboardManager?.removePrimaryClipChangedListener(clipListener)
+        } catch (_: Exception) {
+        }
+        clipScope.cancel()
         decoyShowing = false
         hideBlockOverlay()
         try {

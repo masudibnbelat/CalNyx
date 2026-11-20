@@ -1,3 +1,9 @@
+// THEME VARIABLES CHECK (2026-11-20): verified - already fully on
+// MaterialTheme.colorScheme (background / onBackground / surface /
+// surfaceVariant / onSurfaceVariant / outline); divide-by-zero keeps
+// colors.error (theme red, genuine error state). Sizes already %
+// (BoxWithConstraints windowW/windowH/minDim); only 1.dp hairline
+// borders. No code change needed - file verified as-is.
 // FILE: app/src/main/java/com/calnyx/app/ui/screens/IctCalculatorScreen.kt
 // % VERSION (2026-11-07) - REPLACE. B/W base, logic UNCHANGED.
 // Only change: every size is now a % of the window

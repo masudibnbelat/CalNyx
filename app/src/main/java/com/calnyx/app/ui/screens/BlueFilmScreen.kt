@@ -1,3 +1,20 @@
+// THEME VARIABLES VERSION (2026-11-20) - colours only, no logic /
+// design / text change: every colour in this file now comes from
+// the theme (Color.kt) through MaterialTheme.colorScheme - nothing
+// is hardcoded any more. Change a value in Color.kt and this
+// screen changes with it. Mapping:
+//   pageBg     = colorScheme.background
+//   cardBg     = colorScheme.surfaceContainer
+//   primary    = colorScheme.onBackground
+//   secondary  = colorScheme.onSurfaceVariant
+//   cardBorder = colorScheme.outline
+//   thumbBg    = colorScheme.surfaceVariant
+//   buttonBg   = colorScheme.onSurface
+//   buttonText = colorScheme.surface
+//   red        = CalNyxRed (same in both themes, like Clipboard;
+//                dark was #EF5350 before - now the same deep red)
+// darkTheme is still used for the status / navigation bar icons
+// (SideEffect below), so it stays as a parameter.
 // % VERSION (2026-11-07) - sizes only: every margin, padding,
 // width, height, corner, icon and font is now % of the window
 // (windowW / windowH / minDim). Only 1.dp hairline borders and
@@ -158,6 +175,7 @@ import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -172,7 +190,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.toArgb
@@ -189,6 +206,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.calnyx.app.BlueFilm.BlueFilmService
 import com.calnyx.app.BlueFilm.BlueFilmStore
+import com.calnyx.app.ui.theme.CalNyxRed
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -205,15 +223,19 @@ fun BlueFilmScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val pageBg = if (darkTheme) Color(0xFF121212) else Color(0xFFF6F4EF)
-    val cardBg = if (darkTheme) Color(0xFF1E1E1E) else Color(0xFFFFFFFF)
-    val primary = if (darkTheme) Color(0xFFFFFFFF) else Color(0xFF111111)
-    val secondary = if (darkTheme) Color(0xFFBDBDBD) else Color(0xFF5A5A5A)
-    val cardBorder = if (darkTheme) Color(0xFF3A3A3A) else Color(0xFFE9E6DF)
-    val thumbBg = if (darkTheme) Color(0xFF2E2E2E) else Color(0xFFEFEDE8)
-    val buttonBg = if (darkTheme) Color(0xFFF6F4EF) else Color(0xFF111111)
-    val buttonText = if (darkTheme) Color(0xFF111111) else Color(0xFFFFFFFF)
-    val red = if (darkTheme) Color(0xFFEF5350) else Color(0xFFC62828)
+    // All colours come from the theme (Color.kt) - see the note at
+    // the top of this file. darkTheme is still used below for the
+    // status / navigation bar icon colours.
+    val colorScheme = MaterialTheme.colorScheme
+    val pageBg = colorScheme.background
+    val cardBg = colorScheme.surfaceContainer
+    val primary = colorScheme.onBackground
+    val secondary = colorScheme.onSurfaceVariant
+    val cardBorder = colorScheme.outline
+    val thumbBg = colorScheme.surfaceVariant
+    val buttonBg = colorScheme.onSurface
+    val buttonText = colorScheme.surface
+    val red = CalNyxRed
     // No red title any more - the user does not like red
     // on the title. It uses the normal theme colour now.
 

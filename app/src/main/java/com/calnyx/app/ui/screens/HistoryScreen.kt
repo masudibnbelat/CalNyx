@@ -1,3 +1,9 @@
+// THEME + % VERSION (2026-11-20) - REPLACE HistoryScreen.kt.
+// Colours were already theme variables (background, onSurface,
+// onSurfaceVariant, outline) - kichu bodlayni. Sizes chilo fixed
+// dp/sp (20.dp, 56.dp, 28.sp, 34.sp...) - ekhon sob % :
+// BoxWithConstraints-er windowW/windowH/minDim theke. Logic,
+// grouping, clear-all - sob ager motoi.
 // FILE: app/src/main/java/com/calnyx/app/ui/screens/HistoryScreen.kt
 package com.calnyx.app.ui.screens
 
@@ -16,7 +22,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.calnyx.app.viewmodel.HistoryViewModel
@@ -35,97 +40,121 @@ fun HistoryScreen(
         history.groupBy { dayLabel(it.createdAt) }
     }
 
-    Column(
+    // % SIZES: window-er % - kono fixed dp/sp nei (1.dp hairline
+    // chara). 360x760 phone-e ager motoi dekhabe.
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
-            .statusBarsPadding()
-            .navigationBarsPadding()
-            .padding(horizontal = 20.dp)
     ) {
-        // Clearance for the floating top bar drawn by NavGraph
-        Spacer(modifier = Modifier.height(56.dp))
+        val windowW = maxWidth
+        val windowH = maxHeight
+        val minDim = minOf(windowW, windowH)
+        val sidePad = windowW * 0.055f // 20dp
+        val topBarClearance = windowH * 0.074f // 56dp
+        val titleFont = (minDim.value * 0.078f).sp // 28sp
+        val clearIcon = minDim * 0.05f // 18dp
+        val gapXs = windowW * 0.011f // 4dp
+        val gapSm = windowH * 0.011f // 8dp
+        val dayFont = (minDim.value * 0.042f).sp // 15sp
+        val dayPadV = windowH * 0.016f // 12dp
+        val itemPadV = windowH * 0.013f // 10dp
+        val exprFont = (minDim.value * 0.056f).sp // 20sp
+        val gapTiny = windowH * 0.003f // 2dp
+        val resultFont = (minDim.value * 0.094f).sp // 34sp
+        val dividerPadV = windowH * 0.011f // 8dp
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .padding(horizontal = sidePad)
         ) {
-            Text(
-                text = "History",
-                fontSize = 28.sp,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Spacer(modifier = Modifier.weight(1f))
-            if (history.isNotEmpty()) {
-                TextButton(onClick = { viewModel.clearAll() }) {
-                    Icon(
-                        Icons.Default.Delete,
-                        contentDescription = "Clear all",
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Clear all")
-                }
-            }
-        }
+            // Clearance for the floating top bar drawn by NavGraph
+            Spacer(modifier = Modifier.height(topBarClearance))
 
-        Spacer(modifier = Modifier.height(8.dp))
-
-        if (history.isEmpty()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-                contentAlignment = Alignment.Center
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "No history yet",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    text = "History",
+                    fontSize = titleFont,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-            ) {
-                groupedHistory.forEach { (day, dayItems) ->
-                    item(key = "header-$day") {
-                        Text(
-                            text = day,
-                            fontSize = 15.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(vertical = 12.dp)
+                Spacer(modifier = Modifier.weight(1f))
+                if (history.isNotEmpty()) {
+                    TextButton(onClick = { viewModel.clearAll() }) {
+                        Icon(
+                            Icons.Default.Delete,
+                            contentDescription = "Clear all",
+                            modifier = Modifier.size(clearIcon)
                         )
+                        Spacer(modifier = Modifier.width(gapXs))
+                        Text("Clear all")
                     }
-                    items(dayItems) { item ->
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 10.dp),
-                            horizontalAlignment = Alignment.End
-                        ) {
+                }
+            }
+
+            Spacer(modifier = Modifier.height(gapSm))
+
+            if (history.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "No history yet",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                ) {
+                    groupedHistory.forEach { (day, dayItems) ->
+                        item(key = "header-$day") {
                             Text(
-                                text = formatForDisplay(item.expression),
-                                fontSize = 20.sp,
+                                text = day,
+                                fontSize = dayFont,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                textAlign = TextAlign.End
-                            )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = formatForDisplay(item.result),
-                                fontSize = 34.sp,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                textAlign = TextAlign.End
+                                modifier = Modifier.padding(vertical = dayPadV)
                             )
                         }
-                    }
-                    item(key = "divider-$day") {
-                        HorizontalDivider(
-                            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f),
-                            modifier = Modifier.padding(vertical = 8.dp)
-                        )
+                        items(dayItems) { item ->
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = itemPadV),
+                                horizontalAlignment = Alignment.End
+                            ) {
+                                Text(
+                                    text = formatForDisplay(item.expression),
+                                    fontSize = exprFont,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    textAlign = TextAlign.End
+                                )
+                                Spacer(modifier = Modifier.height(gapTiny))
+                                Text(
+                                    text = formatForDisplay(item.result),
+                                    fontSize = resultFont,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    textAlign = TextAlign.End
+                                )
+                            }
+                        }
+                        item(key = "divider-$day") {
+                            HorizontalDivider(
+                                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f),
+                                modifier = Modifier.padding(vertical = dividerPadV)
+                            )
+                        }
                     }
                 }
             }

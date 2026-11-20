@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- FILE: app/src/main/AndroidManifest.xml -->
 <!-- LAUNCHER VERSION (2026-11-12) - replace your old AndroidManifest.xml with this. -->
+<!-- V24 (2026-11-13): ONLY addition - .launcher.CalNyxDeviceAdminReceiver -->
+<!-- (double-tap to lock). No new uses-permission, nothing else changed. -->
 <!-- Based on CLIPBOARD VERSION (the full manifest you pasted 2026-11-12). -->
 <!-- ONLY Launcher change, everything else byte-identical: -->
 <!-- 1. NEW activity .launcher.LauncherActivity (exported=true, -->
@@ -11,6 +13,9 @@
 <!--    app list, so it is NOT added again. -->
 <!-- 3. MainActivity keeps its MAIN + LAUNCHER filter as-is, so the -->
 <!--    CalNyx icon still shows in its own launcher. -->
+<!-- CLIPBOARD FIX (2026-11-20): ONLY addition - -->
+<!-- .clipboard.ClipboardCaptureActivity (transparent, noHistory, -->
+<!-- excluded from Recents). No new permission, nothing else changed. -->
 <!-- CLIPBOARD VERSION - replace your old AndroidManifest.xml with this. -->
 <!-- Based on BLUEFILM-CAMERA (the full manifest you pasted 2026-11-06). -->
 <!-- ONLY Clipboard changes, everything else byte-identical: -->
@@ -158,21 +163,6 @@
             </intent-filter>
         </activity>
 
-        <!-- Launcher (NEW 2026-11-12): CalNyx home screen, no app drawer.
-             HOME filter, so the user can set CalNyx as the default Home app.
-             MainActivity keeps its LAUNCHER filter, so the CalNyx icon
-             still shows in its own launcher list. -->
-        <activity
-            android:name=".launcher.LauncherActivity"
-            android:exported="true"
-            android:launchMode="singleTask">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.HOME" />
-                <category android:name="android.intent.category.DEFAULT" />
-            </intent-filter>
-        </activity>
-
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -271,6 +261,20 @@
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
             </intent-filter>
         </receiver>
+
+        <!-- Clipboard fix (2026-11-20): transparent capture activity.
+             While it is resumed CalNyx IS the focused app, so Android
+             10+ allows the clipboard read. It reads once, saves, and
+             finishes. Same pattern as BallPanelActivity. No new
+             permission - the service, receiver and dataSync permission
+             above are unchanged. -->
+        <activity
+            android:name=".clipboard.ClipboardCaptureActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTop"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
 
         <!-- Floating Ball (NEW): bring the ball back after a reboot,
              so it shows without opening the Hardware screen. -->
