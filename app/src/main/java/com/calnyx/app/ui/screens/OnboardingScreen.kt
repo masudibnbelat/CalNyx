@@ -19,9 +19,10 @@
 //     Each row has a Grant button; granting shows a check. The
 //     Next button stays DISABLED until every required permission
 //     is granted. Skip (top right) exits the whole introduction.
-//   6 Welcome - the word WELCOME made of 6s and 9s: a field
-//     of generated digits dissolves into the word, then Start
-//     appears and opens the calculator.
+//   6 Welcome - the word WELCOME in two big lines (WEL /
+//     COME), made of 6s and 9s: a field of generated digits
+//     dissolves into the word, then Start appears and opens
+//     the calculator.
 // English only, black / white only. The permission list comes from
 // OnboardingPermissions - the same list the About dialog shows.
 // UPDATED (2026-11-20): the feature lists now match the app as
@@ -541,9 +542,10 @@ private fun SpyClipboardPage(onPageColor: Color, thumbBg: Color) {
     PageSubtitle("Both work fully offline.", onPageColor)
 }
 
-// FINAL PAGE (2026-11-20): only the word WELCOME, in the middle
-// of the screen - no icon, no extra text. The word is made of
-// 6s and 9s: when the page opens, the whole word area is filled
+// FINAL PAGE (2026-11-20): only the word WELCOME, big in the
+// middle of the screen - no icon, no extra text. The word is
+// split in two lines (WEL on top, COME below) and made of 6s
+// and 9s: when the page opens, the whole word area is filled
 // with generated 6 / 9 digits, then the digits that are NOT part
 // of the letters fade away one by one (each with its own random
 // delay), and WELCOME is left standing. When it is fully
@@ -568,30 +570,41 @@ private data class WelcomeGrid(
 
 // Draws WELCOME on a bitmap and samples each cell centre for
 // ink. Returns the grid that covers the word's bounding box.
+// The word is split in two lines - WEL on top, COME below -
+// so each line can be drawn much bigger and the letters are
+// made of far more digits, which makes the word clearly
+// readable.
 private fun buildWelcomeCells(availableWidthPx: Float, cellPx: Float): WelcomeGrid {
-    val text = "WELCOME"
+    val line1 = "WEL"
+    val line2 = "COME"
     val paint = Paint().apply {
         typeface = Typeface.DEFAULT_BOLD
         isAntiAlias = true
         color = AndroidColor.WHITE
         textAlign = Paint.Align.CENTER
     }
-    // Size the word to span ~94% of the available width.
+    // Size the word from its wider line (COME) so it spans
+    // ~94% of the available width.
     paint.textSize = 100f
-    val w100 = paint.measureText(text)
+    val w100 = paint.measureText(line2)
     paint.textSize = 100f * (availableWidthPx * 0.94f / w100)
-    val textW = paint.measureText(text)
     val fm = paint.fontMetrics
-    val textH = fm.descent - fm.ascent
-    val cols = maxOf(1, ceil(textW / cellPx).toInt())
-    val rows = maxOf(1, ceil(textH / cellPx).toInt())
+    val lineH = fm.descent - fm.ascent
+    val lineW = paint.measureText(line2)
+    // A small gap between the two lines.
+    val gap = lineH * 0.25f
+    val blockW = lineW
+    val blockH = lineH * 2f + gap
+    val cols = maxOf(1, ceil(blockW / cellPx).toInt())
+    val rows = maxOf(1, ceil(blockH / cellPx).toInt())
     val gridW = cols * cellPx
     val gridH = rows * cellPx
     val bitmap = Bitmap.createBitmap(gridW.toInt(), gridH.toInt(), Bitmap.Config.ARGB_8888)
     val canvas = Canvas(bitmap)
-    val baseX = gridW / 2f
-    val baseY = gridH / 2f - (fm.ascent + fm.descent) / 2f
-    canvas.drawText(text, baseX, baseY, paint)
+    val midShift = (fm.ascent + fm.descent) / 2f
+    // WEL on the top line, COME on the bottom line, both centred.
+    canvas.drawText(line1, gridW / 2f, lineH / 2f - midShift, paint)
+    canvas.drawText(line2, gridW / 2f, lineH + gap + lineH / 2f - midShift, paint)
     val random = Random(69)
     val cells = ArrayList<WelcomeCell>(cols * rows)
     for (r in 0 until rows) {
