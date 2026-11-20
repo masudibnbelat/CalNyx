@@ -267,6 +267,13 @@ object BlueFilmStore {
         return File(folderDir(context, DEFAULT_FOLDER), "BF_$stamp$EXT")
     }
 
+    // SCREEN RECORD (2026-11-20): same folder as camera videos,
+    // "SR_" prefix so screen recordings are easy to tell apart.
+    fun newScreenVideoFile(context: Context): File {
+        val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+        return File(folderDir(context, DEFAULT_FOLDER), "SR_$stamp$EXT")
+    }
+
     fun displayName(file: File): String = file.name.removeSuffix(EXT)
 
     fun displayDate(file: File): String =

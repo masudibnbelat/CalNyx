@@ -5,13 +5,16 @@
 // First composable line: @Composable fun ClipboardScreen(
 // WHAT CHANGED (2026-11-20 redesign, behaviour kept):
 // 1. NO STATUS CARD any more. At the very top, in the header row
-//    itself, sits one tiny pill: a white dot + short "On" / "Off".
-//    GREEN while CalNyx's AccessibilityService (App Lock) is
-//    enabled, RED while it is not. Tap OFF -> opens Accessibility
-//    Settings so it can be turned on. Tap ON -> runs a Test capture
-//    (copies a test line, reads it back after 0.9 s - the row must
-//    appear at the top of the list). The state refreshes on every
-//    resume, so coming back from Settings updates the pill.
+//    itself, sits one small lamp: a BLINKING dot, no text.
+//    GREEN blinking while CalNyx's AccessibilityService (App Lock)
+//    is enabled, RED blinking while it is not OR the last test
+//    capture failed. Tap the lamp while red -> opens Accessibility
+//    Settings so it can be turned on. Tap while green -> runs a
+//    Test capture (copies a test line, reads it back after 0.9 s
+//    - the row must appear at the top of the list; if it does
+//    not, the lamp turns red). A newly saved row clears a red
+//    lamp by itself. The state refreshes on every resume, so
+//    coming back from Settings updates the lamp.
 // 2. AUTO-DELETE is now a small chip in the SAME row as the
 //    All / Text / Images filter chips (it shows the current value,
 //    e.g. "30 days"). Tap it for the radio-list dialog. Filter +
@@ -59,6 +62,11 @@ import android.graphics.BitmapFactory
 import android.provider.Settings
 import android.util.LruCache
 import android.widget.Toast
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -123,8 +131,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -202,6 +210,10 @@ fun ClipboardScreen(
     var query by remember { mutableStateOf("") }
     var filter by remember { mutableStateOf("ALL") }
     var captureOn by remember { mutableStateOf(false) }
+    // LAMP (2026-11-20): true when the last test capture failed
+    // to save - the lamp turns red until a save proves capture
+    // works again (see the test tap + the size effect below).
+    var captureFailed by remember { mutableStateOf(false) }
     var retentionDays by remember {
         mutableStateOf(ClipboardPrefs.getRetentionDays(context))
     }
@@ -211,6 +223,18 @@ fun ClipboardScreen(
     var deleteItem by remember { mutableStateOf<ClipboardItem?>(null) }
     // Card tapped -> full-text bottom sheet.
     var viewItem by remember { mutableStateOf<ClipboardItem?>(null) }
+
+    // The lamp blinks in BOTH states - green while capture is
+    // armed, red while it is off or the last test failed.
+    val blinkAlpha by rememberInfiniteTransition(label = "captureLight").animateFloat(
+        initialValue = 1f,
+        targetValue = 0.25f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 700),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "captureBlink"
+    )
 
     // Fast live list: Room Flow, switched between "all" and LIKE
     // search as the query changes; LazyColumn keys by row id.
@@ -238,6 +262,12 @@ fun ClipboardScreen(
             }
         }
         ClipboardService.checkNow(context)
+    }
+
+    // A newly saved row proves capture works again: clear a red
+    // lamp left by a failed test, without another tap.
+    LaunchedEffect(clipItems.size) {
+        if (captureFailed && clipItems.isNotEmpty()) captureFailed = false
     }
 
     // The capture button must be right when the user comes back
@@ -344,20 +374,18 @@ fun ClipboardScreen(
                         color = dimColor
                     )
                 }
-                // Capture pill, top line, next to the title - SMALL
-                // and modern: a compact status dot + short "On" /
-                // "Off" label, NOT a full Button (a Material Button
-                // is 40dp tall by default and looked oversized).
-                // GREEN while background capture is armed, RED while
-                // it is off. Tap OFF -> Accessibility Settings.
-                // Tap ON -> Test capture (copies a test line, reads
-                // it back - the row must appear at the top).
+                // Capture light, top line, next to the title -
+                // just a lamp, no text. GREEN blinking while
+                // background capture is armed, RED blinking while
+                // it is off OR the last test capture failed.
+                // Tap while red -> Accessibility Settings. Tap
+                // while green -> Test capture (copies a test line,
+                // reads it back - the row must appear at the top;
+                // if it does not, the lamp turns red).
+                val lightColor = if (captureOn && !captureFailed) CalNyxGreen else CalNyxRed
                 Box(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(minDim * 0.5f))
-                        .background(
-                            if (captureOn) CalNyxGreen else CalNyxRed
-                        )
+                        .clip(CircleShape)
                         .clickable {
                             if (!captureOn) {
                                 try {
@@ -369,7 +397,7 @@ fun ClipboardScreen(
                                 }
                             } else {
                                 val testText = "CalNyx test " +
-                                    SimpleDateFormat("HH:mm", Locale.ENGLISH)
+                                    SimpleDateFormat("HH:mm:ss", Locale.ENGLISH)
                                         .format(Date(System.currentTimeMillis()))
                                 try {
                                     val manager = context.getSystemService(
@@ -388,31 +416,40 @@ fun ClipboardScreen(
                                 scope.launch {
                                     delay(900L)
                                     ClipboardService.checkNow(context)
+                                    // Did the test row arrive? If not,
+                                    // capture is broken - red lamp.
+                                    delay(1500L)
+                                    if (clipItems.none { it.text == testText }) {
+                                        captureFailed = true
+                                        Toast.makeText(
+                                            context,
+                                            "Test failed - capture is not working.",
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                    } else {
+                                        captureFailed = false
+                                    }
                                 }
                             }
                         }
-                        .padding(
-                            horizontal = windowW * 0.02f,
-                            vertical = windowH * 0.005f
-                        ),
+                        .padding(minDim * 0.022f),
                     contentAlignment = Alignment.Center
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        // Status dot.
-                        Box(
-                            modifier = Modifier
-                                .size(minDim * 0.014f)
-                                .clip(CircleShape)
-                                .background(Color.White)
-                        )
-                        Spacer(modifier = Modifier.width(windowW * 0.011f))
-                        Text(
-                            text = if (captureOn) "On" else "Off",
-                            fontSize = (minDim * 0.028f).value.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = Color.White
-                        )
-                    }
+                    // Soft glow halo behind the lamp.
+                    Box(
+                        modifier = Modifier
+                            .size(minDim * 0.078f)
+                            .clip(CircleShape)
+                            .background(lightColor.copy(alpha = 0.25f))
+                    )
+                    // The lamp itself - blinking.
+                    Box(
+                        modifier = Modifier
+                            .size(minDim * 0.039f)
+                            .clip(CircleShape)
+                            .background(lightColor)
+                            .alpha(blinkAlpha)
+                    )
                 }
             }
 

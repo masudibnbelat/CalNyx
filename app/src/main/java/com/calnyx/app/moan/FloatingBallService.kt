@@ -1,4 +1,10 @@
 // FILE: app/src/main/java/com/calnyx/app/moan/FloatingBallService.kt
+// SCREEN RECORD (2026-11-20) - REPLACE. While a screen
+// recording runs, tapping the ball opens the recording toolbar
+// (ScreenRecordToolbarActivity) instead of the normal panel, and
+// bringToFront() re-adds the ball above the drawing overlay so
+// it stays tappable while drawing. Ball look, drag, panel and
+// size / opacity behaviour are unchanged.
 // CRASHFIX VERSION - white ball, NO border, shadow only.
 // Size / opacity changes NO LONGER stop + restart the service.
 // That restart (stopSelf, then startForegroundService right
@@ -38,6 +44,7 @@ import android.view.WindowManager
 import android.widget.FrameLayout
 import android.widget.Toast
 import androidx.core.app.NotificationCompat
+import com.calnyx.app.BlueFilm.ScreenRecordService
 import com.calnyx.app.R
 
 class FloatingBallService : Service() {
@@ -46,6 +53,7 @@ class FloatingBallService : Service() {
         const val ACTION_START = "com.calnyx.app.moan.START_BALL"
         const val ACTION_STOP = "com.calnyx.app.moan.STOP_BALL"
         const val ACTION_UPDATE = "com.calnyx.app.moan.UPDATE_BALL"
+        private const val ACTION_BRING_TO_FRONT = "com.calnyx.app.moan.BRING_BALL_TO_FRONT"
         private const val NOTIF_ID = 1001
         private const val CHANNEL_ID = "moan_ball"
 
@@ -84,6 +92,20 @@ class FloatingBallService : Service() {
         fun update(context: Context) {
             val intent = Intent(context, FloatingBallService::class.java).apply {
                 action = ACTION_UPDATE
+            }
+            try {
+                context.startService(intent)
+            } catch (_: Exception) {
+            }
+        }
+
+        // SCREEN RECORD (2026-11-20): re-add the ball so it sits
+        // above the drawing overlay (added later, so it would
+        // otherwise cover the ball while drawing). Called when a
+        // screen recording starts and when drawing turns on.
+        fun bringToFront(context: Context) {
+            val intent = Intent(context, FloatingBallService::class.java).apply {
+                action = ACTION_BRING_TO_FRONT
             }
             try {
                 context.startService(intent)
@@ -153,6 +175,12 @@ class FloatingBallService : Service() {
             stopForeground(true)
             stopSelf()
             return START_NOT_STICKY
+        }
+        if (intent?.action == ACTION_BRING_TO_FRONT) {
+            // Re-add only: the service is already foregrounded,
+            // no startForeground call needed here.
+            bringBallToFront()
+            return START_STICKY
         }
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
@@ -261,29 +289,40 @@ class FloatingBallService : Service() {
                 }
                 MotionEvent.ACTION_UP -> {
                     if (!moved) {
-                        // Tap: open ONLY the panel. The ball must
-                        // NEVER open the app itself. If the panel
-                        // cannot open, just toast - no fallback
-                        // to CalNyx.
-                        try {
-                            val panel = Intent(
-                                this@FloatingBallService,
-                                BallPanelActivity::class.java
-                            ).apply {
-                                addFlags(
-                                    Intent.FLAG_ACTIVITY_NEW_TASK or
-                                        Intent.FLAG_ACTIVITY_SINGLE_TOP
-                                )
-                            }
-                            startActivity(panel)
-                        } catch (_: Exception) {
+                        // SCREEN RECORD (2026-11-20): while a
+                        // screen recording runs, the ball opens
+                        // the recording toolbar (pen / shapes /
+                        // clear / stop) instead of the normal
+                        // panel. openToolbar() turns drawing off
+                        // first, so the overlay cannot eat the
+                        // toolbar's taps.
+                        if (ScreenRecordService.isRecording) {
+                            ScreenRecordService.openToolbar(this@FloatingBallService)
+                        } else {
+                            // Tap: open ONLY the panel. The ball must
+                            // NEVER open the app itself. If the panel
+                            // cannot open, just toast - no fallback
+                            // to CalNyx.
                             try {
-                                Toast.makeText(
+                                val panel = Intent(
                                     this@FloatingBallService,
-                                    "Panel could not open.",
-                                    Toast.LENGTH_SHORT
-                                ).show()
+                                    BallPanelActivity::class.java
+                                ).apply {
+                                    addFlags(
+                                        Intent.FLAG_ACTIVITY_NEW_TASK or
+                                            Intent.FLAG_ACTIVITY_SINGLE_TOP
+                                    )
+                                }
+                                startActivity(panel)
                             } catch (_: Exception) {
+                                try {
+                                    Toast.makeText(
+                                        this@FloatingBallService,
+                                        "Panel could not open.",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                } catch (_: Exception) {
+                                }
                             }
                         }
                     } else {
@@ -329,6 +368,25 @@ class FloatingBallService : Service() {
         }
         ballView = null
         params = null
+    }
+
+    // SCREEN RECORD (2026-11-20): remove the ball and add it
+    // again at its saved position. Added last, it sits above
+    // the drawing overlay, so it stays tappable while drawing.
+    private fun bringBallToFront() {
+        val view = ballView ?: return
+        val wm = windowManager ?: return
+        try {
+            wm.removeView(view)
+        } catch (_: Exception) {
+            return
+        }
+        ballView = null
+        params = null
+        try {
+            showBall()
+        } catch (_: Exception) {
+        }
     }
 
     override fun onDestroy() {
