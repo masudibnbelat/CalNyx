@@ -1,4 +1,12 @@
 // FILE: app/src/main/java/com/calnyx/app/update/UpdateDialog.kt
+// UPDATE DIALOG V6 % (2026-11-20) - REPLACE. V5 look, logic,
+// states and texts UNCHANGED. Only change: every size is now a %
+// of the screen (LocalConfiguration - a dialog has no
+// BoxWithConstraints window of its own). Colours were already all
+// theme variables in V5 (surface / onSurface / surfaceVariant /
+// onSurfaceVariant) - verified, no hardcoded colour anywhere.
+// The 403 fallback lives in AppUpdateManager.kt, so this dialog
+// only shows the error state when GitHub itself is unreachable.
 // REPLACE - V5: lightweight, modern, black / white only.
 // What changed vs V4 (logic untouched - same states, same texts,
 // same AppUpdateManager calls, same UpdateDialog(onDismiss) API):
@@ -14,7 +22,7 @@
 //    actually needed, so the wait does not look frozen.
 //    V5.1 (2026-11-07): the first V5 used a LinearProgressIndicator
 //    here and it looked ancient - replaced with a modern
-//    CircularProgressIndicator (thin ring, 3.dp stroke).
+//    CircularProgressIndicator (thin ring, 0.008f minDim stroke).
 //  - REMOVED the progress ring's animateFloatAsState smoothing:
 //    the ring now follows the download progress directly (the
 //    downloader already reports it per 64KB chunk).
@@ -77,11 +85,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -102,6 +111,50 @@ private sealed interface UpdateUiState {
 fun UpdateDialog(onDismiss: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    // V6 %: sizes are % of the screen (360dp baseline phone).
+    val configuration = LocalConfiguration.current
+    val windowW = configuration.screenWidthDp.dp
+    val minDim = minOf(windowW, configuration.screenHeightDp.dp)
+    val outerPad = windowW * 0.067f
+    val surfaceCorner = minDim * 0.067f
+    val sidePad = minDim * 0.056f
+    val topPad = minDim * 0.067f
+    val bottomPad = minDim * 0.056f
+    val gapS = minDim * 0.033f
+    val gapM = minDim * 0.039f
+    val gapL = minDim * 0.044f
+    val gapXL = minDim * 0.056f
+    val subTopPad = minDim * 0.017f
+    val titleFont = (minDim * 0.056f).value.sp
+    val subtitleFont = (minDim * 0.036f).value.sp
+    val smallFont = (minDim * 0.033f).value.sp
+    val buttonFont = (minDim * 0.044f).value.sp
+    val badgeSize = minDim * 0.178f
+    val badgeIcon = minDim * 0.089f
+    val btnH = minDim * 0.144f
+    val btnCorner = minDim * 0.044f
+    val btnIcon = minDim * 0.056f
+    val btnGap = minDim * 0.025f
+    val ringSize = minDim * 0.289f
+    val ringStroke = minDim * 0.025f
+    val ringPctFont = (minDim * 0.061f).value.sp
+    val ringSubFont = (minDim * 0.031f).value.sp
+    val chipFont = (minDim * 0.039f).value.sp
+    val chipPadH = minDim * 0.039f
+    val chipPadV = minDim * 0.019f
+    val arrowSize = minDim * 0.05f
+    val arrowPad = minDim * 0.028f
+    val pillFont = (minDim * 0.033f).value.sp
+    val pillPadH = minDim * 0.033f
+    val pillPadV = minDim * 0.014f
+    val notePad = minDim * 0.039f
+    val noteCorner = minDim * 0.044f
+    val spinnerSize = minDim * 0.122f
+    val spinnerStroke = minDim * 0.008f
+    val closeSize = minDim * 0.094f
+    val closePad = minDim * 0.028f
+    val closeIcon = minDim * 0.05f
+    val elevation = minDim * 0.017f
     val current = remember { AppUpdateManager.currentVersion(context) }
     var state by remember { mutableStateOf<UpdateUiState>(UpdateUiState.Checking) }
 
@@ -130,79 +183,84 @@ fun UpdateDialog(onDismiss: () -> Unit) {
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
         Surface(
-            shape = RoundedCornerShape(24.dp),
+            shape = RoundedCornerShape(surfaceCorner),
             color = MaterialTheme.colorScheme.surface,
             contentColor = MaterialTheme.colorScheme.onSurface,
-            tonalElevation = 6.dp,
+            tonalElevation = elevation,
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 24.dp)
+                .padding(horizontal = outerPad)
         ) {
             Box(modifier = Modifier.fillMaxWidth()) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 20.dp)
-                        .padding(top = 24.dp, bottom = 20.dp),
+                        .padding(horizontal = sidePad)
+                        .padding(top = topPad, bottom = bottomPad),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     when (val s = state) {
                         UpdateUiState.Checking -> {
-                            StatusBadge(Icons.Default.SystemUpdate)
-                            Spacer(modifier = Modifier.height(16.dp))
-                            StateTitle("Checking for updates")
-                            StateSubtitle("Looking on GitHub for a newer CalNyx…")
+                            StatusBadge(Icons.Default.SystemUpdate, badgeSize, badgeIcon)
+                            Spacer(modifier = Modifier.height(gapL))
+                            StateTitle("Checking for updates", titleFont)
+                            StateSubtitle("Looking on GitHub for a newer CalNyx…", subtitleFont, subTopPad)
                             CircularProgressIndicator(
                                 modifier = Modifier
-                                    .padding(top = 20.dp)
-                                    .size(44.dp),
+                                    .padding(top = gapXL)
+                                    .size(spinnerSize),
                                 color = MaterialTheme.colorScheme.onSurface,
                                 trackColor = MaterialTheme.colorScheme.surfaceVariant,
-                                strokeWidth = 3.dp
+                                strokeWidth = spinnerStroke
                             )
                         }
 
                         UpdateUiState.UpToDate -> {
-                            StatusBadge(Icons.Default.Check)
-                            Spacer(modifier = Modifier.height(16.dp))
-                            StateTitle("You're up to date")
-                            StateSubtitle("CalNyx v$current is the latest version")
-                            Spacer(modifier = Modifier.height(20.dp))
-                            GhostButton("Close", onDismiss)
+                            StatusBadge(Icons.Default.Check, badgeSize, badgeIcon)
+                            Spacer(modifier = Modifier.height(gapL))
+                            StateTitle("You're up to date", titleFont)
+                            StateSubtitle("CalNyx v$current is the latest version", subtitleFont, subTopPad)
+                            Spacer(modifier = Modifier.height(gapXL))
+                            GhostButton("Close", onDismiss, btnH, btnCorner, buttonFont)
                         }
 
                         is UpdateUiState.Available -> {
-                            StatusBadge(Icons.Default.SystemUpdate)
-                            Spacer(modifier = Modifier.height(16.dp))
-                            StateTitle("Update available")
-                            Spacer(modifier = Modifier.height(12.dp))
-                            VersionChips(current = current, new = s.info.version)
+                            StatusBadge(Icons.Default.SystemUpdate, badgeSize, badgeIcon)
+                            Spacer(modifier = Modifier.height(gapL))
+                            StateTitle("Update available", titleFont)
+                            Spacer(modifier = Modifier.height(gapS))
+                            VersionChips(current, s.info.version, chipFont, chipPadH, chipPadV, arrowSize, arrowPad)
                             if (s.info.sizeBytes > 0) {
-                                Spacer(modifier = Modifier.height(12.dp))
-                                SizePill(s.info.sizeBytes)
+                                Spacer(modifier = Modifier.height(gapS))
+                                SizePill(s.info.sizeBytes, pillFont, pillPadH, pillPadV)
                             }
                             if (s.info.notes.isNotEmpty()) {
-                                Spacer(modifier = Modifier.height(14.dp))
+                                Spacer(modifier = Modifier.height(gapM))
                                 Box(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .clip(RoundedCornerShape(16.dp))
+                                        .clip(RoundedCornerShape(noteCorner))
                                         .background(MaterialTheme.colorScheme.surfaceVariant)
-                                        .padding(14.dp)
+                                        .padding(notePad)
                                 ) {
                                     Text(
                                         text = s.info.notes,
-                                        fontSize = 13.sp,
+                                        fontSize = subtitleFont,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         maxLines = 8,
                                         overflow = TextOverflow.Ellipsis
                                     )
                                 }
                             }
-                            Spacer(modifier = Modifier.height(20.dp))
+                            Spacer(modifier = Modifier.height(gapXL))
                             PrimaryButton(
                                 text = "Download update",
-                                icon = Icons.Default.Download
+                                icon = Icons.Default.Download,
+                                height = btnH,
+                                corner = btnCorner,
+                                font = buttonFont,
+                                iconSize = btnIcon,
+                                gap = btnGap
                             ) {
                                 state = UpdateUiState.Downloading(s.info, 0f)
                                 scope.launch {
@@ -235,39 +293,50 @@ fun UpdateDialog(onDismiss: () -> Unit) {
                         is UpdateUiState.Downloading -> {
                             ProgressRing(
                                 progress = s.progress,
-                                version = s.info.version
+                                version = s.info.version,
+                                size = ringSize,
+                                stroke = ringStroke,
+                                pctFont = ringPctFont,
+                                subFont = ringSubFont
                             )
-                            Spacer(modifier = Modifier.height(16.dp))
-                            StateTitle("Downloading update")
+                            Spacer(modifier = Modifier.height(gapL))
+                            StateTitle("Downloading update", titleFont)
                             StateSubtitle(
-                                if (s.info.sizeBytes > 0) {
+                                text = if (s.info.sizeBytes > 0) {
                                     "${formatMb(s.progress.toDouble() * s.info.sizeBytes.toDouble())} MB" +
                                             " of ${formatMb(s.info.sizeBytes.toDouble())} MB"
                                 } else {
                                     "Keep the app open until it finishes…"
-                                }
+                                },
+                                font = subtitleFont,
+                                topPad = subTopPad
                             )
                         }
 
                         is UpdateUiState.Ready -> {
-                            StatusBadge(Icons.Default.Check)
-                            Spacer(modifier = Modifier.height(16.dp))
-                            StateTitle("Ready to install")
-                            StateSubtitle("CalNyx v${s.info.version} has been downloaded")
-                            Spacer(modifier = Modifier.height(20.dp))
+                            StatusBadge(Icons.Default.Check, badgeSize, badgeIcon)
+                            Spacer(modifier = Modifier.height(gapL))
+                            StateTitle("Ready to install", titleFont)
+                            StateSubtitle("CalNyx v${s.info.version} has been downloaded", subtitleFont, subTopPad)
+                            Spacer(modifier = Modifier.height(gapXL))
                             PrimaryButton(
                                 text = "Install",
-                                icon = Icons.Default.Check
+                                icon = Icons.Default.Check,
+                                height = btnH,
+                                corner = btnCorner,
+                                font = buttonFont,
+                                iconSize = btnIcon,
+                                gap = btnGap
                             ) {
                                 AppUpdateManager.installApk(context, s.file)
                             }
                             Text(
                                 text = "If Android asks, allow \"Install unknown apps\" " +
                                         "for CalNyx, then tap Install again.",
-                                fontSize = 12.sp,
+                                fontSize = smallFont,
                                 textAlign = TextAlign.Center,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(top = 12.dp)
+                                modifier = Modifier.padding(top = gapS)
                             )
                             TextButton(onClick = onDismiss) {
                                 Text(
@@ -278,14 +347,19 @@ fun UpdateDialog(onDismiss: () -> Unit) {
                         }
 
                         is UpdateUiState.Failed -> {
-                            StatusBadge(Icons.Default.ErrorOutline)
-                            Spacer(modifier = Modifier.height(16.dp))
-                            StateTitle("Couldn't check for updates")
-                            StateSubtitle(s.message)
-                            Spacer(modifier = Modifier.height(20.dp))
+                            StatusBadge(Icons.Default.ErrorOutline, badgeSize, badgeIcon)
+                            Spacer(modifier = Modifier.height(gapL))
+                            StateTitle("Couldn't check for updates", titleFont)
+                            StateSubtitle(s.message, subtitleFont, subTopPad)
+                            Spacer(modifier = Modifier.height(gapXL))
                             PrimaryButton(
                                 text = "Retry",
-                                icon = Icons.Default.Refresh
+                                icon = Icons.Default.Refresh,
+                                height = btnH,
+                                corner = btnCorner,
+                                font = buttonFont,
+                                iconSize = btnIcon,
+                                gap = btnGap
                             ) { check() }
                             TextButton(onClick = onDismiss) {
                                 Text(
@@ -301,8 +375,8 @@ fun UpdateDialog(onDismiss: () -> Unit) {
                     onClick = onDismiss,
                     modifier = Modifier
                         .align(Alignment.TopEnd)
-                        .padding(10.dp)
-                        .size(34.dp)
+                        .padding(closePad)
+                        .size(closeSize)
                         .clip(CircleShape)
                         .background(
                             MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f)
@@ -311,7 +385,7 @@ fun UpdateDialog(onDismiss: () -> Unit) {
                     Icon(
                         Icons.Default.Close,
                         contentDescription = "Close",
-                        modifier = Modifier.size(18.dp),
+                        modifier = Modifier.size(closeIcon),
                         tint = MaterialTheme.colorScheme.onSurface
                     )
                 }
@@ -323,10 +397,10 @@ fun UpdateDialog(onDismiss: () -> Unit) {
 // One static circular badge: inverted colours (onSurface circle,
 // surface icon). No pop, no pulse, no colour morph.
 @Composable
-private fun StatusBadge(icon: ImageVector) {
+private fun StatusBadge(icon: ImageVector, size: Dp, iconSize: Dp) {
     Box(
         modifier = Modifier
-            .size(64.dp)
+            .size(size)
             .clip(CircleShape)
             .background(MaterialTheme.colorScheme.onSurface),
         contentAlignment = Alignment.Center
@@ -334,7 +408,7 @@ private fun StatusBadge(icon: ImageVector) {
         Icon(
             icon,
             contentDescription = null,
-            modifier = Modifier.size(32.dp),
+            modifier = Modifier.size(iconSize),
             tint = MaterialTheme.colorScheme.surface
         )
     }
@@ -344,34 +418,41 @@ private fun StatusBadge(icon: ImageVector) {
 // middle. The ring follows the download progress directly -
 // no smoothing animation.
 @Composable
-private fun ProgressRing(progress: Float, version: String) {
+private fun ProgressRing(
+    progress: Float,
+    version: String,
+    size: Dp,
+    stroke: Dp,
+    pctFont: TextUnit,
+    subFont: TextUnit
+) {
     val track = MaterialTheme.colorScheme.surfaceVariant
     val accent = MaterialTheme.colorScheme.onSurface
     Box(
-        modifier = Modifier.size(104.dp),
+        modifier = Modifier.size(size),
         contentAlignment = Alignment.Center
     ) {
         Canvas(modifier = Modifier.fillMaxSize()) {
-            val stroke = Stroke(width = 9.dp.toPx(), cap = StrokeCap.Round)
-            drawCircle(color = track, style = stroke)
+            val ringStroke = Stroke(width = stroke.toPx(), cap = StrokeCap.Round)
+            drawCircle(color = track, style = ringStroke)
             drawArc(
                 color = accent,
                 startAngle = -90f,
                 sweepAngle = 360f * progress.coerceIn(0f, 1f),
                 useCenter = false,
-                style = stroke
+                style = ringStroke
             )
         }
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
                 text = "${(progress * 100).toInt()}%",
-                fontSize = 22.sp,
+                fontSize = pctFont,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface
             )
             Text(
                 text = "of v$version",
-                fontSize = 11.sp,
+                fontSize = subFont,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
@@ -379,10 +460,10 @@ private fun ProgressRing(progress: Float, version: String) {
 }
 
 @Composable
-private fun StateTitle(text: String) {
+private fun StateTitle(text: String, font: TextUnit) {
     Text(
         text = text,
-        fontSize = 20.sp,
+        fontSize = font,
         fontWeight = FontWeight.Bold,
         textAlign = TextAlign.Center,
         color = MaterialTheme.colorScheme.onSurface
@@ -390,37 +471,45 @@ private fun StateTitle(text: String) {
 }
 
 @Composable
-private fun StateSubtitle(text: String) {
+private fun StateSubtitle(text: String, font: TextUnit, topPad: Dp) {
     Text(
         text = text,
-        fontSize = 13.sp,
+        fontSize = font,
         textAlign = TextAlign.Center,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(top = 6.dp)
+        modifier = Modifier.padding(top = topPad)
     )
 }
 
 @Composable
-private fun VersionChips(current: String, new: String) {
+private fun VersionChips(
+    current: String,
+    new: String,
+    font: TextUnit,
+    padH: Dp,
+    padV: Dp,
+    arrow: Dp,
+    arrowPad: Dp
+) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center
     ) {
-        VersionChip(text = "v$current", active = false)
+        VersionChip(text = "v$current", active = false, font, padH, padV)
         Icon(
             Icons.AutoMirrored.Filled.ArrowForward,
             contentDescription = null,
             modifier = Modifier
-                .padding(horizontal = 10.dp)
-                .size(18.dp),
+                .padding(horizontal = arrowPad)
+                .size(arrow),
             tint = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        VersionChip(text = "v$new", active = true)
+        VersionChip(text = "v$new", active = true, font, padH, padV)
     }
 }
 
 @Composable
-private fun VersionChip(text: String, active: Boolean) {
+private fun VersionChip(text: String, active: Boolean, font: TextUnit, padH: Dp, padV: Dp) {
     Box(
         modifier = Modifier
             .clip(RoundedCornerShape(percent = 50))
@@ -428,11 +517,11 @@ private fun VersionChip(text: String, active: Boolean) {
                 if (active) MaterialTheme.colorScheme.onSurface
                 else MaterialTheme.colorScheme.surfaceVariant
             )
-            .padding(horizontal = 14.dp, vertical = 7.dp)
+            .padding(horizontal = padH, vertical = padV)
     ) {
         Text(
             text = text,
-            fontSize = 14.sp,
+            fontSize = font,
             fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
             color = if (active) MaterialTheme.colorScheme.surface
             else MaterialTheme.colorScheme.onSurfaceVariant
@@ -441,16 +530,16 @@ private fun VersionChip(text: String, active: Boolean) {
 }
 
 @Composable
-private fun SizePill(sizeBytes: Long) {
+private fun SizePill(sizeBytes: Long, font: TextUnit, padH: Dp, padV: Dp) {
     Box(
         modifier = Modifier
             .clip(RoundedCornerShape(percent = 50))
             .background(MaterialTheme.colorScheme.surfaceVariant)
-            .padding(horizontal = 12.dp, vertical = 5.dp)
+            .padding(horizontal = padH, vertical = padV)
     ) {
         Text(
             text = "APK size  •  ${formatMb(sizeBytes.toDouble())} MB",
-            fontSize = 12.sp,
+            fontSize = font,
             fontWeight = FontWeight.Medium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -460,12 +549,21 @@ private fun SizePill(sizeBytes: Long) {
 // Primary action: one solid inverted colour, rounded, normal
 // ripple. No press-in scale, no gradients, no shimmer.
 @Composable
-private fun PrimaryButton(text: String, icon: ImageVector, onClick: () -> Unit) {
+private fun PrimaryButton(
+    text: String,
+    icon: ImageVector,
+    onClick: () -> Unit,
+    height: Dp,
+    corner: Dp,
+    font: TextUnit,
+    iconSize: Dp,
+    gap: Dp
+) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(52.dp)
-            .clip(RoundedCornerShape(16.dp))
+            .height(height)
+            .clip(RoundedCornerShape(corner))
             .background(MaterialTheme.colorScheme.onSurface)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
@@ -474,13 +572,13 @@ private fun PrimaryButton(text: String, icon: ImageVector, onClick: () -> Unit) 
             Icon(
                 icon,
                 contentDescription = null,
-                modifier = Modifier.size(20.dp),
+                modifier = Modifier.size(iconSize),
                 tint = MaterialTheme.colorScheme.surface
             )
-            Spacer(modifier = Modifier.width(9.dp))
+            Spacer(modifier = Modifier.width(gap))
             Text(
                 text = text,
-                fontSize = 16.sp,
+                fontSize = font,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.surface
             )
@@ -489,17 +587,23 @@ private fun PrimaryButton(text: String, icon: ImageVector, onClick: () -> Unit) 
 }
 
 @Composable
-private fun GhostButton(text: String, onClick: () -> Unit) {
+private fun GhostButton(
+    text: String,
+    onClick: () -> Unit,
+    height: Dp,
+    corner: Dp,
+    font: TextUnit
+) {
     OutlinedButton(
         onClick = onClick,
         modifier = Modifier
             .fillMaxWidth()
-            .height(52.dp),
-        shape = RoundedCornerShape(16.dp)
+            .height(height),
+        shape = RoundedCornerShape(corner)
     ) {
         Text(
             text = text,
-            fontSize = 16.sp,
+            fontSize = font,
             fontWeight = FontWeight.Medium,
             color = MaterialTheme.colorScheme.onSurface
         )
