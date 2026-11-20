@@ -86,6 +86,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -248,6 +249,25 @@ fun ClipboardScreen(
         "TEXT" -> clipItems.filter { it.type == "TEXT" }
         "IMAGE" -> clipItems.filter { it.type == "IMAGE" }
         else -> clipItems
+    }
+
+    // SCROLL TO TOP ON ENTRY (2026-11-20): every time this screen is
+    // opened, the list glides smoothly back to the very first item
+    // (index 0, the newest copy) - wherever it was left. The list
+    // state is saveable, so without this the list reopened at the
+    // old scroll position. Runs once per entry, only after the
+    // items have loaded; new copies arriving while the screen is
+    // already open do NOT trigger it.
+    val listState = rememberLazyListState()
+    var scrolledToTop by remember { mutableStateOf(false) }
+    LaunchedEffect(clipItems.isNotEmpty()) {
+        if (clipItems.isNotEmpty() && !scrolledToTop) {
+            listState.animateScrollToItem(
+                index = 0,
+                animationSpec = tween(durationMillis = 500)
+            )
+            scrolledToTop = true
+        }
     }
 
     // On open: start the listener service, prune expired rows, check
@@ -574,6 +594,7 @@ fun ClipboardScreen(
             } else {
                 LazyColumn(
                     modifier = Modifier.fillMaxWidth().weight(1f).then(drawerSwipe),
+                    state = listState,
                     verticalArrangement = Arrangement.spacedBy(windowH * 0.013f)
                 ) {
                     items(shownItems, key = { it.id }, contentType = { it.type }) { item ->

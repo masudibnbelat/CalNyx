@@ -4,8 +4,8 @@
 //
 // The view lives in a transparent full-screen overlay window
 // owned by ScreenRecordService. It draws every mark the user
-// made (pen / circle / rectangle / arrow, in the chosen
-// colour, plus emoji stickers), so the marks are visible on
+// made (pen / circle / rectangle / triangle / arrow, in the
+// chosen colour, plus emoji stickers), so the marks are visible on
 // any screen content AND in the recorded video, because the
 // overlay itself is recorded.
 //
@@ -39,7 +39,7 @@ import kotlin.math.hypot
 import kotlin.math.sin
 
 enum class DrawTool {
-    NONE, PEN, CIRCLE, RECT, ARROW, EMOJI
+    NONE, PEN, CIRCLE, RECT, TRIANGLE, ARROW, EMOJI
 }
 
 sealed class DrawMark {
@@ -53,6 +53,9 @@ sealed class DrawMark {
     // Shapes: drag from one corner to the opposite one.
     data class Circle(val start: PointF, var end: PointF, override val color: Int) : DrawMark()
     data class Rect(val start: PointF, var end: PointF, override val color: Int) : DrawMark()
+    // Triangle: drag from one corner to the opposite one -
+    // apex top-centre, base along the bottom.
+    data class Triangle(val start: PointF, var end: PointF, override val color: Int) : DrawMark()
     // Arrow: drag from tail to tip - the head is drawn at end.
     data class Arrow(val start: PointF, var end: PointF, override val color: Int) : DrawMark()
     // Emoji sticker: one tap stamps it at that spot.
@@ -126,6 +129,7 @@ class ScreenDrawView(context: Context) : View(context) {
                     DrawTool.PEN -> DrawMark.Freehand(mutableListOf(point), markColor)
                     DrawTool.CIRCLE -> DrawMark.Circle(point, point, markColor)
                     DrawTool.RECT -> DrawMark.Rect(point, point, markColor)
+                    DrawTool.TRIANGLE -> DrawMark.Triangle(point, point, markColor)
                     DrawTool.ARROW -> DrawMark.Arrow(point, point, markColor)
                     DrawTool.NONE, DrawTool.EMOJI -> null
                 }
@@ -138,6 +142,7 @@ class ScreenDrawView(context: Context) : View(context) {
                     is DrawMark.Freehand -> mark.points.add(point)
                     is DrawMark.Circle -> mark.end = point
                     is DrawMark.Rect -> mark.end = point
+                    is DrawMark.Triangle -> mark.end = point
                     is DrawMark.Arrow -> mark.end = point
                     is DrawMark.Emoji -> Unit
                 }
@@ -190,6 +195,18 @@ class ScreenDrawView(context: Context) : View(context) {
                 val top = minOf(mark.start.y, mark.end.y)
                 val bottom = maxOf(mark.start.y, mark.end.y)
                 canvas.drawRect(left, top, right, bottom, strokePaint)
+            }
+            is DrawMark.Triangle -> {
+                val left = minOf(mark.start.x, mark.end.x)
+                val right = maxOf(mark.start.x, mark.end.x)
+                val top = minOf(mark.start.y, mark.end.y)
+                val bottom = maxOf(mark.start.y, mark.end.y)
+                val path = Path()
+                path.moveTo((left + right) / 2f, top)
+                path.lineTo(right, bottom)
+                path.lineTo(left, bottom)
+                path.close()
+                canvas.drawPath(path, strokePaint)
             }
             is DrawMark.Arrow -> {
                 // Shaft from tail to tip, plus a V head at the

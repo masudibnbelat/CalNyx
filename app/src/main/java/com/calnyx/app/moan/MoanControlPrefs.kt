@@ -14,6 +14,7 @@ object MoanControlPrefs {
     private const val KEY_BALL_X = "ball_x"
     private const val KEY_BALL_Y = "ball_y"
     private const val KEY_ORIENTATION = "orientation_mode"
+    private const val KEY_TORCH_ON = "torch_on"
 
     private fun prefs(context: Context) =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -58,5 +59,16 @@ object MoanControlPrefs {
 
     fun setOrientationMode(context: Context, mode: String) {
         prefs(context).edit().putString(KEY_ORIENTATION, mode).apply()
+    }
+
+    // Flashlight: on until the user turns it off by hand.
+    // Closing the ball panel must never change it. This only
+    // mirrors what the app last set; the panel also listens
+    // to the system's torch callback for the real state.
+    fun isTorchOn(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_TORCH_ON, false)
+
+    fun setTorchOn(context: Context, on: Boolean) {
+        prefs(context).edit().putBoolean(KEY_TORCH_ON, on).apply()
     }
 }

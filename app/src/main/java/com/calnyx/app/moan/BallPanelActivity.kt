@@ -8,12 +8,13 @@
 // The Activity is translucent (see manifest), so it looks like
 // a small panel, not a full screen. It never appears in recents.
 // Design: NO title, NO X button, NO labels, NO percent, NO
-// Home. Center card, max 320dp. Dark mode = black card
-// (0xFF0E0E0E), light = white. Icons only, 36dp icons
-// in 60dp circles, in 3 rows of 3, in the user's order
-// (the Screenshot icon is a vector drawn in this file,
-// ScreenshotIcon below, traced from the user's image -
-// no PNG file needed).
+// Home. Center card. Colours and sizes come from the theme
+// and the window (CalNyxTheme + % of minDim, 2026-11-20):
+// the card is the theme's background, the circles are
+// surfaceContainer. Icons only, in 3 rows of 3, in the
+// user's order (the Screenshot icon is a vector drawn in
+// this file, ScreenshotIcon below, traced from the user's
+// image - no PNG file needed).
 // (column by column):
 // Column 1 = Power, Lock, Rotate;
 // Column 2 = Ringtone sound, Call sound, Media sound;
@@ -85,9 +86,9 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.scaleIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -97,7 +98,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -117,8 +117,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -133,18 +131,41 @@ import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.PathNode
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.calnyx.app.BlueFilm.BlueFilmService
 import com.calnyx.app.BlueFilm.ScreenRecordService
 import com.calnyx.app.moan.FloatingBallService
+import com.calnyx.app.moan.MoanControlPrefs
 import com.calnyx.app.applock.AppLockManager
 import com.calnyx.app.applock.AppLockService
+import com.calnyx.app.ui.theme.CalNyxRed
+import com.calnyx.app.ui.theme.CalNyxTheme
 
 class BallPanelActivity : ComponentActivity() {
 
     private var torchOn by mutableStateOf(false)
+    // The back camera with a flash, found once and reused.
+    private var flashCameraId: String? = null
+    // The torch's real state, from the system. Android has no
+    // "is the torch on" query, so the panel listens for changes
+    // (the system also reports the current state when the
+    // callback is registered). The panel itself never turns
+    // the torch off - it stays on until the user turns it off
+    // by hand.
+    private val torchCallback = object : CameraManager.TorchCallback() {
+        override fun onTorchModeChanged(cameraId: String, enabled: Boolean) {
+            try {
+                if (cameraId == flashCameraId) {
+                    torchOn = enabled
+                    MoanControlPrefs.setTorchOn(this@BallPanelActivity, enabled)
+                }
+            } catch (_: Exception) {
+            }
+        }
+    }
     private var accessibilityOn by mutableStateOf(false)
     // Rotate toggle state: true = Down (180 deg) is active.
     private var rotateDown by mutableStateOf(false)
@@ -199,27 +220,34 @@ class BallPanelActivity : ComponentActivity() {
         }
         accessibilityOn = AppLockManager.isAccessibilityEnabled(this)
         rotateDown = OrientationService.getSavedMode(this) == "down"
+        // Torch: show the current state when the panel opens.
+        // The saved state is the starting point; the torch
+        // callback below corrects it from the system if the
+        // torch was changed elsewhere (e.g. Quick Settings).
+        torchOn = MoanControlPrefs.isTorchOn(this)
+        try {
+            val cm = getSystemService(Context.CAMERA_SERVICE) as CameraManager
+            flashCameraId = findFlashCamera(cm)
+            cm.registerTorchCallback(torchCallback, mainHandler)
+        } catch (_: Exception) {
+        }
         setContent {
-            val darkTheme = isSystemInDarkTheme()
-            val cardBg = if (darkTheme) Color(0xFF0E0E0E) else Color(0xFFFFFFFF)
-            val onCard = if (darkTheme) Color(0xFFF6F4EF) else Color(0xFF0E0E0E)
-            val thumbBg = if (darkTheme) Color(0xFF262626) else Color(0xFFEFEDE8)
-            val cardBorder = if (darkTheme) Color(0xFF2B2B2B) else Color(0xFFE9E6DF)
-            MaterialTheme(
-                colorScheme = if (darkTheme) darkColorScheme(
-                    background = Color(0xFF0E0E0E),
-                    surface = Color(0xFF0E0E0E),
-                    onSurface = Color(0xFFF6F4EF),
-                    primary = Color(0xFFF6F4EF),
-                    onPrimary = Color(0xFF0E0E0E)
-                ) else lightColorScheme(
-                    background = Color(0xFFF6F4EF),
-                    surface = Color(0xFFFFFFFF),
-                    onSurface = Color(0xFF0E0E0E),
-                    primary = Color(0xFF0E0E0E),
-                    onPrimary = Color(0xFFF6F4EF)
-                )
-            ) {
+            // THEME VARIABLES + % SIZES (2026-11-20): the panel
+            // used to carry its own hardcoded dark/light scheme
+            // (#0E0E0E / white) and fixed dp sizes. Now it reads
+            // the app theme (CalNyxTheme) and sizes itself as a
+            // % of the window, so it follows the theme and fits
+            // any screen. The card is the theme's background
+            // (dark #1F1F1F - the theme's darkest grey; the
+            // panel's exact #0E0E0E is not in the palette), the
+            // circles are surfaceContainer. The colour names
+            // (cardBg / onCard / thumbBg) are kept, so the
+            // button call sites below do not change.
+            CalNyxTheme {
+                val colorScheme = MaterialTheme.colorScheme
+                val cardBg = colorScheme.background
+                val onCard = colorScheme.onBackground
+                val thumbBg = colorScheme.surfaceContainer
                 // Minimal animation: one quick fade + tiny scale-in.
                 AnimatedVisibility(
                     visible = true,
@@ -229,31 +257,43 @@ class BallPanelActivity : ComponentActivity() {
                             animationSpec = androidx.compose.animation.core.tween(150)
                         )
                 ) {
-                    Box(
+                    BoxWithConstraints(
                         modifier = Modifier
                             .fillMaxSize()
                             .background(Color.Black.copy(alpha = 0.5f))
                             .clickable { finish() },
                         contentAlignment = Alignment.Center
                     ) {
+                        val minDim = minOf(maxWidth, maxHeight)
                         Surface(
                             modifier = Modifier
-                                .widthIn(max = 320.dp)
-                                .fillMaxWidth(0.88f)
+                                .fillMaxWidth(0.82f)
                                 // Consume taps on the card so they do
                                 // not fall through to the dim background
                                 // (which closes the panel).
                                 .clickable {},
 
-                            shape = RoundedCornerShape(28.dp),
+                            shape = RoundedCornerShape(minDim * 0.071f),
                             color = cardBg,
                             contentColor = onCard,
-                            tonalElevation = 8.dp,
-                            shadowElevation = 8.dp
+                            // Tonal elevation is 0 ON PURPOSE: a
+                            // Surface tints its colour with the
+                            // theme's surface tint, which lightens
+                            // the card - and the toolbar's card did
+                            // not get the same tint, so the two
+                            // windows looked different even though
+                            // both use the same colour variable.
+                            // The shadow stays (it does not change
+                            // the colour, only the depth).
+                            tonalElevation = 0.dp,
+                            shadowElevation = minDim * 0.02f
                         ) {
                             Column(
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
-                                verticalArrangement = Arrangement.spacedBy(4.dp),
+                                modifier = Modifier.padding(
+                                    horizontal = minDim * 0.031f,
+                                    vertical = minDim * 0.031f
+                                ),
+                                verticalArrangement = Arrangement.spacedBy(minDim * 0.010f),
                                 horizontalAlignment = Alignment.CenterHorizontally
                             ) {
                                 // Icon-only grid, 3 rows of 3. No titles,
@@ -274,6 +314,7 @@ class BallPanelActivity : ComponentActivity() {
                                         thumbBg = thumbBg,
                                         onCard = onCard,
                                         cardBg = cardBg,
+                                        minDim = minDim,
                                         onClick = { doPower() }
                                     )
                                     ActionButton(
@@ -282,6 +323,7 @@ class BallPanelActivity : ComponentActivity() {
                                         thumbBg = thumbBg,
                                         onCard = onCard,
                                         cardBg = cardBg,
+                                        minDim = minDim,
                                         onClick = { showSystemVolume(AudioManager.STREAM_RING) }
                                     )
                                     ActionButton(
@@ -290,7 +332,8 @@ class BallPanelActivity : ComponentActivity() {
                                         thumbBg = thumbBg,
                                         onCard = onCard,
                                         cardBg = cardBg,
-                                        tint = Color(0xFFC62828),
+                                        minDim = minDim,
+                                        tint = CalNyxRed,
                                         onClick = { doScreenRecord() }
                                     )
                                 }
@@ -304,6 +347,7 @@ class BallPanelActivity : ComponentActivity() {
                                         thumbBg = thumbBg,
                                         onCard = onCard,
                                         cardBg = cardBg,
+                                        minDim = minDim,
                                         onClick = { doLock() }
                                     )
                                     ActionButton(
@@ -312,6 +356,7 @@ class BallPanelActivity : ComponentActivity() {
                                         thumbBg = thumbBg,
                                         onCard = onCard,
                                         cardBg = cardBg,
+                                        minDim = minDim,
                                         onClick = { showSystemVolume(AudioManager.STREAM_VOICE_CALL) }
                                     )
                                     ActionButton(
@@ -320,6 +365,7 @@ class BallPanelActivity : ComponentActivity() {
                                         thumbBg = thumbBg,
                                         onCard = onCard,
                                         cardBg = cardBg,
+                                        minDim = minDim,
                                         active = torchOn,
                                         onClick = { onFlashlightClick() }
                                     )
@@ -334,6 +380,7 @@ class BallPanelActivity : ComponentActivity() {
                                         thumbBg = thumbBg,
                                         onCard = onCard,
                                         cardBg = cardBg,
+                                        minDim = minDim,
                                         active = rotateDown,
                                         rotated = rotateDown,
                                         onClick = { doRotateToggle() }
@@ -344,6 +391,7 @@ class BallPanelActivity : ComponentActivity() {
                                         thumbBg = thumbBg,
                                         onCard = onCard,
                                         cardBg = cardBg,
+                                        minDim = minDim,
                                         onClick = { showSystemVolume(AudioManager.STREAM_MUSIC) }
                                     )
                                     ActionButton(
@@ -352,39 +400,40 @@ class BallPanelActivity : ComponentActivity() {
                                         thumbBg = thumbBg,
                                         onCard = onCard,
                                         cardBg = cardBg,
+                                        minDim = minDim,
                                         onClick = { doScreenshot() }
                                     )
                                 }
                                 // Accessibility banner - only when off.
                                 // Lock, Power and Screenshot all need it.
                                 if (!accessibilityOn) {
-                                    Spacer(modifier = Modifier.height(12.dp))
+                                    Spacer(modifier = Modifier.height(minDim * 0.031f))
                                     Row(
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .clip(RoundedCornerShape(12.dp))
+                                            .clip(RoundedCornerShape(minDim * 0.031f))
                                             .background(thumbBg)
-                                            .padding(12.dp),
+                                            .padding(minDim * 0.031f),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         Icon(
                                             Icons.Default.WarningAmber,
                                             contentDescription = null,
-                                            modifier = Modifier.size(22.dp),
+                                            modifier = Modifier.size(minDim * 0.056f),
                                             tint = onCard
                                         )
-                                        Spacer(modifier = Modifier.width(10.dp))
+                                        Spacer(modifier = Modifier.width(minDim * 0.026f))
                                         Text(
                                             text = "Lock, Power and Screenshot need Accessibility.",
-                                            fontSize = 13.sp,
+                                            fontSize = (minDim * 0.033f).value.sp,
                                             modifier = Modifier.weight(1f)
                                         )
                                     }
-                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Spacer(modifier = Modifier.height(minDim * 0.020f))
                                     Button(
                                         onClick = { openAccessibilitySettings() },
                                         modifier = Modifier.fillMaxWidth(),
-                                        shape = RoundedCornerShape(12.dp),
+                                        shape = RoundedCornerShape(minDim * 0.031f),
                                         colors = ButtonDefaults.buttonColors(
                                             containerColor = onCard,
                                             contentColor = cardBg
@@ -409,15 +458,15 @@ class BallPanelActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        // Never leave the torch on if the panel is gone.
-        if (torchOn) {
-            try {
-                val cm = getSystemService(Context.CAMERA_SERVICE) as CameraManager
-                val id = findFlashCamera(cm)
-                if (id != null) cm.setTorchMode(id, false)
-            } catch (_: Exception) {
-            }
-            torchOn = false
+        // The torch is NOT touched here on purpose: closing
+        // the panel must never turn it off. It stays on until
+        // the user turns it off by hand (this panel's toggle
+        // or the system's own torch tile). Only the callback
+        // is unregistered.
+        try {
+            val cm = getSystemService(Context.CAMERA_SERVICE) as CameraManager
+            cm.unregisterTorchCallback(torchCallback)
+        } catch (_: Exception) {
         }
     }
 
@@ -526,12 +575,13 @@ class BallPanelActivity : ComponentActivity() {
     private fun toggleTorch() {
         try {
             val cm = getSystemService(Context.CAMERA_SERVICE) as CameraManager
-            val id = findFlashCamera(cm) ?: run {
+            val id = flashCameraId ?: findFlashCamera(cm)?.also { flashCameraId = it } ?: run {
                 Toast.makeText(this, "This phone has no flash.", Toast.LENGTH_SHORT).show()
                 return
             }
             torchOn = !torchOn
             cm.setTorchMode(id, torchOn)
+            MoanControlPrefs.setTorchOn(this, torchOn)
             Toast.makeText(
                 this,
                 if (torchOn) "Flashlight on" else "Flashlight off",
@@ -539,6 +589,7 @@ class BallPanelActivity : ComponentActivity() {
             ).show()
         } catch (_: Exception) {
             torchOn = false
+            MoanControlPrefs.setTorchOn(this, false)
             Toast.makeText(
                 this,
                 "Flashlight did not work on this phone.",
@@ -652,6 +703,7 @@ private fun ActionButton(
     thumbBg: Color,
     onCard: Color,
     cardBg: Color,
+    minDim: Dp,
     active: Boolean = false,
     rotated: Boolean = false,
     // Fixed icon colour, when set (the red record dot).
@@ -662,16 +714,18 @@ private fun ActionButton(
     // Icon only - no label text. When active (flashlight on,
     // or rotate Down), the circle is inverted so the state is
     // visible. When rotated, the icon itself is turned 180 deg.
+    // Sizes are % of the window (56dp circle / 36dp icon / 4dp
+    // padding on the user's phone), like the toolbar.
     Box(
         modifier = Modifier
             .clip(CircleShape)
             .clickable { onClick() }
-            .padding(4.dp),
+            .padding(minDim * 0.010f),
         contentAlignment = Alignment.Center
     ) {
         Box(
             modifier = Modifier
-                .size(56.dp)
+                .size(minDim * 0.143f)
                 .clip(CircleShape)
                 .background(if (active) onCard else thumbBg),
             contentAlignment = Alignment.Center
@@ -679,7 +733,7 @@ private fun ActionButton(
             Icon(
                 icon,
                 contentDescription = label,
-                modifier = Modifier.size(36.dp).rotate(if (rotated) 180f else 0f),
+                modifier = Modifier.size(minDim * 0.092f).rotate(if (rotated) 180f else 0f),
                 tint = tint ?: if (active) cardBg else onCard
             )
         }
