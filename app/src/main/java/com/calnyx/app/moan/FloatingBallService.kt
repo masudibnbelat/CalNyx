@@ -1,10 +1,4 @@
 // FILE: app/src/main/java/com/calnyx/app/moan/FloatingBallService.kt
-// SCREEN RECORD (2026-11-20) - REPLACE. While a screen
-// recording runs, tapping the ball opens the recording toolbar
-// (ScreenRecordToolbarActivity) instead of the normal panel, and
-// bringToFront() re-adds the ball above the drawing overlay so
-// it stays tappable while drawing. Ball look, drag, panel and
-// size / opacity behaviour are unchanged.
 // CRASHFIX VERSION - white ball, NO border, shadow only.
 // Size / opacity changes NO LONGER stop + restart the service.
 // That restart (stopSelf, then startForegroundService right
@@ -53,7 +47,6 @@ class FloatingBallService : Service() {
         const val ACTION_START = "com.calnyx.app.moan.START_BALL"
         const val ACTION_STOP = "com.calnyx.app.moan.STOP_BALL"
         const val ACTION_UPDATE = "com.calnyx.app.moan.UPDATE_BALL"
-        private const val ACTION_BRING_TO_FRONT = "com.calnyx.app.moan.BRING_BALL_TO_FRONT"
         private const val NOTIF_ID = 1001
         private const val CHANNEL_ID = "moan_ball"
 
@@ -99,10 +92,14 @@ class FloatingBallService : Service() {
             }
         }
 
-        // SCREEN RECORD (2026-11-20): re-add the ball so it sits
-        // above the drawing overlay (added later, so it would
-        // otherwise cover the ball while drawing). Called when a
-        // screen recording starts and when drawing turns on.
+        // SCREEN RECORD (2026-11-20): bring the ball above the
+        // draw overlay, without restarting the service. The
+        // recorder calls this after adding its overlay, so the
+        // ball stays tappable while drawing. Plain startService:
+        // the service is already running, so this only delivers
+        // the intent to onStartCommand.
+        private const val ACTION_BRING_TO_FRONT = "com.calnyx.app.moan.BRING_BALL_TO_FRONT"
+
         fun bringToFront(context: Context) {
             val intent = Intent(context, FloatingBallService::class.java).apply {
                 action = ACTION_BRING_TO_FRONT
@@ -177,8 +174,8 @@ class FloatingBallService : Service() {
             return START_NOT_STICKY
         }
         if (intent?.action == ACTION_BRING_TO_FRONT) {
-            // Re-add only: the service is already foregrounded,
-            // no startForeground call needed here.
+            // Re-add the ball above the draw overlay. No
+            // re-foreground: the service is already running.
             bringBallToFront()
             return START_STICKY
         }
@@ -249,7 +246,13 @@ class FloatingBallService : Service() {
             sizePx,
             type,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED,
+                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                // HIDE FROM CAPTURE (2026-11-20): FLAG_SECURE
+                // keeps this ball OUT of screenshots and screen
+                // recordings. It stays fully visible and tappable
+                // on the phone's own screen - it just never lands
+                // in a saved picture or video.
+                WindowManager.LayoutParams.FLAG_SECURE,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
@@ -289,20 +292,18 @@ class FloatingBallService : Service() {
                 }
                 MotionEvent.ACTION_UP -> {
                     if (!moved) {
-                        // SCREEN RECORD (2026-11-20): while a
-                        // screen recording runs, the ball opens
-                        // the recording toolbar (pen / shapes /
-                        // clear / stop) instead of the normal
-                        // panel. openToolbar() turns drawing off
-                        // first, so the overlay cannot eat the
-                        // toolbar's taps.
+                        // While a screen recording runs, the ball
+                        // opens the recording toolbar, not the
+                        // panel. Otherwise: open ONLY the panel.
+                        // The ball must NEVER open the app itself.
+                        // If the panel cannot open, just toast -
+                        // no fallback to CalNyx.
                         if (ScreenRecordService.isRecording) {
-                            ScreenRecordService.openToolbar(this@FloatingBallService)
+                            try {
+                                ScreenRecordService.openToolbar(this@FloatingBallService)
+                            } catch (_: Exception) {
+                            }
                         } else {
-                            // Tap: open ONLY the panel. The ball must
-                            // NEVER open the app itself. If the panel
-                            // cannot open, just toast - no fallback
-                            // to CalNyx.
                             try {
                                 val panel = Intent(
                                     this@FloatingBallService,
@@ -370,23 +371,14 @@ class FloatingBallService : Service() {
         params = null
     }
 
-    // SCREEN RECORD (2026-11-20): remove the ball and add it
-    // again at its saved position. Added last, it sits above
-    // the drawing overlay, so it stays tappable while drawing.
+    // SCREEN RECORD (2026-11-20): re-add the ball above
+    // everything else. The draw overlay is added after the
+    // ball, so without this the ball would sit underneath it
+    // and could not be tapped while drawing. A fresh addView
+    // always lands on top, at the saved position.
     private fun bringBallToFront() {
-        val view = ballView ?: return
-        val wm = windowManager ?: return
-        try {
-            wm.removeView(view)
-        } catch (_: Exception) {
-            return
-        }
-        ballView = null
-        params = null
-        try {
-            showBall()
-        } catch (_: Exception) {
-        }
+        removeBall()
+        showBall()
     }
 
     override fun onDestroy() {

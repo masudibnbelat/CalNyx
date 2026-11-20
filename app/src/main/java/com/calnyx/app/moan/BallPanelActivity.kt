@@ -9,8 +9,11 @@
 // a small panel, not a full screen. It never appears in recents.
 // Design: NO title, NO X button, NO labels, NO percent, NO
 // Home. Center card, max 320dp. Dark mode = black card
-// (0xFF0E0E0E), light = white. Icons only, 36dp Material icons
+// (0xFF0E0E0E), light = white. Icons only, 36dp icons
 // in 60dp circles, in 3 rows of 3, in the user's order
+// (the Screenshot icon is a vector drawn in this file,
+// ScreenshotIcon below, traced from the user's image -
+// no PNG file needed).
 // (column by column):
 // Column 1 = Power, Lock, Rotate;
 // Column 2 = Ringtone sound, Call sound, Media sound;
@@ -99,7 +102,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Call
-import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.FiberManualRecord
 import androidx.compose.material.icons.filled.FlashlightOff
 import androidx.compose.material.icons.filled.FlashlightOn
@@ -125,7 +127,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.PathNode
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -341,7 +347,7 @@ class BallPanelActivity : ComponentActivity() {
                                     )
                                     ActionButton(
                                         label = "Screenshot",
-                                        icon = Icons.Default.CameraAlt,
+                                        icon = ScreenshotIcon,
                                         thumbBg = thumbBg,
                                         onCard = onCard,
                                         cardBg = cardBg,
@@ -576,6 +582,62 @@ class BallPanelActivity : ComponentActivity() {
         }
     }
 }
+
+// SCREENSHOT ICON (2026-11-20): the user's own icon, redrawn
+// as a vector (SVG-style) so no PNG file is needed. Traced
+// from his image, measured piece by piece: a dashed capture
+// frame - a + at top-left and bottom-right, a rounded corner
+// at top-right and bottom-left, and a dash in the middle of
+// each side. One stroked path, round caps, stroke 1.8. It is
+// drawn BLACK, like every Material icon - the panel's tint
+// turns it WHITE on a dark background and dark on a light
+// one, so it stays visible either way.
+private val ScreenshotIcon: ImageVector = ImageVector.Builder(
+    name = "Screenshot",
+    defaultWidth = 24.dp,
+    defaultHeight = 24.dp,
+    viewportWidth = 24f,
+    viewportHeight = 24f
+).addPath(
+    pathData = listOf(
+        // Top-left + : horizontal, then vertical.
+        PathNode.MoveTo(0.9f, 4.0f),
+        PathNode.LineTo(7.0f, 4.0f),
+        PathNode.MoveTo(4.0f, 0.9f),
+        PathNode.LineTo(4.0f, 7.0f),
+        // Top dash.
+        PathNode.MoveTo(10.75f, 3.75f),
+        PathNode.LineTo(13.25f, 3.75f),
+        // Top-right rounded corner.
+        PathNode.MoveTo(16.9f, 3.75f),
+        PathNode.LineTo(18.9f, 3.75f),
+        PathNode.QuadTo(20.2f, 3.75f, 20.2f, 5.05f),
+        PathNode.LineTo(20.2f, 7.0f),
+        // Left dash.
+        PathNode.MoveTo(3.7f, 10.8f),
+        PathNode.LineTo(3.7f, 13.2f),
+        // Right dash.
+        PathNode.MoveTo(20.2f, 10.8f),
+        PathNode.LineTo(20.2f, 13.2f),
+        // Bottom-left rounded corner.
+        PathNode.MoveTo(3.7f, 17.0f),
+        PathNode.LineTo(3.7f, 18.9f),
+        PathNode.QuadTo(3.7f, 20.2f, 5.0f, 20.2f),
+        PathNode.LineTo(7.0f, 20.2f),
+        // Bottom dash.
+        PathNode.MoveTo(10.75f, 20.2f),
+        PathNode.LineTo(13.25f, 20.2f),
+        // Bottom-right + : horizontal, then vertical.
+        PathNode.MoveTo(17.0f, 20.0f),
+        PathNode.LineTo(23.1f, 20.0f),
+        PathNode.MoveTo(20.0f, 17.0f),
+        PathNode.LineTo(20.0f, 23.1f)
+    ),
+    stroke = SolidColor(Color.Black),
+    strokeLineWidth = 1.8f,
+    strokeLineCap = StrokeCap.Round,
+    strokeLineJoin = StrokeJoin.Round
+).build()
 
 @androidx.compose.runtime.Composable
 private fun ActionButton(

@@ -540,6 +540,8 @@ class ScreenRecordService : Service() {
     // shown ONLY while recording and the main ball is OFF - so
     // there is always a way to open the toolbar. Draggable, tap
     // opens the toolbar (drawing off first, same as the ball).
+    // FLAG_SECURE, like the main ball: it never appears in the
+    // recorded video (or a screenshot), only on the live screen.
     private fun maybeShowMiniBall() {
         if (miniBallView != null) return
         if (MoanControlPrefs.isBallEnabled(this)) return
@@ -570,7 +572,11 @@ class ScreenRecordService : Service() {
             sizePx,
             type,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED,
+                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                // HIDE FROM CAPTURE (2026-11-20): FLAG_SECURE -
+                // this mini ball never lands in the recorded video
+                // (or a screenshot), only on the live screen.
+                WindowManager.LayoutParams.FLAG_SECURE,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
