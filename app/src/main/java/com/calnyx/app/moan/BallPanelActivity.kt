@@ -10,9 +10,18 @@
 // Design: NO title, NO X button, NO labels, NO percent, NO
 // Home. Center card, max 320dp. Dark mode = black card
 // (0xFF0E0E0E), light = white. Icons only, 36dp Material icons
-// in 60dp circles, in 2 rows, in the user's order:
-// Row 1 = Call sound, Power, Lock, Flashlight;
-// Row 2 = Ringtone sound, Media sound, Rotate, Screenshot.
+// in 60dp circles, in 3 rows of 3, in the user's order
+// (column by column):
+// Column 1 = Power, Lock, Rotate;
+// Column 2 = Ringtone sound, Call sound, Media sound;
+// Column 3 = Screen Record, Flashlight, Screenshot.
+// SCREEN RECORD (2026-11-20): the 9th item, a red record dot
+// (top-right). Tap it and the system's own screen-capture
+// dialog appears (Start now) - one tap there and the recording
+// starts, with the mic + quality from the Blue Film settings.
+// It uses the saved settings, so it is quick: no opening the
+// app, no settings. While a camera recording runs, it refuses
+// with a toast instead of starting a second recording.
 // Animation is minimal on purpose: one quick fade + tiny
 // scale-in (150ms), nothing else, so it stays light.
 // Actions - all use the phone's OWN UI, no custom copies:
@@ -51,12 +60,14 @@
 package com.calnyx.app.moan
 
 import android.Manifest
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
 import android.media.AudioManager
+import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -89,6 +100,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.FiberManualRecord
 import androidx.compose.material.icons.filled.FlashlightOff
 import androidx.compose.material.icons.filled.FlashlightOn
 import androidx.compose.material.icons.filled.Lock
@@ -118,6 +130,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import com.calnyx.app.BlueFilm.BlueFilmService
+import com.calnyx.app.BlueFilm.ScreenRecordService
 import com.calnyx.app.applock.AppLockManager
 import com.calnyx.app.applock.AppLockService
 
@@ -138,6 +152,33 @@ class BallPanelActivity : ComponentActivity() {
             Toast.makeText(
                 this,
                 "Allow Camera permission for flashlight.",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+
+    // SCREEN RECORD (2026-11-20): quick record from the ball.
+    // The system asks once per recording, with its own dialog
+    // (Android's rule - the "Start now" step cannot be skipped).
+    // OK = the service starts with the granted token, using the
+    // mic + quality saved in the Blue Film settings; the panel
+    // closes. Cancel = the panel stays open.
+    private val screenRecordLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK && result.data != null) {
+            ScreenRecordService.start(
+                this,
+                result.resultCode,
+                result.data!!,
+                BlueFilmService.savedMicEnabled(this),
+                BlueFilmService.savedQuality(this)
+            )
+            finish()
+        } else {
+            Toast.makeText(
+                this,
+                "Screen recording was not allowed.",
                 Toast.LENGTH_SHORT
             ).show()
         }
@@ -208,22 +249,18 @@ class BallPanelActivity : ComponentActivity() {
                                 verticalArrangement = Arrangement.spacedBy(4.dp),
                                 horizontalAlignment = Alignment.CenterHorizontally
                             ) {
-                                // Icon-only grid, 2 rows. No titles, no
-                                // percent, no Home. Row 1 = tools,
-                                // Row 2 = sound (tap opens the phone's
-                                // own volume panel).
+                                // Icon-only grid, 3 rows of 3. No titles,
+                                // no percent, no Home. The user's order
+                                // is column by column: Column 1 = Power,
+                                // Lock, Rotate; Column 2 = Ringtone, Call,
+                                // Media; Column 3 = Screen Record (red dot,
+                                // top-right), Flashlight, Screenshot.
+                                // Ringtone / Media / Call open the
+                                // phone's own volume panel.
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.SpaceEvenly
                                 ) {
-                                    ActionButton(
-                                        label = "Call",
-                                        icon = Icons.Default.Call,
-                                        thumbBg = thumbBg,
-                                        onCard = onCard,
-                                        cardBg = cardBg,
-                                        onClick = { showSystemVolume(AudioManager.STREAM_VOICE_CALL) }
-                                    )
                                     ActionButton(
                                         label = "Power",
                                         icon = Icons.Default.PowerSettingsNew,
@@ -233,12 +270,42 @@ class BallPanelActivity : ComponentActivity() {
                                         onClick = { doPower() }
                                     )
                                     ActionButton(
+                                        label = "Ringtone",
+                                        icon = Icons.Default.Notifications,
+                                        thumbBg = thumbBg,
+                                        onCard = onCard,
+                                        cardBg = cardBg,
+                                        onClick = { showSystemVolume(AudioManager.STREAM_RING) }
+                                    )
+                                    ActionButton(
+                                        label = "Screen Record",
+                                        icon = Icons.Default.FiberManualRecord,
+                                        thumbBg = thumbBg,
+                                        onCard = onCard,
+                                        cardBg = cardBg,
+                                        tint = Color(0xFFC62828),
+                                        onClick = { doScreenRecord() }
+                                    )
+                                }
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceEvenly
+                                ) {
+                                    ActionButton(
                                         label = "Lock",
                                         icon = Icons.Default.Lock,
                                         thumbBg = thumbBg,
                                         onCard = onCard,
                                         cardBg = cardBg,
                                         onClick = { doLock() }
+                                    )
+                                    ActionButton(
+                                        label = "Call",
+                                        icon = Icons.Default.Call,
+                                        thumbBg = thumbBg,
+                                        onCard = onCard,
+                                        cardBg = cardBg,
+                                        onClick = { showSystemVolume(AudioManager.STREAM_VOICE_CALL) }
                                     )
                                     ActionButton(
                                         label = "Flashlight",
@@ -255,22 +322,6 @@ class BallPanelActivity : ComponentActivity() {
                                     horizontalArrangement = Arrangement.SpaceEvenly
                                 ) {
                                     ActionButton(
-                                        label = "Ringtone",
-                                        icon = Icons.Default.Notifications,
-                                        thumbBg = thumbBg,
-                                        onCard = onCard,
-                                        cardBg = cardBg,
-                                        onClick = { showSystemVolume(AudioManager.STREAM_RING) }
-                                    )
-                                    ActionButton(
-                                        label = "Media",
-                                        icon = Icons.Default.MusicNote,
-                                        thumbBg = thumbBg,
-                                        onCard = onCard,
-                                        cardBg = cardBg,
-                                        onClick = { showSystemVolume(AudioManager.STREAM_MUSIC) }
-                                    )
-                                    ActionButton(
                                         label = "Rotate",
                                         icon = Icons.Default.ScreenRotation,
                                         thumbBg = thumbBg,
@@ -279,6 +330,14 @@ class BallPanelActivity : ComponentActivity() {
                                         active = rotateDown,
                                         rotated = rotateDown,
                                         onClick = { doRotateToggle() }
+                                    )
+                                    ActionButton(
+                                        label = "Media",
+                                        icon = Icons.Default.MusicNote,
+                                        thumbBg = thumbBg,
+                                        onCard = onCard,
+                                        cardBg = cardBg,
+                                        onClick = { showSystemVolume(AudioManager.STREAM_MUSIC) }
                                     )
                                     ActionButton(
                                         label = "Screenshot",
@@ -368,6 +427,32 @@ class BallPanelActivity : ComponentActivity() {
                 ).show()
             }
         }, 400)
+    }
+
+    private fun doScreenRecord() {
+        // Quick record: no opening the app, no settings - the
+        // mic + quality come from the Blue Film settings as
+        // saved. Two recordings at once would be a mess, so
+        // while a camera recording runs this refuses.
+        if (BlueFilmService.isRecording) {
+            Toast.makeText(
+                this,
+                "Stop the camera recording first.",
+                Toast.LENGTH_SHORT
+            ).show()
+            return
+        }
+        val manager =
+            getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+        try {
+            screenRecordLauncher.launch(manager.createScreenCaptureIntent())
+        } catch (_: Exception) {
+            Toast.makeText(
+                this,
+                "Screen recording is not available on this phone.",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
     }
 
     private fun doRotateToggle() {
@@ -501,6 +586,9 @@ private fun ActionButton(
     cardBg: Color,
     active: Boolean = false,
     rotated: Boolean = false,
+    // Fixed icon colour, when set (the red record dot).
+    // Otherwise the icon follows the active state.
+    tint: Color? = null,
     onClick: () -> Unit
 ) {
     // Icon only - no label text. When active (flashlight on,
@@ -524,7 +612,7 @@ private fun ActionButton(
                 icon,
                 contentDescription = label,
                 modifier = Modifier.size(36.dp).rotate(if (rotated) 180f else 0f),
-                tint = if (active) cardBg else onCard
+                tint = tint ?: if (active) cardBg else onCard
             )
         }
     }
