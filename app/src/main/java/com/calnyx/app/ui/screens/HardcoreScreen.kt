@@ -1,4 +1,10 @@
 // FILE: app/src/main/java/com/calnyx/app/ui/screens/HardcoreScreen.kt
+// ORIENTATION 3-IN-A-ROW (2026-11-20) - REPLACE. Up / Down / Auto
+// are now 3 equal cards in ONE row (the full-width Auto row card
+// is gone - it looked unbalanced, with the Check dangling on the
+// right). All three use the same OrientationModeCard, so the
+// selected one is just the filled card - no Check icon anywhere.
+// Nothing else changed: Power, Ball, colours, % sizes, logic.
 // HARDCORE (HARDWARE) - SPLIT VERSION (2026-11-20).
 //  Split out of MoanControlScreen.kt (2026-11-20): Hardcore
 //  (Hardware) here, Moan (Sound) in MoanScreen.kt, and Network
@@ -34,7 +40,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Autorenew
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material3.*
@@ -286,11 +291,12 @@ private fun ControlTab(
                 }
             )
         }
-        // Screen Orientation - MODERN (2026-11-20): Up / Down side by
-        // side as 2 big cards, Auto as a full-width row card below.
-        // Selected card = filled (inverted text), others = card bg.
-        // Sob size minDim-er % - jekono screen-e ar rotate korleo
-        // design vangbe na.
+        // Screen Orientation - 3-IN-A-ROW (2026-11-20): Up / Down /
+        // Auto as 3 equal cards in one row. The old full-width Auto
+        // row card is gone - it looked unbalanced. Selected card =
+        // filled (inverted text), others = card bg. Sob size
+        // minDim-er % - jekono screen-e ar rotate korleo design
+        // vangbe na.
         Text("Screen Orientation", fontSize = (minDim * 0.033f).value.sp, fontWeight = FontWeight.SemiBold, color = colorScheme.onSurfaceVariant)
         Row(horizontalArrangement = Arrangement.spacedBy(minDim * 0.022f), modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Max)) {
             OrientationModeCard(
@@ -319,46 +325,19 @@ private fun ControlTab(
                 modifier = Modifier.weight(1f).fillMaxHeight(),
                 onClick = { applyOrientation("down") }
             )
-        }
-        // AUTO - full-width row card: icon + label + Check when selected.
-        Card(
-            onClick = { applyOrientation("auto") },
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(minDim * 0.044f),
-            colors = CardDefaults.cardColors(
-                containerColor = if (orientation == "auto") onPageColor else cardBg
-            ),
-            border = BorderStroke(1.dp, cardBorder)
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth()
-                    .height(minDim * 0.156f)
-                    .padding(horizontal = minDim * 0.033f)
-            ) {
-                Icon(
-                    Icons.Default.Autorenew,
-                    contentDescription = "Auto",
-                    modifier = Modifier.size(minDim * 0.067f),
-                    tint = if (orientation == "auto") colorScheme.background else onPageColor
-                )
-                Spacer(modifier = Modifier.width(minDim * 0.033f))
-                Text(
-                    "Auto",
-                    fontWeight = if (orientation == "auto") FontWeight.SemiBold else FontWeight.Medium,
-                    fontSize = (minDim * 0.047f).value.sp,
-                    color = if (orientation == "auto") colorScheme.background else onPageColor,
-                    modifier = Modifier.weight(1f)
-                )
-                if (orientation == "auto") {
-                    Icon(
-                        Icons.Default.Check,
-                        contentDescription = null,
-                        modifier = Modifier.size(minDim * 0.061f),
-                        tint = colorScheme.background
-                    )
-                }
-            }
+            OrientationModeCard(
+                label = "Auto",
+                icon = Icons.Default.Autorenew,
+                selected = orientation == "auto",
+                cardBg = cardBg,
+                cardBorder = cardBorder,
+                onPageColor = onPageColor,
+                selectedContent = colorScheme.background,
+                thumbBg = thumbBg,
+                minDim = minDim,
+                modifier = Modifier.weight(1f).fillMaxHeight(),
+                onClick = { applyOrientation("auto") }
+            )
         }
         // FLOATING BALL - Material 3 Card now (was a hand-made
         // background + border Column). Tight padding, tight spacing
