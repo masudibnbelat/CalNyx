@@ -1,3 +1,8 @@
+// OVERLAY NOTIFICATION SETTINGS REMOVED (2026-11-20, user
+// request): the "Overlay notification settings" item (opened
+// Android System's notification settings) is gone from the list,
+// its ID constant, its isGranted branch and its settingsIntent
+// branch. The "Hide overlay notification" toggle stays.
 // FILE: app/src/main/java/com/calnyx/app/onboarding/OnboardingPermissions.kt
 // NEW FILE - every permission CalNyx needs, in one place. Both the
 // first-run introduction and the About dialog use this same list, so
@@ -25,11 +30,6 @@
 //    floating ball is showing. Needs Notification access to run;
 //    flipping it on without that access opens its Settings
 //    screen instead. English system text only - see the service.
-//  - Overlay notification settings (SETTINGS, OPTIONAL): opens
-//    the ANDROID SYSTEM notification settings, where the user
-//    turns off the 'displaying over other apps' notice by hand.
-//    The app cannot read another app's channel state, so this
-//    item never shows as granted - the button stays available.
 // NOT listed, on purpose:
 //  - Install-time permissions (granted with the install, nothing to
 //    tap): Internet, Foreground Service, Receive Boot Completed,
@@ -94,7 +94,6 @@ object OnboardingPermissions {
 
     const val ID_STOP_NOTIFICATIONS = "stop_notifications"
     const val ID_HIDE_OVERLAY_NOTIFICATION = "hide_overlay_notification"
-    const val ID_OVERLAY_NOTIFICATION_SETTINGS = "overlay_notification_settings"
 
     fun all(): List<AppPermission> = listOf(
         AppPermission(
@@ -155,15 +154,6 @@ object OnboardingPermissions {
             description = "Hides the Android System notification 'CalNyx is displaying over other apps' while the floating ball is showing. Needs Notification access to work.",
             icon = Icons.Default.NotificationsOff,
             kind = PermissionKind.TOGGLE,
-            optional = true
-        ),
-        AppPermission(
-            id = ID_OVERLAY_NOTIFICATION_SETTINGS,
-            title = "Overlay notification settings",
-            description = "Opens the Android System notification settings - turn off the 'displaying over other apps' notification there.",
-            icon = Icons.Default.Settings,
-            kind = PermissionKind.SETTINGS,
-            settingsAction = Settings.ACTION_APP_NOTIFICATION_SETTINGS,
             optional = true
         ),
         AppPermission(
@@ -249,9 +239,6 @@ object OnboardingPermissions {
                 "install_updates" -> context.packageManager.canRequestPackageInstalls()
                 "notification_access" -> LockedAppNotificationService.isNotificationAccessGranted(context)
                 ID_HIDE_OVERLAY_NOTIFICATION -> LockedAppNotificationService.isOverlayNotificationHidden(context)
-                // Never granted: another app's channel state cannot
-                // be read, so the button always stays available.
-                ID_OVERLAY_NOTIFICATION_SETTINGS -> false
                 "battery" -> {
                     val pm = context.getSystemService(Context.POWER_SERVICE) as PowerManager
                     pm.isIgnoringBatteryOptimizations(context.packageName)
@@ -311,10 +298,6 @@ object OnboardingPermissions {
                     data = Uri.parse("package:${context.packageName}")
                 ID_STOP_NOTIFICATIONS ->
                     putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
-                ID_OVERLAY_NOTIFICATION_SETTINGS ->
-                    // The notice is posted by Android System, so
-                    // open ITS notification settings, not CalNyx's.
-                    putExtra(Settings.EXTRA_APP_PACKAGE, "android")
             }
         }
     }
