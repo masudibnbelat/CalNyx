@@ -6,14 +6,19 @@
 // translucent, its own task, never in recents, tap the dim
 // background or Back to close - the recording keeps running.
 //
-// Tools (icon + label, % sizes, theme colours):
-//   Pen (freehand), Circle, Rectangle, Emoji (stickers),
-//   Clear, Stop. Tapping a tool selects it AND closes the
-//   panel, so the user can draw at once; tapping the active
-//   tool again turns it off. Emoji opens a sticker picker
-//   first - tapping a sticker selects it and closes. Clear
-//   wipes all marks AND turns the tool off, so the screen is
-//   normal again. Stop ends the recording and closes.
+// Tools (icon + label, % sizes, theme colours), in a tidy
+// 3 + 3 + 1 grid: Pen, Circle, Rectangle / Arrow, Emoji,
+// Clear / Stop centred on its own row at the bottom. Below
+// the tools a Color row offers six mark colours (Red, Yellow,
+// Green, Blue, White, Black) - red by default, the choice is
+// saved, and each mark keeps the colour it was drawn with.
+// Tapping a tool selects it AND closes the panel, so the user
+// can draw at once; tapping the active tool again turns it
+// off. Emoji opens a sticker picker first - tapping a sticker
+// selects it and closes. Picking a colour leaves the panel
+// open, so a tool can be picked right after. Clear wipes all
+// marks AND turns the tool off, so the screen is normal again.
+// Stop ends the recording and closes.
 // The header shows a red dot + the elapsed time (1 / sec); if
 // the recording ends elsewhere, the panel closes itself.
 package com.calnyx.app.BlueFilm
@@ -24,6 +29,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -34,9 +40,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.CropLandscape
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Edit
@@ -57,6 +65,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -72,6 +81,23 @@ class ScreenRecordToolbarActivity : ComponentActivity() {
     private var elapsedSec by mutableStateOf(0L)
     private var activeTool by mutableStateOf(DrawTool.NONE)
     private var showEmojiPicker by mutableStateOf(false)
+    // The drawing colour, as an ARGB Int (what the service
+    // stores). Read from the saved colour on open.
+    private var selectedColor by mutableStateOf(0)
+
+    // The colours new marks can be drawn in. These are the
+    // mark colours themselves (user content), not UI chrome -
+    // so they are plain literals, like the Scientific screen's
+    // key colours. Order: Red, Yellow, Green, Blue, White,
+    // Black. Red is the default (CalNyxRed).
+    private val drawColors = listOf(
+        CalNyxRed,
+        Color(0xFFFFB300),
+        Color(0xFF34A853),
+        Color(0xFF1E88E5),
+        Color.White,
+        Color.Black
+    )
 
     // The stickers the picker offers. One tap stamps it.
     private val stickers = listOf(
@@ -96,6 +122,7 @@ class ScreenRecordToolbarActivity : ComponentActivity() {
         // off - this covers the mini ball path too).
         ScreenRecordService.setDrawMode(this, false)
         activeTool = ScreenRecordService.currentTool
+        selectedColor = ScreenRecordService.savedColor(this)
         setContent {
             CalNyxTheme {
                 val colorScheme = MaterialTheme.colorScheme
@@ -201,10 +228,14 @@ class ScreenRecordToolbarActivity : ComponentActivity() {
                                             .padding(vertical = minDim * 0.011f)
                                     )
                                 } else {
-                                    // Tools, 3 per row. Same icon-circle
-                                    // style as the Hardcore cards: icon in
-                                    // a circle, label under it. The active
-                                    // tool is filled (inverted).
+                                    // Tools in a tidy 3 + 3 + 1 grid:
+                                    // Row 1 Pen, Circle, Rectangle;
+                                    // Row 2 Arrow, Emoji, Clear;
+                                    // Stop centred on its own row.
+                                    // Same icon-circle style as the
+                                    // Hardcore cards: icon in a circle,
+                                    // label under it. The active tool
+                                    // is filled (inverted).
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
                                         horizontalArrangement = Arrangement.spacedBy(gap)
@@ -239,6 +270,14 @@ class ScreenRecordToolbarActivity : ComponentActivity() {
                                         horizontalArrangement = Arrangement.spacedBy(gap)
                                     ) {
                                         ToolButton(
+                                            label = "Arrow",
+                                            icon = Icons.Default.ArrowForward,
+                                            selected = activeTool == DrawTool.ARROW,
+                                            minDim = minDim,
+                                            modifier = Modifier.weight(1f),
+                                            onClick = { onToolClick(DrawTool.ARROW) }
+                                        )
+                                        ToolButton(
                                             label = "Emoji",
                                             icon = Icons.Default.EmojiEmotions,
                                             selected = activeTool == DrawTool.EMOJI,
@@ -253,12 +292,41 @@ class ScreenRecordToolbarActivity : ComponentActivity() {
                                             modifier = Modifier.weight(1f),
                                             onClick = { onClearClick() }
                                         )
+                                    }
+                                    // Colour: six swatches. Picking one
+                                    // leaves the panel open, so a tool
+                                    // can be picked right after.
+                                    Text(
+                                        "Color",
+                                        fontWeight = FontWeight.SemiBold,
+                                        fontSize = fBody,
+                                        color = colorScheme.onSurfaceVariant
+                                    )
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceEvenly
+                                    ) {
+                                        for (color in drawColors) {
+                                            ColorSwatch(
+                                                color = color,
+                                                selected = selectedColor == color.toArgb(),
+                                                minDim = minDim,
+                                                onClick = { onColorClick(color.toArgb()) }
+                                            )
+                                        }
+                                    }
+                                    // Stop on its own row, centred -
+                                    // the same width as the other tools.
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.Center
+                                    ) {
                                         ToolButton(
                                             label = "Stop",
                                             icon = Icons.Default.Stop,
                                             danger = true,
                                             minDim = minDim,
-                                            modifier = Modifier.weight(1f),
+                                            modifier = Modifier.width(minDim * 0.25f),
                                             onClick = { onStopClick() }
                                         )
                                     }
@@ -311,6 +379,13 @@ class ScreenRecordToolbarActivity : ComponentActivity() {
         ScreenRecordService.clearMarks(this)
         ScreenRecordService.setTool(this, DrawTool.NONE)
         activeTool = DrawTool.NONE
+    }
+
+    // A colour was picked: remember it (saved) and keep the
+    // panel open, so a tool can be picked right after.
+    private fun onColorClick(color: Int) {
+        ScreenRecordService.setColor(this, color)
+        selectedColor = color
     }
 
     private fun onStopClick() {
@@ -374,6 +449,30 @@ private fun ToolButton(
             maxLines = 1
         )
     }
+}
+
+// One colour swatch: a filled circle. The selected one gets a
+// thick ring in the theme's foreground colour, the others a
+// thin outline - so White and Black stay visible on any card.
+@Composable
+private fun ColorSwatch(
+    color: Color,
+    selected: Boolean,
+    minDim: Dp,
+    onClick: () -> Unit
+) {
+    val colorScheme = MaterialTheme.colorScheme
+    Box(
+        modifier = Modifier.size(minDim * 0.085f)
+            .clip(CircleShape)
+            .background(color)
+            .border(
+                if (selected) BorderStroke(2.dp, colorScheme.onBackground)
+                else BorderStroke(1.dp, colorScheme.outline),
+                CircleShape
+            )
+            .clickable { onClick() }
+    )
 }
 
 private fun formatElapsed(totalSec: Long): String {

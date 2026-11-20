@@ -27,7 +27,9 @@ import android.content.Intent
 import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.provider.Settings
 import android.util.TypedValue
 import android.view.Gravity
@@ -92,12 +94,54 @@ class FloatingBallService : Service() {
             }
         }
 
+        // HIDE / SHOW (2026-11-20): the ball is hidden instead
+        // of FLAG_SECURE (see showBall) - FLAG_SECURE made the
+        // system refuse EVERY screenshot on this phone ("Cannot
+        // capture screenshot. The page contains personal
+        // information."), even on the plain home screen. So the
+        // ball is removed from the screen when it must not be
+        // captured, and put back after:
+        //   hide(context, reshowAfterMs): reshowAfterMs > 0
+        //   re-shows the ball after that delay (the Screenshot
+        //   button: hide, shoot, ball comes back by itself);
+        //   reshowAfterMs = 0 stays hidden until show().
+        //   (The screen recorder NO LONGER hides the ball -
+        //   2026-11-20, the tools are needed during recording.)
+        // Both are no-ops when the ball is off in settings.
+        private const val ACTION_HIDE = "com.calnyx.app.moan.HIDE_BALL"
+        private const val ACTION_SHOW = "com.calnyx.app.moan.SHOW_BALL"
+        private const val EXTRA_RESHOW_AFTER_MS = "reshow_after_ms"
+
+        fun hide(context: Context, reshowAfterMs: Long = 0L) {
+            if (!MoanControlPrefs.isBallEnabled(context)) return
+            val intent = Intent(context, FloatingBallService::class.java).apply {
+                action = ACTION_HIDE
+                putExtra(EXTRA_RESHOW_AFTER_MS, reshowAfterMs)
+            }
+            try {
+                context.startService(intent)
+            } catch (_: Exception) {
+            }
+        }
+
+        fun show(context: Context) {
+            if (!MoanControlPrefs.isBallEnabled(context)) return
+            val intent = Intent(context, FloatingBallService::class.java).apply {
+                action = ACTION_SHOW
+            }
+            try {
+                context.startService(intent)
+            } catch (_: Exception) {
+            }
+        }
+
         // SCREEN RECORD (2026-11-20): bring the ball above the
         // draw overlay, without restarting the service. The
-        // recorder calls this after adding its overlay, so the
-        // ball stays tappable while drawing. Plain startService:
-        // the service is already running, so this only delivers
-        // the intent to onStartCommand.
+        // recorder calls this after adding its overlay and
+        // whenever a tool is picked, so the ball stays tappable
+        // while drawing. Plain startService: the service is
+        // already running, so this only delivers the intent to
+        // onStartCommand.
         private const val ACTION_BRING_TO_FRONT = "com.calnyx.app.moan.BRING_BALL_TO_FRONT"
 
         fun bringToFront(context: Context) {
@@ -114,6 +158,11 @@ class FloatingBallService : Service() {
     private var windowManager: WindowManager? = null
     private var ballView: View? = null
     private var params: WindowManager.LayoutParams? = null
+
+    // Delayed re-show for hide(reshowAfterMs). Cancelled on
+    // show() and onDestroy().
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var reshowRunnable: Runnable? = null
 
     private fun dpToPx(dp: Int): Int =
         TypedValue.applyDimension(
@@ -195,17 +244,39 @@ class FloatingBallService : Service() {
             } catch (_: Exception) {
             }
         }
-        if (intent?.action == ACTION_UPDATE) {
-            // In-place update only: resize / re-alpha the ball
-            // that is already showing. If there is no ball yet,
-            // create it. Never stop / recreate the service here.
-            if (ballView != null) {
-                applyPrefsToBall()
-            } else {
-                showBall()
+        when (intent?.action) {
+            ACTION_HIDE -> {
+                // Remove the ball now. If a re-show delay was
+                // given, put it back after that delay (only if
+                // the ball is still on in settings).
+                removeBall()
+                reshowRunnable?.let { mainHandler.removeCallbacks(it) }
+                reshowRunnable = null
+                val reshowAfter = intent.getLongExtra(EXTRA_RESHOW_AFTER_MS, 0L)
+                if (reshowAfter > 0) {
+                    val r = Runnable {
+                        if (MoanControlPrefs.isBallEnabled(this)) showBall()
+                    }
+                    reshowRunnable = r
+                    mainHandler.postDelayed(r, reshowAfter)
+                }
             }
-        } else {
-            showBall()
+            ACTION_SHOW -> {
+                reshowRunnable?.let { mainHandler.removeCallbacks(it) }
+                reshowRunnable = null
+                if (MoanControlPrefs.isBallEnabled(this)) showBall()
+            }
+            ACTION_UPDATE -> {
+                // In-place update only: resize / re-alpha the ball
+                // that is already showing. If there is no ball yet,
+                // create it. Never stop / recreate the service here.
+                if (ballView != null) {
+                    applyPrefsToBall()
+                } else {
+                    showBall()
+                }
+            }
+            else -> showBall()
         }
         return START_STICKY
     }
@@ -245,14 +316,14 @@ class FloatingBallService : Service() {
             sizePx,
             sizePx,
             type,
+            // NO FLAG_SECURE here (2026-11-20): it made the
+            // system refuse EVERY screenshot on this phone
+            // ("Cannot capture screenshot. The page contains
+            // personal information."), even on the plain home
+            // screen. The ball is hidden with hide() instead
+            // when it must not be captured.
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
-                // HIDE FROM CAPTURE (2026-11-20): FLAG_SECURE
-                // keeps this ball OUT of screenshots and screen
-                // recordings. It stays fully visible and tappable
-                // on the phone's own screen - it just never lands
-                // in a saved picture or video.
-                WindowManager.LayoutParams.FLAG_SECURE,
+                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
@@ -382,6 +453,8 @@ class FloatingBallService : Service() {
     }
 
     override fun onDestroy() {
+        reshowRunnable?.let { mainHandler.removeCallbacks(it) }
+        reshowRunnable = null
         removeBall()
         super.onDestroy()
     }

@@ -11,8 +11,8 @@
 //    camera), 720p / 1080p from the same Settings. Files save
 //    to the same Blue Film folders, "SR_" prefix, plain .mp4.
 //  - While recording, a transparent full-screen overlay shows
-//    the marks (ScreenDrawView: pen / circle / rectangle, red,
-//    plus emoji stickers). The overlay is NOT touchable by
+//    the marks (ScreenDrawView: pen / circle / rectangle /
+//    arrow, red, plus emoji stickers). The overlay is NOT touchable by
 //    default, so the phone works normally under it - a video
 //    playing underneath keeps playing, and no tap reaches it.
 //    Picking a tool in the toolbar makes it touchable until
@@ -23,15 +23,23 @@
 //    thread (the recorder itself runs on a background thread).
 //    Adding it from the background thread could swallow
 //    touches - that was the pen not drawing.
-//  - The floating ball STAYS during recording and opens the
-//    recording toolbar (ScreenRecordToolbarActivity) while a
-//    recording runs. If the ball is OFF, a small white mini
-//    ball appears instead, same job. The ball is brought above
-//    the draw overlay so it stays tappable while drawing.
-//  - Honest limits: the ball / mini ball / marks are overlays,
-//    so they DO appear in the recorded video - that is the
-//    price of keeping them tappable while recording. And the
-//    system dialog appears every time a recording starts.
+//  - The floating ball STAYS during the recording (2026-11-20,
+//    user decision): the tools are needed while recording,
+//    and the ball is the way to open the toolbar - tap it
+//    any time and the toolbar (ScreenRecordToolbarActivity)
+//    opens. The ball is brought above the draw overlay so it
+//    stays tappable even while a tool is active. The ball
+//    WILL be in the video - the user accepted that. NO
+//    FLAG_SECURE: it made the system refuse EVERY screenshot
+//    on this phone ("Cannot capture screenshot. The page
+//    contains personal information."), even on the plain home
+//    screen. The mini ball is gone. A second way to the
+//    toolbar: the recording notification's Tools action.
+//  - Honest limits: the marks ARE in the video - that is the
+//    point of them. The toolbar itself is a normal Activity,
+//    so it shows in the video for the second it is open.
+//    And the system dialog appears every time a recording
+//    starts.
 package com.calnyx.app.BlueFilm
 
 import android.app.Activity
@@ -45,7 +53,6 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.graphics.PixelFormat
-import android.graphics.drawable.GradientDrawable
 import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
 import android.media.MediaRecorder
@@ -57,17 +64,15 @@ import android.os.HandlerThread
 import android.os.IBinder
 import android.os.Looper
 import android.util.Size
-import android.util.TypedValue
 import android.view.Gravity
-import android.view.MotionEvent
 import android.view.View
-import android.view.ViewOutlineProvider
 import android.view.WindowManager
 import android.widget.FrameLayout
+import androidx.compose.ui.graphics.toArgb
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.calnyx.app.moan.FloatingBallService
-import com.calnyx.app.moan.MoanControlPrefs
+import com.calnyx.app.ui.theme.CalNyxRed
 import java.io.File
 
 class ScreenRecordService : Service() {
@@ -79,8 +84,10 @@ class ScreenRecordService : Service() {
         private const val ACTION_CLEAR_MARKS = "com.calnyx.app.bluefilm.SCREEN_CLEAR_MARKS"
         private const val ACTION_SET_DRAW_MODE = "com.calnyx.app.bluefilm.SCREEN_SET_DRAW_MODE"
         private const val ACTION_SET_EMOJI = "com.calnyx.app.bluefilm.SCREEN_SET_EMOJI"
+        private const val ACTION_SET_COLOR = "com.calnyx.app.bluefilm.SCREEN_SET_COLOR"
         private const val PREFS = "bluefilm_prefs"
         private const val KEY_MODE = "record_mode"
+        private const val KEY_COLOR = "draw_color"
         private const val NOTIF_ID = 2002
         private const val CHANNEL_ID = "bluefilm_screen_rec"
 
@@ -105,6 +112,38 @@ class ScreenRecordService : Service() {
         @Volatile
         var currentEmoji: String = "⭐"
             private set
+
+        // The colour new marks are drawn in. Red by default;
+        // picked in the toolbar, saved so it survives the
+        // recording and the next ones.
+        @Volatile
+        var currentColor: Int = CalNyxRed.toArgb()
+            private set
+
+        fun savedColor(context: Context): Int {
+            return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .getInt(KEY_COLOR, CalNyxRed.toArgb())
+        }
+
+        fun saveColor(context: Context, color: Int) {
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .edit().putInt(KEY_COLOR, color).apply()
+        }
+
+        // Remember the picked colour (and persist it), then tell
+        // the running service so the overlay draws in it.
+        fun setColor(context: Context, color: Int) {
+            currentColor = color
+            saveColor(context, color)
+            val intent = Intent(context, ScreenRecordService::class.java).apply {
+                action = ACTION_SET_COLOR
+                putExtra("color", color)
+            }
+            try {
+                context.startService(intent)
+            } catch (_: Exception) {
+            }
+        }
 
         // Recording mode: "camera" (default) or "screen".
         fun savedMode(context: Context): String {
@@ -231,9 +270,6 @@ class ScreenRecordService : Service() {
     private var overlayView: View? = null
     private var overlayParams: WindowManager.LayoutParams? = null
     private var drawView: ScreenDrawView? = null
-    // Mini ball: only while recording AND the main ball is OFF.
-    private var miniBallView: View? = null
-    private var miniBallParams: WindowManager.LayoutParams? = null
 
     private val projectionCallback = object : MediaProjection.Callback() {
         override fun onStop() {
@@ -255,7 +291,7 @@ class ScreenRecordService : Service() {
                 startRecording(intent)
                 return START_NOT_STICKY
             }
-            ACTION_SET_TOOL, ACTION_CLEAR_MARKS, ACTION_SET_DRAW_MODE, ACTION_SET_EMOJI -> {
+            ACTION_SET_TOOL, ACTION_CLEAR_MARKS, ACTION_SET_DRAW_MODE, ACTION_SET_EMOJI, ACTION_SET_COLOR -> {
                 // Tool intents only make sense while recording.
                 // If the service is not running, do not linger.
                 if (!isRecording && !isStarting) {
@@ -280,19 +316,16 @@ class ScreenRecordService : Service() {
                         currentEmoji = intent.getStringExtra("emoji") ?: currentEmoji
                         drawView?.stampText = currentEmoji
                     }
+                    ACTION_SET_COLOR -> {
+                        currentColor = intent.getIntExtra("color", currentColor)
+                        drawView?.markColor = currentColor
+                    }
                 }
                 return START_NOT_STICKY
             }
         }
         return START_NOT_STICKY
     }
-
-    private fun dpToPx(dp: Int): Int =
-        TypedValue.applyDimension(
-            TypedValue.COMPLEX_UNIT_DIP,
-            dp.toFloat(),
-            resources.displayMetrics
-        ).toInt()
 
     // Video size: the screen's own aspect, scaled so the long
     // side fits the quality (720p -> 1280, 1080p -> 1920).
@@ -313,6 +346,9 @@ class ScreenRecordService : Service() {
 
     private fun startRecording(intent: Intent) {
         if (isRecording || isStarting) return
+        // Pick up the saved drawing colour (the toolbar may
+        // have changed it in an earlier recording).
+        currentColor = savedColor(this)
         val resultCode = intent.getIntExtra("resultCode", Activity.RESULT_CANCELED)
         val data: Intent? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             intent.getParcelableExtra("resultData", Intent::class.java)
@@ -366,6 +402,13 @@ class ScreenRecordService : Service() {
     }
 
     private fun startRecordingInternal(resultCode: Int, data: Intent) {
+        // The main ball STAYS during the recording (2026-11-20,
+        // user decision): the tools are needed while recording,
+        // and the ball is the way to open the toolbar. It WILL
+        // be in the video - the user accepted that. NO
+        // FLAG_SECURE: it made the system refuse EVERY
+        // screenshot on this phone. The ball is brought above
+        // the draw overlay below, so it stays tappable.
         try {
             val manager =
                 getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
@@ -430,10 +473,10 @@ class ScreenRecordService : Service() {
             startedAtMillis = System.currentTimeMillis()
             // Overlay windows are main-thread work - post them.
             // The ball is brought above the overlay so it stays
-            // tappable while drawing.
+            // tappable while drawing (the overlay eats every
+            // touch while a tool is active).
             mainHandler.post {
                 addDrawOverlay()
-                maybeShowMiniBall()
                 try {
                     FloatingBallService.bringToFront(this)
                 } catch (_: Exception) {
@@ -457,9 +500,11 @@ class ScreenRecordService : Service() {
         windowManager = wm
         val view = ScreenDrawView(this)
         // A tool picked before the overlay existed is not lost:
-        // the new view starts with the current tool + emoji.
+        // the new view starts with the current tool + emoji +
+        // colour.
         view.tool = currentTool
         view.stampText = currentEmoji
+        view.markColor = currentColor
         drawView = view
         val container = FrameLayout(this)
         container.addView(
@@ -517,6 +562,9 @@ class ScreenRecordService : Service() {
             windowManager?.updateViewLayout(view, p)
         } catch (_: Exception) {
         }
+        // While a tool is active the overlay eats every touch,
+        // so bring the ball above it - otherwise the ball
+        // could not be tapped to open the toolbar.
         if (touchable) {
             try {
                 FloatingBallService.bringToFront(this)
@@ -537,108 +585,6 @@ class ScreenRecordService : Service() {
     }
 
     // Mini ball: a small white ball, same look as the main ball,
-    // shown ONLY while recording and the main ball is OFF - so
-    // there is always a way to open the toolbar. Draggable, tap
-    // opens the toolbar (drawing off first, same as the ball).
-    // FLAG_SECURE, like the main ball: it never appears in the
-    // recorded video (or a screenshot), only on the live screen.
-    private fun maybeShowMiniBall() {
-        if (miniBallView != null) return
-        if (MoanControlPrefs.isBallEnabled(this)) return
-        if (!FloatingBallService.canDrawOverlays(this)) return
-        val wm = windowManager
-            ?: getSystemService(Context.WINDOW_SERVICE) as WindowManager
-        windowManager = wm
-        val sizePx = dpToPx(40)
-        val view = FrameLayout(this)
-        val bg = GradientDrawable().apply {
-            shape = GradientDrawable.OVAL
-            setColor(0xFFFFFFFF.toInt())
-        }
-        view.background = bg
-        view.elevation = dpToPx(8).toFloat()
-        view.outlineProvider = ViewOutlineProvider.BACKGROUND
-        view.clipToOutline = false
-        val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-        } else {
-            @Suppress("DEPRECATION")
-            WindowManager.LayoutParams.TYPE_PHONE
-        }
-        val screenW = resources.displayMetrics.widthPixels
-        val screenH = resources.displayMetrics.heightPixels
-        val p = WindowManager.LayoutParams(
-            sizePx,
-            sizePx,
-            type,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
-                // HIDE FROM CAPTURE (2026-11-20): FLAG_SECURE -
-                // this mini ball never lands in the recorded video
-                // (or a screenshot), only on the live screen.
-                WindowManager.LayoutParams.FLAG_SECURE,
-            PixelFormat.TRANSLUCENT
-        ).apply {
-            gravity = Gravity.TOP or Gravity.START
-            x = screenW - sizePx - dpToPx(16)
-            y = screenH / 2
-        }
-        miniBallParams = p
-        var downX = 0f
-        var downY = 0f
-        var startX = 0
-        var startY = 0
-        var moved = false
-        view.setOnTouchListener { _, event ->
-            when (event.action) {
-                MotionEvent.ACTION_DOWN -> {
-                    downX = event.rawX
-                    downY = event.rawY
-                    startX = p.x
-                    startY = p.y
-                    moved = false
-                    true
-                }
-                MotionEvent.ACTION_MOVE -> {
-                    val dx = (event.rawX - downX).toInt()
-                    val dy = (event.rawY - downY).toInt()
-                    if (kotlin.math.abs(dx) > 8 || kotlin.math.abs(dy) > 8) moved = true
-                    p.x = (startX + dx).coerceIn(0, (screenW - sizePx).coerceAtLeast(0))
-                    p.y = (startY + dy).coerceIn(0, (screenH - sizePx).coerceAtLeast(0))
-                    try {
-                        wm.updateViewLayout(view, p)
-                    } catch (_: Exception) {
-                    }
-                    true
-                }
-                MotionEvent.ACTION_UP -> {
-                    if (!moved) {
-                        openToolbar(this@ScreenRecordService)
-                    }
-                    true
-                }
-                else -> false
-            }
-        }
-        miniBallView = view
-        try {
-            wm.addView(view, p)
-        } catch (_: Exception) {
-            miniBallView = null
-            miniBallParams = null
-        }
-    }
-
-    private fun removeMiniBall() {
-        try {
-            val view = miniBallView
-            if (view != null) windowManager?.removeView(view)
-        } catch (_: Exception) {
-        }
-        miniBallView = null
-        miniBallParams = null
-    }
-
     private fun stopRecording() {
         synchronized(this) {
             if (isStopping) return
@@ -698,7 +644,6 @@ class ScreenRecordService : Service() {
             startedAtMillis = 0L
             currentTool = DrawTool.NONE
             removeDrawOverlay()
-            removeMiniBall()
             try { recordThread?.quitSafely() } catch (_: Exception) {}
             recordThread = null
             recordHandler = null
@@ -722,7 +667,6 @@ class ScreenRecordService : Service() {
         startedAtMillis = 0L
         currentTool = DrawTool.NONE
         removeDrawOverlay()
-        removeMiniBall()
         try { recordThread?.quitSafely() } catch (_: Exception) {}
         recordThread = null
         recordHandler = null
@@ -745,12 +689,24 @@ class ScreenRecordService : Service() {
             this, 0, stopIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
+        // Tools: opens the drawing toolbar. The ball is hidden
+        // for the whole recording (it must not be in the video),
+        // so this notification action is the way to draw while
+        // recording - pull the shade down and tap Tools.
+        val toolsIntent = Intent(this, ScreenRecordToolbarActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        }
+        val toolsPending = PendingIntent.getActivity(
+            this, 1, toolsIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(applicationInfo.icon)
             .setContentTitle("CalNyx - Recording screen")
-            .setContentText("Screen is recording. Tap Stop to finish.")
+            .setContentText("Tap Tools to draw, Stop to finish.")
             .setOngoing(true)
             .setShowWhen(false)
+            .addAction(0, "Tools", toolsPending)
             .addAction(0, "Stop", stopPending)
             .build()
     }

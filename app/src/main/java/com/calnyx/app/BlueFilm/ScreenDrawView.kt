@@ -4,9 +4,10 @@
 //
 // The view lives in a transparent full-screen overlay window
 // owned by ScreenRecordService. It draws every mark the user
-// made (pen / circle / rectangle, red, plus emoji stickers),
-// so the marks are visible on any screen content AND in the
-// recorded video, because the overlay itself is recorded.
+// made (pen / circle / rectangle / arrow, in the chosen
+// colour, plus emoji stickers), so the marks are visible on
+// any screen content AND in the recorded video, because the
+// overlay itself is recorded.
 //
 // Touch rule: the view only consumes touches while a drawing
 // tool is active. With no tool (DrawTool.NONE) onTouchEvent
@@ -31,19 +32,33 @@ import android.view.MotionEvent
 import android.view.View
 import androidx.compose.ui.graphics.toArgb
 import com.calnyx.app.ui.theme.CalNyxRed
+import kotlin.math.PI
+import kotlin.math.atan2
+import kotlin.math.cos
+import kotlin.math.hypot
+import kotlin.math.sin
 
 enum class DrawTool {
-    NONE, PEN, CIRCLE, RECT, EMOJI
+    NONE, PEN, CIRCLE, RECT, ARROW, EMOJI
 }
 
 sealed class DrawMark {
+    // Every mark remembers its own colour, so changing the
+    // colour in the toolbar never repaints the marks that are
+    // already on the screen. Emoji stickers are text - they do
+    // not use a colour (their 0 is never drawn).
+    abstract val color: Int
     // Freehand pen: the points the finger travelled through.
-    data class Freehand(val points: MutableList<PointF>) : DrawMark()
+    data class Freehand(val points: MutableList<PointF>, override val color: Int) : DrawMark()
     // Shapes: drag from one corner to the opposite one.
-    data class Circle(val start: PointF, var end: PointF) : DrawMark()
-    data class Rect(val start: PointF, var end: PointF) : DrawMark()
+    data class Circle(val start: PointF, var end: PointF, override val color: Int) : DrawMark()
+    data class Rect(val start: PointF, var end: PointF, override val color: Int) : DrawMark()
+    // Arrow: drag from tail to tip - the head is drawn at end.
+    data class Arrow(val start: PointF, var end: PointF, override val color: Int) : DrawMark()
     // Emoji sticker: one tap stamps it at that spot.
-    data class Emoji(val position: PointF, val text: String) : DrawMark()
+    data class Emoji(val position: PointF, val text: String) : DrawMark() {
+        override val color: Int = 0
+    }
 }
 
 class ScreenDrawView(context: Context) : View(context) {
@@ -73,6 +88,16 @@ class ScreenDrawView(context: Context) : View(context) {
         strokeJoin = Paint.Join.ROUND
     }
 
+    // The colour new marks are drawn in, picked in the
+    // toolbar (red by default). Setting it repaints the
+    // stroke, but each mark already keeps its own colour, so
+    // old marks never change.
+    var markColor: Int = CalNyxRed.toArgb()
+        set(value) {
+            field = value
+            strokePaint.color = value
+        }
+
     // Emoji stickers are drawn as text, in the system's own
     // colour emoji font - no colour of ours on them.
     private val emojiPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -98,9 +123,10 @@ class ScreenDrawView(context: Context) : View(context) {
                     return true
                 }
                 current = when (tool) {
-                    DrawTool.PEN -> DrawMark.Freehand(mutableListOf(point))
-                    DrawTool.CIRCLE -> DrawMark.Circle(point, point)
-                    DrawTool.RECT -> DrawMark.Rect(point, point)
+                    DrawTool.PEN -> DrawMark.Freehand(mutableListOf(point), markColor)
+                    DrawTool.CIRCLE -> DrawMark.Circle(point, point, markColor)
+                    DrawTool.RECT -> DrawMark.Rect(point, point, markColor)
+                    DrawTool.ARROW -> DrawMark.Arrow(point, point, markColor)
                     DrawTool.NONE, DrawTool.EMOJI -> null
                 }
                 invalidate()
@@ -112,6 +138,7 @@ class ScreenDrawView(context: Context) : View(context) {
                     is DrawMark.Freehand -> mark.points.add(point)
                     is DrawMark.Circle -> mark.end = point
                     is DrawMark.Rect -> mark.end = point
+                    is DrawMark.Arrow -> mark.end = point
                     is DrawMark.Emoji -> Unit
                 }
                 invalidate()
@@ -134,6 +161,11 @@ class ScreenDrawView(context: Context) : View(context) {
     }
 
     private fun drawMark(canvas: Canvas, mark: DrawMark) {
+        // Each mark is drawn in its own colour - the paint is
+        // set per mark, so a colour change never repaints the
+        // marks already on the screen. Emoji stickers are text,
+        // they do not use this paint.
+        if (mark !is DrawMark.Emoji) strokePaint.color = mark.color
         when (mark) {
             is DrawMark.Freehand -> {
                 val points = mark.points
@@ -158,6 +190,34 @@ class ScreenDrawView(context: Context) : View(context) {
                 val top = minOf(mark.start.y, mark.end.y)
                 val bottom = maxOf(mark.start.y, mark.end.y)
                 canvas.drawRect(left, top, right, bottom, strokePaint)
+            }
+            is DrawMark.Arrow -> {
+                // Shaft from tail to tip, plus a V head at the
+                // tip: two short lines back at 30 degrees each
+                // side. The head shrinks on a very short drag
+                // so it never outgrows the shaft.
+                val dx = mark.end.x - mark.start.x
+                val dy = mark.end.y - mark.start.y
+                val len = hypot(dx, dy)
+                canvas.drawLine(mark.start.x, mark.start.y, mark.end.x, mark.end.y, strokePaint)
+                if (len > 1f) {
+                    val angle = atan2(dy, dx)
+                    val headLen = minOf(len * 0.4f, dp(24f))
+                    val spread = PI.toFloat() / 180f * 30f
+                    val back = angle + PI.toFloat()
+                    canvas.drawLine(
+                        mark.end.x, mark.end.y,
+                        mark.end.x + headLen * cos(back - spread),
+                        mark.end.y + headLen * sin(back - spread),
+                        strokePaint
+                    )
+                    canvas.drawLine(
+                        mark.end.x, mark.end.y,
+                        mark.end.x + headLen * cos(back + spread),
+                        mark.end.y + headLen * sin(back + spread),
+                        strokePaint
+                    )
+                }
             }
             is DrawMark.Emoji -> {
                 // drawText takes the baseline - lift it so the

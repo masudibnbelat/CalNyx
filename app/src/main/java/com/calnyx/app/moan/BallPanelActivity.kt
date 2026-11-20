@@ -138,6 +138,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.calnyx.app.BlueFilm.BlueFilmService
 import com.calnyx.app.BlueFilm.ScreenRecordService
+import com.calnyx.app.moan.FloatingBallService
 import com.calnyx.app.applock.AppLockManager
 import com.calnyx.app.applock.AppLockService
 
@@ -421,8 +422,13 @@ class BallPanelActivity : ComponentActivity() {
     }
 
     private fun doScreenshot() {
-        // Close the panel first so it is not in the picture,
-        // then use the phone's OFFICIAL screenshot.
+        // Hide the ball first so it is not in the picture
+        // either - it comes back by itself after 2 seconds.
+        // (No FLAG_SECURE: it made the system refuse EVERY
+        // screenshot on this phone.) Close the panel first so
+        // it is not in the picture, then use the phone's
+        // OFFICIAL screenshot.
+        FloatingBallService.hide(this, 2000)
         finish()
         mainHandler.postDelayed({
             if (!AppLockService.requestOfficialScreenshot()) {
