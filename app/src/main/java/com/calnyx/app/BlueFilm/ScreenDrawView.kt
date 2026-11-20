@@ -15,14 +15,14 @@
 // video playing underneath keeps playing, and no tap reaches
 // it. While a tool IS active the overlay eats every touch, so
 // nothing underneath reacts: only the pen / shape / sticker
-// lands. Shapes get a light translucent fill (so a marked
-// corner is also covered / dimmed) plus the red outline; the
-// pen is a red stroke only. Clear wipes every mark at once.
+// lands. Shapes are OUTLINE ONLY - no fill at all, so the area
+// inside a circle or rectangle stays crystal clear, with no
+// darkening and no colour effect on the background. The pen is
+// a red stroke only. Clear wipes every mark at once.
 package com.calnyx.app.BlueFilm
 
 import android.content.Context
 import android.graphics.Canvas
-import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.PointF
@@ -71,14 +71,6 @@ class ScreenDrawView(context: Context) : View(context) {
         strokeWidth = dp(6f)
         strokeCap = Paint.Cap.ROUND
         strokeJoin = Paint.Join.ROUND
-    }
-
-    // Light fill for shapes: marks the area and dims it a
-    // little, so a marked corner is also covered.
-    private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.BLACK
-        alpha = 38
-        style = Paint.Style.FILL
     }
 
     // Emoji stickers are drawn as text, in the system's own
@@ -158,7 +150,6 @@ class ScreenDrawView(context: Context) : View(context) {
                 val right = maxOf(mark.start.x, mark.end.x)
                 val top = minOf(mark.start.y, mark.end.y)
                 val bottom = maxOf(mark.start.y, mark.end.y)
-                canvas.drawOval(left, top, right, bottom, fillPaint)
                 canvas.drawOval(left, top, right, bottom, strokePaint)
             }
             is DrawMark.Rect -> {
@@ -166,7 +157,6 @@ class ScreenDrawView(context: Context) : View(context) {
                 val right = maxOf(mark.start.x, mark.end.x)
                 val top = minOf(mark.start.y, mark.end.y)
                 val bottom = maxOf(mark.start.y, mark.end.y)
-                canvas.drawRect(left, top, right, bottom, fillPaint)
                 canvas.drawRect(left, top, right, bottom, strokePaint)
             }
             is DrawMark.Emoji -> {
