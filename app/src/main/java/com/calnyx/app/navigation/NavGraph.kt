@@ -216,7 +216,7 @@ import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PowerSettingsNew
-import androidx.compose.material.icons.filled.Videocam
+import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.filled.Numbers
 import androidx.compose.material.icons.filled.ReceiptLong
@@ -335,7 +335,7 @@ sealed class Screen(
     object NumberSystem :
             Screen(
                     "numbersystem",
-                    "Number System",
+                    "Base System",
                     "Binary, decimal, octal & hex",
                     Icons.Default.Numbers
             )
@@ -359,7 +359,7 @@ sealed class Screen(
                     Icons.Default.SignalCellularAlt
             )
     object BlueFilm :
-            Screen("blue_film", "Spy", "Secret camera recorder", Icons.Default.Videocam)
+            Screen("blue_film", "Third Eye", "Secret camera recorder", Icons.Default.Visibility)
     object Clipboard :
             Screen(
                     "clipboard",
@@ -1271,11 +1271,31 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
                                         )
                                     },
                                     icon = {
-                                        Icon(
-                                            screen.icon,
-                                            contentDescription = screen.title,
-                                            modifier = Modifier.size(drawerIconSize)
-                                        )
+                                        // BASE SYSTEM (2026-11-20): its
+                                        // icon is the "69" text logo, not
+                                        // the "#" (Numbers) icon. A bold
+                                        // "69" centred in the icon box,
+                                        // tinted by the drawer's content
+                                        // colour like the other icons.
+                                        if (screen == Screen.NumberSystem) {
+                                            Box(
+                                                modifier = Modifier.size(drawerIconSize),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Text(
+                                                    text = "69",
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontSize = (drawerIconSize.value * 0.8f).sp,
+                                                    maxLines = 1
+                                                )
+                                            }
+                                        } else {
+                                            Icon(
+                                                screen.icon,
+                                                contentDescription = screen.title,
+                                                modifier = Modifier.size(drawerIconSize)
+                                            )
+                                        }
                                     },
                                     selected = currentRoute == screen.route,
                                     onClick = { closeDrawerAndGo(screen.route) },
@@ -1618,7 +1638,7 @@ private fun AboutDialog(
                 }
                 // What the app is.
                 Text(
-                        text = "CalNyx is an all-in-one calculator for everyday use \u2014 Normal, Scientific, CalTape, Converter, Number System and ICT \u2014 with a hidden Black Hole vault for private photos, videos, documents and audio, an App Lock, Moan and Hardcore controls, a floating ball, Spy camera recording and a Clipboard history. Everything works offline and stays on this phone.",
+                        text = "CalNyx is an all-in-one calculator for everyday use \u2014 Normal, Scientific, CalTape, Converter, Base System and ICT \u2014 with a hidden Black Hole vault for private photos, videos, documents and audio, an App Lock, Moan and Hardcore controls, a floating ball, Third Eye camera recording and a Clipboard history. Everything works offline and stays on this phone.",
                         fontSize = fBody,
                         color = onPageColor,
                         textAlign = TextAlign.Center

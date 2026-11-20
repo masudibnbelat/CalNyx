@@ -276,17 +276,20 @@ class BallPanelActivity : ComponentActivity() {
                             shape = RoundedCornerShape(minDim * 0.071f),
                             color = cardBg,
                             contentColor = onCard,
-                            // Tonal elevation is 0 ON PURPOSE: a
-                            // Surface tints its colour with the
-                            // theme's surface tint, which lightens
-                            // the card - and the toolbar's card did
-                            // not get the same tint, so the two
-                            // windows looked different even though
-                            // both use the same colour variable.
-                            // The shadow stays (it does not change
-                            // the colour, only the depth).
-                            tonalElevation = 0.dp,
-                            shadowElevation = minDim * 0.02f
+                            // The card colour is the picture's
+                            // colour: background + the tonal tint.
+                            // A Surface tints its colour with the
+                            // theme's surface tint, and that tint is
+                            // what makes this card the lighter grey
+                            // in the user's screenshot (measured
+                            // #333333) instead of flat background.
+                            // The toolbar's card is the same Surface
+                            // with the same tint, so the two windows
+                            // cannot differ. NO shadow (the user
+                            // wants the flat look from the picture):
+                            // the shadow is 0, only the tint stays.
+                            tonalElevation = minDim * 0.02f,
+                            shadowElevation = 0.dp
                         ) {
                             Column(
                                 modifier = Modifier.padding(

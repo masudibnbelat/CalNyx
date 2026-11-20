@@ -171,15 +171,16 @@ class ScreenRecordToolbarActivity : ComponentActivity() {
                         contentAlignment = Alignment.Center
                     ) {
                         // Same construction as the ball panel's
-                        // card (a Surface, not a Card): the panel's
-                        // Surface tints its colour with the theme's
-                        // surface tint, which lightened its card
-                        // and made the two windows look different
-                        // even though both use the same colour
-                        // variable. Tonal elevation is 0 here too,
-                        // so both cards are exactly the theme's
-                        // background. The shadow stays (it does
-                        // not change the colour, only the depth).
+                        // card (a Surface, not a Card), and the
+                        // same tint: the card colour is the
+                        // picture's colour - background + the
+                        // tonal tint, which makes it the lighter
+                        // grey (measured #333333) instead of flat
+                        // background. Both windows use the same
+                        // Surface with the same tint, so they
+                        // cannot differ. NO shadow (the user wants
+                        // the flat look from the picture): the
+                        // shadow is 0, only the tint stays.
                         Surface(
                             // Consume taps on the card so they do
                             // not fall through to the dim background
@@ -188,8 +189,8 @@ class ScreenRecordToolbarActivity : ComponentActivity() {
                             shape = RoundedCornerShape(cornerCard),
                             color = colorScheme.background,
                             contentColor = colorScheme.onBackground,
-                            tonalElevation = 0.dp,
-                            shadowElevation = minDim * 0.02f
+                            tonalElevation = minDim * 0.02f,
+                            shadowElevation = 0.dp
                         ) {
                             Column(
                                 modifier = Modifier.fillMaxWidth()

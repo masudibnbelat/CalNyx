@@ -257,15 +257,15 @@ fun ClipboardScreen(
     // state is saveable, so without this the list reopened at the
     // old scroll position. Runs once per entry, only after the
     // items have loaded; new copies arriving while the screen is
-    // already open do NOT trigger it.
+    // already open do NOT trigger it. NOTE: this project's
+    // Compose has NO animationSpec parameter on
+    // animateScrollToItem, so the default smooth animation is
+    // used (passing animationSpec fails the build).
     val listState = rememberLazyListState()
     var scrolledToTop by remember { mutableStateOf(false) }
     LaunchedEffect(clipItems.isNotEmpty()) {
         if (clipItems.isNotEmpty() && !scrolledToTop) {
-            listState.animateScrollToItem(
-                index = 0,
-                animationSpec = tween(durationMillis = 500)
-            )
+            listState.animateScrollToItem(index = 0)
             scrolledToTop = true
         }
     }

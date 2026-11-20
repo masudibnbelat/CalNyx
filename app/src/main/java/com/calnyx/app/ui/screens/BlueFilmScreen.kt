@@ -10,16 +10,6 @@
 // listVideosInFolder() + folderCount() (disk I/O) for every
 // folder on every recomposition, including the 500 ms
 // recording-timer ticks. No logic / colour / % change otherwise.
-// SCREEN RECORD (2026-11-20) - REPLACE. Settings has ONE
-// "Record" section with three buttons: Back camera, Front
-// camera, Screen Record (screen = the whole screen via
-// MediaProjection, ScreenRecordService, same Mic + Quality).
-// Only ONE of the three is ever active. The floating ball
-// stays during a screen recording and opens the recording
-// toolbar (pen / circle / square / triangle / clear / stop).
-// Camera recording is unchanged.
-// (The separate Mode section is gone - it left a camera
-// button highlighted even in Screen mode, which was wrong.)
 // THEME VARIABLES VERSION (2026-11-20) - colours only, no logic /
 // design / text change: every colour in this file now comes from
 // the theme (Color.kt) through MaterialTheme.colorScheme - nothing
@@ -151,7 +141,6 @@ package com.calnyx.app.ui.screens
 
 import android.Manifest
 import android.app.Activity
-import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
 import android.hardware.camera2.CameraCharacteristics
@@ -227,10 +216,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
-import android.media.projection.MediaProjectionManager
 import com.calnyx.app.BlueFilm.BlueFilmService
 import com.calnyx.app.BlueFilm.BlueFilmStore
-import com.calnyx.app.BlueFilm.ScreenRecordService
 import com.calnyx.app.ui.theme.CalNyxRed
 import java.io.File
 import kotlinx.coroutines.Dispatchers
@@ -291,13 +278,6 @@ fun BlueFilmScreen(
     // SharedPreferences. The video records with sound only
     // when this is ON and the permission is granted.
     var micOn by remember { mutableStateOf(BlueFilmService.savedMicEnabled(context)) }
-    // SCREEN RECORD (2026-11-20): "camera" or "screen", saved.
-    // Mic + Quality below apply to both modes.
-    var recordMode by remember { mutableStateOf(ScreenRecordService.savedMode(context)) }
-    var isScreenRecording by remember { mutableStateOf(ScreenRecordService.isRecording) }
-    // True between tapping Start (screen mode) and the system
-    // dialog answering - the button stays disabled meanwhile.
-    var waitingProjection by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
     var folders by remember { mutableStateOf(BlueFilmStore.listFolders(context)) }
     // OPTIMIZATION (2026-11-20): folder covers + video counts,
@@ -371,36 +351,8 @@ fun BlueFilmScreen(
         }
     }
 
-    // SCREEN RECORD: the system asks once per recording, with
-    // its own dialog (Android's rule - it cannot be skipped).
-    // OK = the service starts with the granted token; anything
-    // else = the recording does not start.
-    val projectionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        waitingProjection = false
-        if (result.resultCode == Activity.RESULT_OK && result.data != null) {
-            ScreenRecordService.start(context, result.resultCode, result.data!!, micOn, quality)
-            note = null
-        } else {
-            note = "Screen recording was not allowed."
-        }
-    }
-
     fun startRecording() {
-        if (isRecording || isStarting || waitingProjection) return
-        if (recordMode == "screen") {
-            // Screen mode: ask the system for a capture token.
-            val manager = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-            waitingProjection = true
-            try {
-                projectionLauncher.launch(manager.createScreenCaptureIntent())
-            } catch (_: Exception) {
-                waitingProjection = false
-                note = "Screen recording is not available on this phone."
-            }
-            return
-        }
+        if (isRecording || isStarting) return
         val cameraOk = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
             PackageManager.PERMISSION_GRANTED
         val micOk = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
@@ -460,17 +412,12 @@ fun BlueFilmScreen(
     LaunchedEffect(Unit) {
         var wasRecording = false
         while (true) {
-            val camRec = BlueFilmService.isRecording
-            val scrRec = ScreenRecordService.isRecording
-            val rec = camRec || scrRec
-            val starting = BlueFilmService.isStarting || ScreenRecordService.isStarting
+            val rec = BlueFilmService.isRecording
+            val starting = BlueFilmService.isStarting
             if (rec != isRecording) isRecording = rec
             if (starting != isStarting) isStarting = starting
-            if (scrRec != isScreenRecording) isScreenRecording = scrRec
             if (rec) {
-                val startedAt = if (scrRec) ScreenRecordService.startedAtMillis
-                else BlueFilmService.startedAtMillis
-                elapsedSec = (System.currentTimeMillis() - startedAt) / 1000
+                elapsedSec = (System.currentTimeMillis() - BlueFilmService.startedAtMillis) / 1000
             } else if (wasRecording) {
                 elapsedSec = 0L
                 refreshAll()
@@ -603,7 +550,7 @@ fun BlueFilmScreen(
                 }
                 Spacer(modifier = Modifier.width(screenW * 0.03f))
                 Text(
-                    "Blue Film",
+                    "Third Eye",
                     fontWeight = FontWeight.Bold,
                     fontSize = fTitle,
                     color = primary,
@@ -624,22 +571,14 @@ fun BlueFilmScreen(
                     verticalArrangement = Arrangement.spacedBy(gap)
                 ) {
                     Text("Settings", fontWeight = FontWeight.Bold, fontSize = fSection, color = primary)
-                    // RECORD (2026-11-20): ONE section, three
-                    // buttons - Back camera, Front camera, Screen
-                    // Record. Only one is ever active: a camera
-                    // button counts only when the mode is camera,
-                    // Screen counts only when the mode is screen.
-                    // Mic + Quality below apply to all three.
-                    Text("Record", fontWeight = FontWeight.SemiBold, fontSize = fBody, color = primary)
+                    Text("Camera", fontWeight = FontWeight.SemiBold, fontSize = fBody, color = primary)
                     Row(modifier = Modifier.fillMaxWidth()) {
                         Box(
                             modifier = Modifier.weight(1f)
                                 .clip(RoundedCornerShape(cornerBtn))
-                                .background(if (recordMode == "camera" && facing == CameraCharacteristics.LENS_FACING_BACK) buttonBg else cardBg)
+                                .background(if (facing == CameraCharacteristics.LENS_FACING_BACK) buttonBg else cardBg)
                                 .border(1.dp, cardBorder, RoundedCornerShape(cornerBtn))
                                 .clickable(enabled = !isRecording && !isStarting) {
-                                    recordMode = "camera"
-                                    ScreenRecordService.saveMode(context, "camera")
                                     facing = CameraCharacteristics.LENS_FACING_BACK
                                     BlueFilmService.saveFacing(context, facing)
                                 }
@@ -647,17 +586,15 @@ fun BlueFilmScreen(
                             contentAlignment = Alignment.Center
                         ) {
                             Text("Back camera", fontWeight = FontWeight.SemiBold, fontSize = fBody,
-                                color = if (recordMode == "camera" && facing == CameraCharacteristics.LENS_FACING_BACK) buttonText else primary)
+                                color = if (facing == CameraCharacteristics.LENS_FACING_BACK) buttonText else primary)
                         }
                         Spacer(modifier = Modifier.width(screenW * 0.02f))
                         Box(
                             modifier = Modifier.weight(1f)
                                 .clip(RoundedCornerShape(cornerBtn))
-                                .background(if (recordMode == "camera" && facing == CameraCharacteristics.LENS_FACING_FRONT) buttonBg else cardBg)
+                                .background(if (facing == CameraCharacteristics.LENS_FACING_FRONT) buttonBg else cardBg)
                                 .border(1.dp, cardBorder, RoundedCornerShape(cornerBtn))
                                 .clickable(enabled = !isRecording && !isStarting) {
-                                    recordMode = "camera"
-                                    ScreenRecordService.saveMode(context, "camera")
                                     facing = CameraCharacteristics.LENS_FACING_FRONT
                                     BlueFilmService.saveFacing(context, facing)
                                 }
@@ -665,23 +602,8 @@ fun BlueFilmScreen(
                             contentAlignment = Alignment.Center
                         ) {
                             Text("Front camera", fontWeight = FontWeight.SemiBold, fontSize = fBody,
-                                color = if (recordMode == "camera" && facing == CameraCharacteristics.LENS_FACING_FRONT) buttonText else primary)
+                                color = if (facing == CameraCharacteristics.LENS_FACING_FRONT) buttonText else primary)
                         }
-                    }
-                    Box(
-                        modifier = Modifier.fillMaxWidth()
-                            .clip(RoundedCornerShape(cornerBtn))
-                            .background(if (recordMode == "screen") buttonBg else cardBg)
-                            .border(1.dp, cardBorder, RoundedCornerShape(cornerBtn))
-                            .clickable(enabled = !isRecording && !isStarting) {
-                                recordMode = "screen"
-                                ScreenRecordService.saveMode(context, "screen")
-                            }
-                            .padding(vertical = padY),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text("Screen Record", fontWeight = FontWeight.SemiBold, fontSize = fBody,
-                            color = if (recordMode == "screen") buttonText else primary)
                     }
                     Text("Quality", fontWeight = FontWeight.SemiBold, fontSize = fBody, color = primary)
                     Row(modifier = Modifier.fillMaxWidth()) {
@@ -784,10 +706,8 @@ fun BlueFilmScreen(
                 if (isRecording || isStarting) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            if (isRecording) {
-                                if (isScreenRecording) "Recording screen - ${formatElapsed(elapsedSec)}"
-                                else "Recording - ${formatElapsed(elapsedSec)}"
-                            } else "Starting...",
+                            if (isRecording) "Recording - ${formatElapsed(elapsedSec)}"
+                            else "Starting...",
                             fontWeight = FontWeight.SemiBold,
                             fontSize = fCard,
                             color = if (isRecording) red else primary,
@@ -804,11 +724,8 @@ fun BlueFilmScreen(
                     modifier = Modifier.fillMaxWidth()
                         .clip(RoundedCornerShape(cornerBtn))
                         .background(buttonBg)
-                        .clickable(enabled = !isStarting && !waitingProjection) {
-                            if (isRecording) {
-                                if (isScreenRecording) ScreenRecordService.stop(context)
-                                else BlueFilmService.stop(context)
-                            } else startRecording()
+                        .clickable(enabled = !isStarting) {
+                            if (isRecording) BlueFilmService.stop(context) else startRecording()
                         }
                         .padding(vertical = padY * 1.2f),
                     contentAlignment = Alignment.Center
@@ -822,9 +739,7 @@ fun BlueFilmScreen(
                         )
                         Spacer(modifier = Modifier.width(screenW * 0.025f))
                         Text(
-                            if (isRecording) "Stop Recording"
-                            else if (recordMode == "screen") "Start Screen Recording"
-                            else "Start Recording",
+                            if (isRecording) "Stop Recording" else "Start Recording",
                             fontWeight = FontWeight.SemiBold,
                             fontSize = fCard,
                             color = buttonText,

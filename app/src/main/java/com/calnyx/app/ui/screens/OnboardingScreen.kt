@@ -8,19 +8,25 @@
 // NEW FILE - first-run introduction. Shows once, on the very first
 // open after install (NavGraph gates on OnboardingPrefs.isDone).
 // 7 steps, swipe is off - move with Next / Back / Skip only:
-//   0 Welcome - app logo + name, developer introduction.
+//   0 Welcome - app logo + name, what CalNyx is.
 //   1 Calculators - Normal, Scientific, CalTape, Converter,
-//     Number System, ICT, Notepad, and how to use them.
+//     Base System, ICT, and how to use them.
 //   2 Black Hole + App Lock - the hidden vault and locked apps.
-//   3 Sound & Hardware - sound controls, power, network, ball.
-//   4 Spy + Clipboard - secret camera recording, clipboard history.
+//   3 Moan, Hardcore & Network - sound, power, network, ball.
+//   4 Third Eye + Clipboard - secret camera and screen
+//     recording, clipboard history.
 //   5 Permissions - every permission the app needs, one by one.
 //     Each row has a Grant button; granting shows a check. The
 //     Next button stays DISABLED until every required permission
 //     is granted. Skip (top right) exits the whole introduction.
-//   6 All set - Start opens the calculator.
+//   6 Welcome - the 69 logo and a welcome; Start opens the
+//     calculator.
 // English only, black / white only. The permission list comes from
 // OnboardingPermissions - the same list the About dialog shows.
+// UPDATED (2026-11-20): the feature lists now match the app as
+// it is today - six calculators (no Notepad), Moan / Hardcore /
+// Network (not Sound / Hardware), Third Eye (not Spy, now with
+// screen recording too). No developer description anywhere.
 package com.calnyx.app.ui.screens
 
 import android.app.Activity
@@ -60,12 +66,12 @@ import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Functions
 import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.NoteAlt
 import androidx.compose.material.icons.filled.Numbers
 import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.ReceiptLong
+import androidx.compose.material.icons.filled.SignalCellularAlt
 import androidx.compose.material.icons.filled.SwapHoriz
-import androidx.compose.material.icons.filled.Videocam
+import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Switch
@@ -242,7 +248,7 @@ fun OnboardingScreen(darkTheme: Boolean, onFinish: () -> Unit) {
                         onGrant = ::grant,
                         onToggle = ::toggle
                     )
-                    6 -> DonePage(onPageColor, thumbBg)
+                    6 -> FinalWelcomePage(onPageColor, thumbBg)
                 }
             }
         }
@@ -374,7 +380,7 @@ private fun PageSubtitle(text: String, color: Color) {
 }
 
 @Composable
-private fun FeatureRow(icon: ImageVector, title: String, text: String, onPageColor: Color, thumbBg: Color) {
+private fun FeatureRow(icon: ImageVector, title: String, text: String, onPageColor: Color, thumbBg: Color, textIcon: String? = null) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
@@ -383,7 +389,20 @@ private fun FeatureRow(icon: ImageVector, title: String, text: String, onPageCol
             modifier = Modifier.size(52.dp).clip(CircleShape).background(thumbBg),
             contentAlignment = Alignment.Center
         ) {
-            Icon(icon, contentDescription = null, tint = onPageColor, modifier = Modifier.size(26.dp))
+            // textIcon (e.g. "69" for Base System) renders as a
+            // bold text logo instead of the icon; the icon is
+            // ignored when textIcon is set.
+            if (textIcon != null) {
+                Text(
+                    text = textIcon,
+                    fontSize = 26.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = onPageColor,
+                    maxLines = 1
+                )
+            } else {
+                Icon(icon, contentDescription = null, tint = onPageColor, modifier = Modifier.size(26.dp))
+            }
         }
         Spacer(modifier = Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
@@ -425,13 +444,13 @@ private fun WelcomePage(onPageColor: Color, thumbBg: Color, cardBg: Color, cardB
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Text(
-                text = "Made by Masud Ibn Belat",
+                text = "What is CalNyx?",
                 fontSize = 16.sp,
                 fontWeight = FontWeight.Bold,
                 color = onPageColor
             )
             Text(
-                text = "Freelance full-stack developer from Sirajganj, Bangladesh. CalNyx is a calculator, a hidden private vault, an app lock, sound and hardware controls, a floating ball, a secret camera recorder and a clipboard history - in one app.",
+                text = "Six calculators, a hidden vault for your private photos and videos, an app lock, sound and power controls, a floating ball, secret camera and screen recording, and a clipboard history - all in one app.",
                 fontSize = 14.sp,
                 color = onPageColor.copy(alpha = 0.8f)
             )
@@ -448,14 +467,13 @@ private fun WelcomePage(onPageColor: Color, thumbBg: Color, cardBg: Color, cardB
 @Composable
 private fun CalculatorsPage(onPageColor: Color, thumbBg: Color) {
     PageTitle("Calculators", onPageColor)
-    PageSubtitle("Seven calculators in one place. Tap one in the menu to open it.", onPageColor)
+    PageSubtitle("Six calculators in one place. Tap one in the menu to open it.", onPageColor)
     FeatureRow(Icons.Default.Calculate, "Normal", "Everyday calculator with history and Ans. Swipe right for History.", onPageColor, thumbBg)
     FeatureRow(Icons.Default.Functions, "Scientific", "Advanced functions. Pull the keypad down to reveal them.", onPageColor, thumbBg)
     FeatureRow(Icons.Default.ReceiptLong, "CalTape", "A tape with sheets and totals. Swipe left on it to open the menu.", onPageColor, thumbBg)
     FeatureRow(Icons.Default.SwapHoriz, "Converter", "Length, weight, volume and more.", onPageColor, thumbBg)
-    FeatureRow(Icons.Default.Numbers, "Number System", "Binary, decimal, octal and hex.", onPageColor, thumbBg)
+    FeatureRow(Icons.Default.Numbers, "Base System", "Binary, decimal, octal and hex.", onPageColor, thumbBg, textIcon = "69")
     FeatureRow(Icons.Default.Computer, "ICT", "Binary arithmetic for ICT study.", onPageColor, thumbBg)
-    FeatureRow(Icons.Default.NoteAlt, "Notepad", "Notes with calculations.", onPageColor, thumbBg)
     PageSubtitle("Tip: swipe left anywhere to open the menu.", onPageColor)
 }
 
@@ -471,25 +489,28 @@ private fun BlackHolePage(onPageColor: Color, thumbBg: Color) {
 
 @Composable
 private fun SoundHardwarePage(onPageColor: Color, thumbBg: Color) {
-    PageTitle("Sound & Hardware", onPageColor)
+    PageTitle("Moan, Hardcore & Network", onPageColor)
     PageSubtitle("Your phone's controls, from inside the calculator.", onPageColor)
-    FeatureRow(Icons.Default.VolumeUp, "Sound", "Ringer modes and Media, Ringtone, Alarm and Call volumes.", onPageColor, thumbBg)
-    FeatureRow(Icons.Default.PowerSettingsNew, "Hardware", "Power menu, Lock screen, Network switcher and screen orientation.", onPageColor, thumbBg)
-    FeatureRow(Icons.Default.Calculate, "Floating Ball", "A white ball on top of every app: call, power, lock, flashlight, screenshot and more.", onPageColor, thumbBg)
+    FeatureRow(Icons.Default.VolumeUp, "Moan", "Ringer modes and Media, Ringtone, Alarm and Call volumes.", onPageColor, thumbBg)
+    FeatureRow(Icons.Default.PowerSettingsNew, "Hardcore", "Power menu, Lock screen, screen orientation and the floating ball.", onPageColor, thumbBg)
+    FeatureRow(Icons.Default.SignalCellularAlt, "Network", "Network switcher and Open in WhatsApp.", onPageColor, thumbBg)
     PageSubtitle("The ball never opens the app by itself - tap it and only its small panel opens.", onPageColor)
 }
 
 @Composable
 private fun SpyClipboardPage(onPageColor: Color, thumbBg: Color) {
-    PageTitle("Spy & Clipboard", onPageColor)
+    PageTitle("Third Eye & Clipboard", onPageColor)
     PageSubtitle("Two quiet tools that work in the background.", onPageColor)
-    FeatureRow(Icons.Default.Videocam, "Spy", "Secret camera recording with the front or back camera. Videos stay inside the app, never in the gallery.", onPageColor, thumbBg)
+    FeatureRow(Icons.Default.Visibility, "Third Eye", "Secret camera recording with the front or back camera, and screen recording with drawing tools. Videos stay inside the app, never in the gallery.", onPageColor, thumbBg)
     FeatureRow(Icons.Default.ContentPaste, "Clipboard", "Everything you copy is saved offline - text and images. Open it from the menu any time.", onPageColor, thumbBg)
     PageSubtitle("Both work fully offline.", onPageColor)
 }
 
+// FINAL PAGE (2026-11-20): no more "All set" - the last page
+// is a welcome, with the 69 logo in the circle (the same 69 as
+// the Base System icon). Start opens the calculator.
 @Composable
-private fun DonePage(onPageColor: Color, thumbBg: Color) {
+private fun FinalWelcomePage(onPageColor: Color, thumbBg: Color) {
     Column(
         modifier = Modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -500,15 +521,16 @@ private fun DonePage(onPageColor: Color, thumbBg: Color) {
             modifier = Modifier.size(96.dp).clip(CircleShape).background(onPageColor),
             contentAlignment = Alignment.Center
         ) {
-            Icon(
-                Icons.Default.Check,
-                contentDescription = null,
-                tint = thumbBg,
-                modifier = Modifier.size(48.dp)
+            Text(
+                text = "69",
+                fontSize = 40.sp,
+                fontWeight = FontWeight.Bold,
+                color = thumbBg,
+                maxLines = 1
             )
         }
         Text(
-            text = "You're all set",
+            text = "Welcome",
             fontSize = 28.sp,
             fontWeight = FontWeight.Bold,
             color = onPageColor,

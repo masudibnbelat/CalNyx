@@ -1,8 +1,3 @@
-// THEME VARIABLES CHECK (2026-11-20): verified - already fully on
-// MaterialTheme.colorScheme (background / onBackground / surface /
-// surfaceVariant / onSurfaceVariant / outline). Sizes already %
-// (BoxWithConstraints sw/sh/minDim); only 1.dp hairline borders.
-// No code change needed - file verified as-is.
 // FILE: app/src/main/java/com/calnyx/app/ui/screens/NumberSystemCalculatorScreen.kt
 // % VERSION (2026-11-07) - REPLACE. B/W base, logic UNCHANGED.
 // Only change: the last fixed values are now % — drawer swipe
@@ -367,7 +362,7 @@ fun NumberSystemCalculatorScreen(
                     NsAnimatedIn(delayMs = 0, minDim = minDim) {
                         Column {
                             Text(
-                                text = "Number System",
+                                text = "Base System",
                                 fontSize = titleSize,
                                 fontWeight = FontWeight.Bold,
                                 color = colors.onBackground,
