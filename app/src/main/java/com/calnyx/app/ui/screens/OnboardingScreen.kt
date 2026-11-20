@@ -19,8 +19,9 @@
 //     Each row has a Grant button; granting shows a check. The
 //     Next button stays DISABLED until every required permission
 //     is granted. Skip (top right) exits the whole introduction.
-//   6 Welcome - the 69 logo and a welcome; Start opens the
-//     calculator.
+//   6 Welcome - the word WELCOME made of 6s and 9s: a field
+//     of generated digits dissolves into the word, then Start
+//     appears and opens the calculator.
 // English only, black / white only. The permission list comes from
 // OnboardingPermissions - the same list the About dialog shows.
 // UPDATED (2026-11-20): the feature lists now match the app as
@@ -32,14 +33,22 @@ package com.calnyx.app.ui.screens
 import android.app.Activity
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.Color as AndroidColor
+import android.graphics.Paint
+import android.graphics.Typeface
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas as ComposeCanvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -80,6 +89,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -88,6 +98,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
@@ -95,6 +106,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
@@ -108,6 +120,8 @@ import com.calnyx.app.onboarding.AppPermission
 import com.calnyx.app.onboarding.OnboardingPermissions
 import com.calnyx.app.onboarding.PermissionKind
 import kotlinx.coroutines.launch
+import kotlin.math.ceil
+import kotlin.random.Random
 
 private const val PAGE_COUNT = 7
 private const val PAGE_PERMISSIONS = 5
@@ -161,6 +175,21 @@ fun OnboardingScreen(darkTheme: Boolean, onFinish: () -> Unit) {
     val page = pagerState.currentPage
     val allRequiredDone = OnboardingPermissions.required().all { permStates[it.id] == true }
     val nextEnabled = page != PAGE_PERMISSIONS || allRequiredDone
+
+    // WELCOME REVEAL (2026-11-20): the final page is a field of
+    // 6s and 9s that dissolves into the word WELCOME. The Start
+    // button stays hidden until the reveal finishes - the page
+    // tells us through onRevealDone. Leaving the page resets it,
+    // so the animation replays if the user comes back.
+    var welcomeRevealDone by remember { mutableStateOf(false) }
+    LaunchedEffect(page) {
+        if (page != PAGE_DONE) welcomeRevealDone = false
+    }
+    val startButtonAlpha by animateFloatAsState(
+        targetValue = if (page == PAGE_DONE && !welcomeRevealDone) 0f else 1f,
+        animationSpec = tween(durationMillis = 400),
+        label = "startButton"
+    )
 
     fun toggle(permission: AppPermission, value: Boolean) {
         OnboardingPermissions.setToggle(context, permission, value)
@@ -248,7 +277,11 @@ fun OnboardingScreen(darkTheme: Boolean, onFinish: () -> Unit) {
                         onGrant = ::grant,
                         onToggle = ::toggle
                     )
-                    6 -> FinalWelcomePage(onPageColor, thumbBg)
+                    6 -> FinalWelcomePage(
+                        onPageColor = onPageColor,
+                        active = page == PAGE_DONE,
+                        onRevealDone = { welcomeRevealDone = true }
+                    )
                 }
             }
         }
@@ -285,11 +318,12 @@ fun OnboardingScreen(darkTheme: Boolean, onFinish: () -> Unit) {
             Spacer(modifier = Modifier.weight(1f))
             Box(
                 modifier = Modifier.clip(RoundedCornerShape(16.dp))
+                    .alpha(startButtonAlpha)
                     .background(
                         if (nextEnabled) onPageColor
                         else onPageColor.copy(alpha = 0.25f)
                     )
-                    .clickable(enabled = nextEnabled) {
+                    .clickable(enabled = nextEnabled && (page != PAGE_DONE || welcomeRevealDone)) {
                         if (page == PAGE_DONE) {
                             onFinish()
                         } else {
@@ -506,42 +540,152 @@ private fun SpyClipboardPage(onPageColor: Color, thumbBg: Color) {
     PageSubtitle("Both work fully offline.", onPageColor)
 }
 
-// FINAL PAGE (2026-11-20): no more "All set" - the last page
-// is a welcome, with the 69 logo in the circle (the same 69 as
-// the Base System icon). Start opens the calculator.
-@Composable
-private fun FinalWelcomePage(onPageColor: Color, thumbBg: Color) {
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        Spacer(modifier = Modifier.height(32.dp))
-        Box(
-            modifier = Modifier.size(96.dp).clip(CircleShape).background(onPageColor),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = "69",
-                fontSize = 40.sp,
-                fontWeight = FontWeight.Bold,
-                color = thumbBg,
-                maxLines = 1
+// FINAL PAGE (2026-11-20): only the word WELCOME, in the middle
+// of the screen - no icon, no extra text. The word is made of
+// 6s and 9s: when the page opens, the whole word area is filled
+// with generated 6 / 9 digits, then the digits that are NOT part
+// of the letters fade away one by one (each with its own random
+// delay), and WELCOME is left standing. When it is fully
+// revealed, onRevealDone fires and the Start button appears.
+// % ONLY: the digit cell is 3% of the smaller side, so the whole
+// matrix scales on every device. Colours are theme variables
+// (onPageColor for the digits, pageBg behind) - no hardcoded
+// colour anywhere here.
+private data class WelcomeCell(
+    val cx: Float,
+    val cy: Float,
+    val isLetter: Boolean,
+    val digit: String,
+    val delay: Float
+)
+
+private data class WelcomeGrid(
+    val cells: List<WelcomeCell>,
+    val widthPx: Float,
+    val heightPx: Float
+)
+
+// Draws WELCOME on a bitmap and samples each cell centre for
+// ink. Returns the grid that covers the word's bounding box.
+private fun buildWelcomeCells(availableWidthPx: Float, cellPx: Float): WelcomeGrid {
+    val text = "WELCOME"
+    val paint = Paint().apply {
+        typeface = Typeface.DEFAULT_BOLD
+        isAntiAlias = true
+        color = AndroidColor.WHITE
+        textAlign = Paint.Align.CENTER
+    }
+    // Size the word to span ~94% of the available width.
+    paint.textSize = 100f
+    val w100 = paint.measureText(text)
+    paint.textSize = 100f * (availableWidthPx * 0.94f / w100)
+    val textW = paint.measureText(text)
+    val fm = paint.fontMetrics
+    val textH = fm.descent - fm.ascent
+    val cols = maxOf(1, ceil(textW / cellPx).toInt())
+    val rows = maxOf(1, ceil(textH / cellPx).toInt())
+    val gridW = cols * cellPx
+    val gridH = rows * cellPx
+    val bitmap = Bitmap.createBitmap(gridW.toInt(), gridH.toInt(), Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bitmap)
+    val baseX = gridW / 2f
+    val baseY = gridH / 2f - (fm.ascent + fm.descent) / 2f
+    canvas.drawText(text, baseX, baseY, paint)
+    val random = Random(69)
+    val cells = ArrayList<WelcomeCell>(cols * rows)
+    for (r in 0 until rows) {
+        for (c in 0 until cols) {
+            val px = ((c + 0.5f) * cellPx).toInt().coerceIn(0, gridW.toInt() - 1)
+            val py = ((r + 0.5f) * cellPx).toInt().coerceIn(0, gridH.toInt() - 1)
+            val isLetter = AndroidColor.alpha(bitmap.getPixel(px, py)) > 80
+            cells.add(
+                WelcomeCell(
+                    cx = (c + 0.5f) * cellPx,
+                    cy = (r + 0.5f) * cellPx,
+                    isLetter = isLetter,
+                    digit = if (random.nextBoolean()) "6" else "9",
+                    delay = random.nextFloat() * 0.65f
+                )
             )
         }
-        Text(
-            text = "Welcome",
-            fontSize = 28.sp,
-            fontWeight = FontWeight.Bold,
-            color = onPageColor,
-            textAlign = TextAlign.Center
+    }
+    bitmap.recycle()
+    return WelcomeGrid(cells, gridW, gridH)
+}
+
+@Composable
+private fun FinalWelcomePage(
+    onPageColor: Color,
+    active: Boolean,
+    onRevealDone: () -> Unit
+) {
+    BoxWithConstraints(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        val density = LocalDensity.current
+        val minDim = minOf(maxWidth, maxHeight)
+        val cellDp = minDim * 0.03f
+        val cellPx = with(density) { cellDp.toPx() }
+        val availableWidthPx = with(density) { maxWidth.toPx() }
+        val grid = remember(availableWidthPx, cellPx) {
+            buildWelcomeCells(availableWidthPx, cellPx)
+        }
+
+        var started by remember { mutableStateOf(false) }
+        var revealCalled by remember { mutableStateOf(false) }
+        LaunchedEffect(active) {
+            if (active) {
+                started = true
+            } else {
+                started = false
+                revealCalled = false
+            }
+        }
+        val progress by animateFloatAsState(
+            targetValue = if (started) 1f else 0f,
+            animationSpec = tween(durationMillis = 2600, easing = LinearEasing),
+            label = "welcomeReveal"
         )
-        Text(
-            text = "CalNyx is ready. Tap Start to open your calculator.",
-            fontSize = 16.sp,
-            color = onPageColor.copy(alpha = 0.75f),
-            textAlign = TextAlign.Center
-        )
+        LaunchedEffect(progress, started) {
+            if (started && progress >= 1f && !revealCalled) {
+                revealCalled = true
+                onRevealDone()
+            }
+        }
+        // The first 15% is a hold: the field stays full so the
+        // user sees it, then the dissolve runs.
+        val fadeProgress = ((progress - 0.15f) / 0.85f).coerceIn(0f, 1f)
+
+        val digitPaint = remember(cellPx, onPageColor) {
+            Paint().apply {
+                typeface = Typeface.DEFAULT_BOLD
+                isAntiAlias = true
+                textAlign = Paint.Align.CENTER
+                textSize = cellPx * 0.82f
+                color = onPageColor.toArgb()
+            }
+        }
+        ComposeCanvas(
+            modifier = Modifier.size(
+                width = with(density) { grid.widthPx.toDp() },
+                height = with(density) { grid.heightPx.toDp() }
+            )
+        ) {
+            val nativeCanvas = drawContext.canvas.nativeCanvas
+            val fm = digitPaint.fontMetrics
+            val baselineShift = (fm.ascent + fm.descent) / 2f
+            grid.cells.forEach { cell ->
+                val alpha = if (cell.isLetter) {
+                    1f
+                } else {
+                    1f - ((fadeProgress - cell.delay) / 0.3f).coerceIn(0f, 1f)
+                }
+                if (alpha <= 0.01f) return@forEach
+                digitPaint.alpha = (alpha * 255f).toInt().coerceIn(0, 255)
+                nativeCanvas.drawText(cell.digit, cell.cx, cell.cy - baselineShift, digitPaint)
+            }
+        }
     }
 }
 
