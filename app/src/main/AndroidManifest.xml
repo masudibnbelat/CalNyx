@@ -149,7 +149,7 @@
     </queries>
 
     <application
-        android:name=".CalNyxApp"
+        android:name=".core.CalNyxApp"
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
@@ -157,7 +157,7 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.CalNyx">
         <activity
-            android:name=".MainActivity"
+            android:name=".core.MainActivity"
             android:exported="true"
             android:theme="@style/Theme.CalNyx"
             android:windowSoftInputMode="adjustResize">
@@ -180,7 +180,7 @@
         <!-- Ball mini panel: transparent Compose Activity. It is
              NOT a launcher activity, so exported=false. -->
         <activity
-            android:name=".moan.BallPanelActivity"
+            android:name=".ball.BallPanelActivity"
             android:exported="false"
             android:excludeFromRecents="true"
             android:launchMode="singleTop"
@@ -190,7 +190,7 @@
 
         <!-- Moan Control: floating ball foreground service -->
         <service
-            android:name=".moan.FloatingBallService"
+            android:name=".ball.FloatingBallService"
             android:exported="false"
             android:foregroundServiceType="specialUse">
             <property
@@ -203,7 +203,7 @@
              with a 0x0 overlay. Runs only while a locked mode is
              active; stops itself in Auto. -->
         <service
-            android:name=".moan.OrientationService"
+            android:name=".hardcore.OrientationService"
             android:exported="false"
             android:foregroundServiceType="specialUse">
             <property
@@ -213,7 +213,7 @@
 
         <!-- Restore a locked orientation after reboot. -->
         <receiver
-            android:name=".moan.OrientationBootReceiver"
+            android:name=".hardcore.OrientationBootReceiver"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
@@ -225,7 +225,7 @@
              opens that number's WhatsApp chat, then finishes.
              Exported so other apps can send it tel: intents. -->
         <activity
-            android:name=".moan.WhatsAppOpenerActivity"
+            android:name=".network.WhatsAppOpenerActivity"
             android:exported="true"
             android:excludeFromRecents="true"
             android:noHistory="true"
@@ -243,7 +243,7 @@
              keeps recording when the app is closed and the screen
              is locked. Not exported - only this app starts it. -->
         <service
-            android:name=".BlueFilm.BlueFilmService"
+            android:name=".bluefilm.BlueFilmService"
             android:exported="false"
             android:foregroundServiceType="camera|microphone" />
 
@@ -252,7 +252,7 @@
              with on-screen marks on a transparent overlay.
              Not exported - only this app starts it. -->
         <service
-            android:name=".BlueFilm.ScreenRecordService"
+            android:name=".bluefilm.ScreenRecordService"
             android:exported="false"
             android:foregroundServiceType="mediaProjection|microphone" />
 
@@ -261,7 +261,7 @@
              ball) while a screen recording runs. Same pattern
              as BallPanelActivity. -->
         <activity
-            android:name=".BlueFilm.ScreenRecordToolbarActivity"
+            android:name=".bluefilm.ScreenRecordToolbarActivity"
             android:exported="false"
             android:excludeFromRecents="true"
             android:launchMode="singleTop"
@@ -305,7 +305,7 @@
         <!-- Floating Ball (NEW): bring the ball back after a reboot,
              so it shows without opening the Hardware screen. -->
         <receiver
-            android:name=".moan.BallBootReceiver"
+            android:name=".ball.BallBootReceiver"
             android:enabled="true"
             android:exported="true">
             <intent-filter>

@@ -1,0 +1,855 @@
+// FILE: app/src/main/java/com/calnyx/app/ui/screens/ScientificCalculatorScreen.kt
+// THEME VARIABLES + DEAD-SPACE FIX (2026-11-20) - REPLACE.
+//  (1) COLOURS are now variables: the 12 hardcoded Color(0xFF...)
+//      literals in SciKeyCell moved to Color.kt (SciFunc / SciDigit /
+//      SciPurple / SciAmber / SciRed / SciGreen, dark + light each) -
+//      the design itself is UNCHANGED: Scientific stays the one
+//      screen where colour is allowed (user's explicit exception).
+//      SHIFT-on amber text, AC red, = green - same shades as before.
+//  (2) DEAD SPACE: the keypad put a Spacer AFTER every row, so a
+//      gap sat under the last row too. Now the Column uses
+//      Arrangement.spacedBy(keyGapV) - gaps only BETWEEN rows, the
+//      keypad fills to the bottom. Sizes were already % (V3) -
+//      nothing fixed to change there.
+// REDESIGN V3 % (2026-11-07) - REPLACE. V2 base, logic + colours
+// UNCHANGED. Only change: every size is now a % of the window
+// (BoxWithConstraints: windowW/windowH/minDim). No fixed dp/sp
+// except 0.dp and the 0.65f superscript ratio.
+// REDESIGN V2 (2026-11-07) - REPLACE. Based on the B/W version.
+// Logic UNCHANGED (onKeyPress SHIFT/HYP, ViewModel calls, history
+// sheet, format helpers, drawer swipe). Only the look changed:
+//  1. DISPLAY UP: the 56.dp top spacer is now 10.dp. It left a
+//     dead empty band at the top and pushed the display down.
+//     The toolbar content is left-aligned (History + title), so
+//     the floating 3-dot menu at the top right covers nothing.
+//  2. TALLER BUTTONS: the old design put a 13.dp shift-label box
+//     above EVERY key, even the 8 rows with no shift label -
+//     104.dp wasted, buttons only ~33.dp tall. The label now
+//     lives INSIDE the button as a small line above the main
+//     label, so every button fills its whole row. Together with
+//     the shorter top spacer the buttons are nearly twice as
+//     tall and the calculator looks full.
+//  3. COLOUR (the user now allows it on this screen): digits
+//     neutral, function keys soft blue, Deg/Rad soft purple,
+//     SHIFT amber, AC red, = green, backspace inverted. Light +
+//     dark values are explicit, so both themes stay right.
+//  4. ENTRANCE animations removed (LCD slide-down, row-by-row
+//     stagger) - the keypad appears at once instead of slowly
+//     fading in. Press feedback, result pop and font-size
+//     animations stay: those are feedback, not decoration.
+package com.calnyx.app.calculator
+
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.fadeIn
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Backspace
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.BaselineShift
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.calnyx.app.ui.theme.SciAmber
+import com.calnyx.app.ui.theme.SciDigitContainerDark
+import com.calnyx.app.ui.theme.SciDigitContainerLight
+import com.calnyx.app.ui.theme.SciFuncContainerDark
+import com.calnyx.app.ui.theme.SciFuncContainerLight
+import com.calnyx.app.ui.theme.SciFuncContentDark
+import com.calnyx.app.ui.theme.SciFuncContentLight
+import com.calnyx.app.ui.theme.SciGreen
+import com.calnyx.app.ui.theme.SciPurpleContainerDark
+import com.calnyx.app.ui.theme.SciPurpleContainerLight
+import com.calnyx.app.ui.theme.SciPurpleContentDark
+import com.calnyx.app.ui.theme.SciPurpleContentLight
+import com.calnyx.app.ui.theme.SciRed
+import com.calnyx.app.calculator.CalculatorViewModel
+import com.calnyx.app.calculator.HistoryViewModel
+import java.text.SimpleDateFormat
+import java.util.*
+
+private enum class SciKeyStyle { FUNCTION, DIGIT, ORANGE, YELLOW, PURPLE, RED, EQUAL }
+
+private data class SciKey(
+    val display: String,
+    val action: String,
+    val shiftDisplay: String? = null,
+    val shiftAction: String? = null,
+    val style: SciKeyStyle = SciKeyStyle.FUNCTION,
+    val weight: Float = 1f
+)
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ScientificCalculatorScreen(
+    darkTheme: Boolean,
+    onToggleTheme: () -> Unit,
+    onOpenDrawer: () -> Unit = {},
+    viewModel: CalculatorViewModel = viewModel(),
+    historyViewModel: HistoryViewModel = viewModel()
+) {
+    // darkTheme / onToggleTheme kept for the existing NavGraph call.
+    LaunchedEffect(Unit) {
+        viewModel.calculatorType = "scientific"
+    }
+
+    val expression by viewModel.expression.collectAsState()
+    val result by viewModel.result.collectAsState()
+    val finalResult by viewModel.finalResult.collectAsState()
+    val isDegrees by viewModel.isDegrees.collectAsState()
+    val history by historyViewModel.history.collectAsState()
+    var shiftMode by remember { mutableStateOf(false) }
+    var hypMode by remember { mutableStateOf(false) }
+    var showHistorySheet by remember { mutableStateOf(false) }
+
+    val groupedHistory = remember(history) {
+        history.groupBy { dayLabel(it.createdAt) }
+    }
+    val groupedEntries = remember(groupedHistory) { groupedHistory.entries.toList() }
+
+    fun onKeyPress(key: SciKey) {
+        when {
+            key.action == "SHIFT" -> shiftMode = !shiftMode
+            key.action == "HYP" -> hypMode = !hypMode
+            shiftMode && key.shiftAction != null -> {
+                viewModel.onButtonClick(key.shiftAction)
+                shiftMode = false
+            }
+
+            hypMode && key.action in listOf("sin", "cos", "tan") -> {
+                viewModel.onButtonClick(key.action + "h")
+                hypMode = false
+            }
+
+            else -> viewModel.onButtonClick(key.action)
+        }
+    }
+
+    val functionRows: List<List<SciKey>> = listOf(
+        listOf(
+            SciKey("SHIFT", "SHIFT", style = SciKeyStyle.YELLOW),
+            SciKey(if (isDegrees) "Deg" else "Rad", "ANGLE", style = SciKeyStyle.PURPLE),
+            SciKey("x!", "!"),
+            SciKey("x⁻¹", "x⁻¹"),
+            SciKey("%", "%")
+        ),
+        listOf(
+            SciKey("sin", "sin", shiftDisplay = "sin⁻¹", shiftAction = "asin"),
+            SciKey("cos", "cos", shiftDisplay = "cos⁻¹", shiftAction = "acos"),
+            SciKey("tan", "tan", shiftDisplay = "tan⁻¹", shiftAction = "atan"),
+            SciKey("ln", "ln", shiftDisplay = "eˣ", shiftAction = "exp"),
+            SciKey("log", "log", shiftDisplay = "10ˣ", shiftAction = "10^")
+        ),
+        listOf(
+            SciKey("√", "√", shiftDisplay = "x²", shiftAction = "x²"),
+            SciKey("xʸ", "^"),
+            SciKey("π", "π"),
+            SciKey("e", "e"),
+            SciKey("|x|", "abs")
+        ),
+        listOf(
+            SciKey("( )", "()"),
+            SciKey("Exp", "EXP"),
+            SciKey("mod", "mod"),
+            SciKey("gcd", "gcd"),
+            SciKey("lcm", "lcm")
+        ),
+        listOf(
+            SciKey("hyp", "HYP"),
+            SciKey("∛", "∛"),
+            SciKey("nPr", "nPr"),
+            SciKey("nCr", "nCr"),
+            SciKey("Rand", "Rand")
+        ),
+        listOf(
+            SciKey("log₂", "log2"),
+            SciKey("⌊x⌋", "floor"),
+            SciKey("⌈x⌉", "ceil"),
+            SciKey("x√y", "ROOT"),
+            SciKey("RanInt", "RanInt")
+        )
+    )
+
+    val digitRows: List<List<SciKey>> = listOf(
+        listOf(
+            SciKey("7", "7", style = SciKeyStyle.DIGIT),
+            SciKey("8", "8", style = SciKeyStyle.DIGIT),
+            SciKey("9", "9", style = SciKeyStyle.DIGIT),
+            SciKey("⌫", "⌫", style = SciKeyStyle.ORANGE),
+            SciKey("AC", "AC", style = SciKeyStyle.RED)
+        ),
+        listOf(
+            SciKey("4", "4", style = SciKeyStyle.DIGIT),
+            SciKey("5", "5", style = SciKeyStyle.DIGIT),
+            SciKey("6", "6", style = SciKeyStyle.DIGIT),
+            SciKey("×", "×"),
+            SciKey("÷", "÷")
+        ),
+        listOf(
+            SciKey("1", "1", style = SciKeyStyle.DIGIT),
+            SciKey("2", "2", style = SciKeyStyle.DIGIT),
+            SciKey("3", "3", style = SciKeyStyle.DIGIT),
+            SciKey("+", "+"),
+            SciKey("−", "−")
+        ),
+        listOf(
+            SciKey("0", "0", style = SciKeyStyle.DIGIT),
+            SciKey(".", ".", style = SciKeyStyle.DIGIT),
+            SciKey("Ans", "Ans"),
+            SciKey("=", "=", style = SciKeyStyle.EQUAL, weight = 2f)
+        )
+    )
+
+    // Final-answer pop animation
+    val resultPop = remember { Animatable(1f) }
+    LaunchedEffect(finalResult) {
+        if (finalResult != null) {
+            resultPop.snapTo(0.85f)
+            resultPop.animateTo(
+                1f,
+                animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy)
+            )
+        }
+    }
+
+    BoxWithConstraints(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+    ) {
+        val windowW = maxWidth
+        val windowH = maxHeight
+        val minDim = minOf(windowW, windowH)
+        // % SIZES (2026-11-07): sob window-er % - kono fixed dp/sp
+        // nei (0.dp chara). Normal 360x760 phone-e ager motoi dekhabe.
+        val sidePad = windowW * 0.017f   // 6dp
+        val topGap = windowH * 0.013f    // 10dp
+        val histIcon = minDim * 0.072f   // 26dp
+        val titleFont = (minDim.value * 0.044f).sp // 16sp
+        val lcdCorner = minDim * 0.044f  // 16dp
+        val lcdPadH = minDim * 0.044f    // 16dp
+        val lcdPadV = windowH * 0.011f   // 8dp
+        val indH = windowH * 0.021f      // 16dp
+        val indFont = (minDim.value * 0.031f).sp // 11sp
+        val exprH = windowH * 0.061f     // 46dp
+        val resultH = windowH * 0.068f   // 52dp
+        val gapAfterLcd = windowH * 0.008f // 6dp
+        val keyGapH = windowW * 0.017f   // 6dp
+        val keyGapV = windowH * 0.008f   // 6dp
+        val bottomGap = windowH * 0.003f // 2dp
+        val sheetPadH = windowW * 0.056f // 20dp
+        val sheetPadB = windowH * 0.037f // 28dp
+        val sheetTitle = (minDim.value * 0.05f).sp // 18sp
+        val noHistPadV = windowH * 0.032f // 24dp
+        val sheetMaxH = windowH * 0.566f // 430dp
+        val dayFont = (minDim.value * 0.039f).sp // 14sp
+        val dayPadV = windowH * 0.013f   // 10dp
+        val itemPadV = windowH * 0.011f  // 8dp
+        val itemExprFont = (minDim.value * 0.047f).sp // 17sp
+        val itemGap = windowH * 0.003f   // 2dp
+        val itemResultFont = (minDim.value * 0.078f).sp // 28sp
+        // DRAWER SWIPE (universal rule): a LEFTWARD drag on the
+        // toolbar or the keypad opens the app drawer. Rightward
+        // drags are NOT consumed here. The LCD panel is
+        // deliberately excluded - its expression / result rows
+        // scroll horizontally and must keep working.
+        // pointerInput(minDim): window resize-e detector-ta
+        // notun threshold niye abar shuru hoy.
+        val drawerSwipe = Modifier.pointerInput(minDim) {
+            val thresholdPx = (minDim * 0.067f).toPx() // 24dp
+            var totalDx = 0f
+            var done = false
+            detectHorizontalDragGestures(
+                onDragStart = { totalDx = 0f; done = false },
+                onDragEnd = { totalDx = 0f; done = false },
+                onDragCancel = { totalDx = 0f; done = false },
+                onHorizontalDrag = { change, dragAmount ->
+                    if (done) return@detectHorizontalDragGestures
+                    totalDx += dragAmount
+                    if (totalDx < -thresholdPx) {
+                        done = true
+                        onOpenDrawer()
+                        change.consume()
+                    }
+                }
+            )
+        }
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .padding(horizontal = sidePad)
+        ) {
+        // Only 10.dp up here now: the old 56.dp left a dead empty
+        // band at the top and pushed the display down. The toolbar
+        // content is left-aligned (History + title), so the
+        // floating 3-dot menu at the top right covers nothing.
+        Spacer(modifier = Modifier.height(topGap))
+        Row(
+            modifier = Modifier.fillMaxWidth().then(drawerSwipe),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = { showHistorySheet = true }) {
+                Icon(
+                    Icons.Default.History,
+                    contentDescription = "History",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(histIcon)
+                )
+            }
+            Text(
+                text = "Scientific",
+                fontSize = titleFont,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        // LCD display panel — BOTH lines are single-line and scrollable
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(lcdCorner))
+                .background(MaterialTheme.colorScheme.surfaceVariant)
+                .padding(horizontal = lcdPadH, vertical = lcdPadV),
+            horizontalAlignment = Alignment.End
+        ) {
+            // Indicator row — fixed height
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(indH),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = if (isDegrees) "DEG" else "RAD",
+                    fontSize = indFont,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                AnimatedVisibility(
+                    visible = shiftMode,
+                    enter = fadeIn(tween(150)) + expandHorizontally(tween(150))
+                ) {
+                    Text(
+                        text = "  SHIFT",
+                        fontSize = indFont,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+                AnimatedVisibility(
+                    visible = hypMode,
+                    enter = fadeIn(tween(150)) + expandHorizontally(tween(150))
+                ) {
+                    Text(
+                        text = "  HYP",
+                        fontSize = indFont,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+            }
+
+            // Expression line — one line, scrollable, font shrinks with length
+            val shownExpression = if (finalResult != null) "" else expression
+            val expressionFontSize by animateFloatAsState(
+                targetValue = when {
+                    shownExpression.length <= 12 -> minDim.value * 0.094f
+                    shownExpression.length <= 18 -> minDim.value * 0.081f
+                    shownExpression.length <= 26 -> minDim.value * 0.067f
+                    else -> minDim.value * 0.056f
+                },
+                animationSpec = tween(180),
+                label = "sciExprFont"
+            )
+            val expressionScroll = rememberScrollState()
+            LaunchedEffect(expression) {
+                expressionScroll.animateScrollTo(expressionScroll.maxValue, animationSpec = tween(120))
+            }
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(exprH)
+                    .clipToBounds(),
+                contentAlignment = Alignment.CenterEnd
+            ) {
+                Row(
+                    modifier = Modifier.horizontalScroll(expressionScroll),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = formatScientificDisplay(shownExpression, expressionFontSize.sp),
+                        fontSize = expressionFontSize.sp,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        textAlign = TextAlign.End,
+                        maxLines = 1,
+                        softWrap = false
+                    )
+                }
+            }
+
+            // Answer / preview line — one line, scrollable, font shrinks
+            // with length, hard-clipped so it can never overlap again
+            val shownResultText = finalResult ?: result
+            val shownResultDisplay = if (shownResultText == "0") {
+                ""
+            } else {
+                formatForDisplay(shownResultText)
+            }
+            val resultFontSize by animateFloatAsState(
+                targetValue = when {
+                    finalResult != null && shownResultDisplay.length <= 10 -> minDim.value * 0.10f
+                    finalResult != null && shownResultDisplay.length <= 14 -> minDim.value * 0.083f
+                    finalResult != null && shownResultDisplay.length <= 19 -> minDim.value * 0.069f
+                    finalResult != null -> minDim.value * 0.058f
+                    shownResultDisplay.length <= 19 -> minDim.value * 0.061f
+                    else -> minDim.value * 0.053f
+                },
+                animationSpec = tween(180),
+                label = "sciResultFont"
+            )
+            val resultScroll = rememberScrollState()
+            LaunchedEffect(shownResultText) {
+                resultScroll.animateScrollTo(resultScroll.maxValue, animationSpec = tween(120))
+            }
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(resultH)
+                    .clipToBounds(),
+                contentAlignment = Alignment.CenterEnd
+            ) {
+                Row(
+                    modifier = Modifier.horizontalScroll(resultScroll),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = shownResultDisplay,
+                        fontSize = resultFontSize.sp,
+                        fontWeight = if (finalResult != null) FontWeight.Bold else FontWeight.Normal,
+                        color = if (finalResult != null) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.End,
+                        maxLines = 1,
+                        softWrap = false,
+                        modifier = Modifier.graphicsLayer {
+                            scaleX = resultPop.value
+                            scaleY = resultPop.value
+                            transformOrigin = TransformOrigin(1f, 0.5f)
+                        }
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(gapAfterLcd))
+
+        // Keypad — rows share the remaining height, % gaps.
+        // No entrance animation any more: the whole keypad is
+        // there at once instead of fading in row by row.
+        // Gaps live BETWEEN rows only (spacedBy) - the old Spacer
+        // after every row left a dead gap under the last row too.
+        Column(
+            modifier = Modifier.weight(1f).then(drawerSwipe),
+            verticalArrangement = Arrangement.spacedBy(keyGapV)
+        ) {
+            (functionRows + digitRows).forEach { row ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    horizontalArrangement = Arrangement.spacedBy(keyGapH)
+                ) {
+                    row.forEach { key ->
+                        SciKeyCell(
+                            key = key,
+                            darkTheme = darkTheme,
+                            minDim = minDim,
+                            shiftMode = shiftMode,
+                            hypMode = hypMode,
+                            modifier = Modifier
+                                .weight(key.weight)
+                                .fillMaxHeight(),
+                            onPress = { onKeyPress(it) }
+                        )
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(bottomGap))
+    }
+
+    // History modal — slides up as a bottom sheet
+    if (showHistorySheet) {
+        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        ModalBottomSheet(
+            onDismissRequest = { showHistorySheet = false },
+            sheetState = sheetState
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = sheetPadH)
+                    .padding(bottom = sheetPadB)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "History",
+                        fontSize = sheetTitle,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.weight(1f))
+                    TextButton(onClick = { historyViewModel.clearAll() }) {
+                        Text(
+                            text = "Clear",
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+
+                if (history.isEmpty()) {
+                    Text(
+                        text = "No history yet",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(vertical = noHistPadV)
+                    )
+                } else {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = sheetMaxH)
+                    ) {
+                        groupedEntries.forEach { (day, dayItems) ->
+                            item(key = "sheet-header-$day") {
+                                Text(
+                                    text = day,
+                                    fontSize = dayFont,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(vertical = dayPadV)
+                                )
+                            }
+                            items(dayItems) { item ->
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            viewModel.onHistoryItemClick(item.result)
+                                            showHistorySheet = false
+                                        }
+                                        .padding(vertical = itemPadV),
+                                    horizontalAlignment = Alignment.End
+                                ) {
+                                    Text(
+                                        text = formatForDisplay(item.expression),
+                                        fontSize = itemExprFont,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        textAlign = TextAlign.End
+                                    )
+                                    Spacer(modifier = Modifier.height(itemGap))
+                                    Text(
+                                        text = formatForDisplay(item.result),
+                                        fontSize = itemResultFont,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        textAlign = TextAlign.End
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    } // BoxWithConstraints
+
+}
+
+@Composable
+private fun SciKeyCell(
+    key: SciKey,
+    darkTheme: Boolean,
+    minDim: Dp, // % base - caller passes window minDim
+    shiftMode: Boolean,
+    hypMode: Boolean,
+    modifier: Modifier = Modifier,
+    onPress: (SciKey) -> Unit
+) {
+    // % SIZES: sob minDim-er %.
+    val keyCorner = minDim * 0.033f   // 12dp
+    val backIcon = minDim * 0.061f    // 22dp
+    val smallFont = (minDim.value * 0.025f).sp // 9sp
+    val smallLineH = (minDim.value * 0.028f).sp // 10sp
+    val digitFont = (minDim.value * 0.067f).sp // 24sp
+    val funcFont = (minDim.value * 0.036f).sp  // 13sp
+    val otherFont = (minDim.value * 0.042f).sp // 15sp
+    // COLOURS (2026-11-07 redesign - colour is allowed on this
+    // screen now): digits neutral, function keys soft blue,
+    // Deg/Rad soft purple, SHIFT amber, AC red, = green,
+    // backspace inverted. All values are variables in Color.kt
+    // now (SciFunc / SciDigit / SciPurple / SciAmber / SciRed /
+    // SciGreen) - same shades as before, one place to edit.
+    val containerColor: Color
+    val contentColor: Color
+    when (key.style) {
+        SciKeyStyle.FUNCTION -> {
+            containerColor = if (darkTheme) SciFuncContainerDark else SciFuncContainerLight
+            contentColor = if (darkTheme) SciFuncContentDark else SciFuncContentLight
+        }
+
+        SciKeyStyle.DIGIT -> {
+            containerColor = if (darkTheme) SciDigitContainerDark else SciDigitContainerLight
+            contentColor = MaterialTheme.colorScheme.onSurface
+        }
+
+        SciKeyStyle.ORANGE -> {
+            // Backspace - inverted.
+            containerColor = MaterialTheme.colorScheme.onBackground
+            contentColor = MaterialTheme.colorScheme.background
+        }
+
+        SciKeyStyle.YELLOW -> {
+            // SHIFT - amber; inverted (amber text) while it is on.
+            if (shiftMode) {
+                containerColor = MaterialTheme.colorScheme.onBackground
+                contentColor = SciAmber
+            } else {
+                containerColor = SciAmber
+                contentColor = Color.Black
+            }
+        }
+
+        SciKeyStyle.PURPLE -> {
+            // Deg/Rad - soft purple.
+            containerColor = if (darkTheme) SciPurpleContainerDark else SciPurpleContainerLight
+            contentColor = if (darkTheme) SciPurpleContentDark else SciPurpleContentLight
+        }
+
+        SciKeyStyle.RED -> {
+            // AC - red.
+            containerColor = SciRed
+            contentColor = Color.White
+        }
+
+        SciKeyStyle.EQUAL -> {
+            // = - green.
+            containerColor = SciGreen
+            contentColor = Color.White
+        }
+    }
+
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val pressScale by animateFloatAsState(
+        targetValue = if (isPressed) 0.88f else 1f,
+        animationSpec = tween(100),
+        label = "sciPressScale"
+    )
+    val animatedContainer by animateColorAsState(
+        targetValue = if (isPressed) {
+            containerColor.copy(alpha = 0.65f)
+        } else {
+            containerColor
+        },
+        animationSpec = tween(90),
+        label = "sciPressColor"
+    )
+
+    // No separate label row any more: the shift label lives
+    // INSIDE the button as a small line above the main label,
+    // so rows without a shift label no longer waste 13.dp each
+    // and every button fills its whole row. The small line shows
+    // the alternate function: the shift function normally, the
+    // normal one while SHIFT is on.
+    Button(
+        onClick = { onPress(key) },
+        modifier = modifier
+            .graphicsLayer {
+                scaleX = pressScale
+                scaleY = pressScale
+            },
+        shape = RoundedCornerShape(keyCorner),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = animatedContainer,
+            contentColor = contentColor
+        ),
+        elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp),
+        contentPadding = PaddingValues(0.dp),
+        interactionSource = interactionSource
+    ) {
+        if (key.action == "⌫") {
+            Icon(
+                Icons.Default.Backspace,
+                contentDescription = "Delete",
+                modifier = Modifier.size(backIcon)
+            )
+        } else {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                val smallLabel = when {
+                    shiftMode && key.shiftDisplay != null -> key.display
+                    key.shiftDisplay != null -> key.shiftDisplay
+                    else -> ""
+                }
+                if (smallLabel.isNotEmpty()) {
+                    Text(
+                        text = smallLabel,
+                        fontSize = smallFont,
+                        lineHeight = smallLineH,
+                        color = contentColor.copy(alpha = 0.65f),
+                        maxLines = 1,
+                        softWrap = false
+                    )
+                }
+                Text(
+                    text = when {
+                        shiftMode && key.shiftDisplay != null -> key.shiftDisplay
+                        hypMode && key.action in listOf("sin", "cos", "tan") -> key.action + "h"
+                        else -> key.display
+                    },
+                    // FUNCTION keys are 13.sp so long labels (sin⁻¹,
+                    // cos⁻¹, tan⁻¹, RanInt) fit on one line; digits
+                    // stay 24.sp, the rest 15.sp.
+                    fontSize = when (key.style) {
+                        SciKeyStyle.DIGIT -> digitFont
+                        SciKeyStyle.FUNCTION -> funcFont
+                        else -> otherFont
+                    },
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    softWrap = false
+                )
+            }
+        }
+    }
+}
+
+// Groups digits with commas and restores × ÷ − √ π symbols,
+// then renders anything after "^" as a real superscript (3^6 -> 3⁶).
+private fun formatScientificDisplay(raw: String, baseSize: TextUnit): androidx.compose.ui.text.AnnotatedString {
+    val grouped = formatForDisplay(raw)
+    return buildAnnotatedString {
+        var i = 0
+        while (i < grouped.length) {
+            if (grouped[i] == '^' && i + 1 < grouped.length) {
+                var j = i + 1
+                val token = StringBuilder()
+                if (grouped[j] == '(') {
+                    var depth = 0
+                    while (j < grouped.length) {
+                        val c = grouped[j]
+                        token.append(c)
+                        if (c == '(') depth++
+                        if (c == ')') {
+                            depth--
+                            if (depth == 0) {
+                                j++
+                                break
+                            }
+                        }
+                        j++
+                    }
+                } else {
+                    while (j < grouped.length &&
+                        (grouped[j].isDigit() || grouped[j] == '.' || grouped[j] == '−')
+                    ) {
+                        token.append(grouped[j])
+                        j++
+                    }
+                }
+                if (token.isNotEmpty()) {
+                    withStyle(
+                        SpanStyle(
+                            fontSize = baseSize * 0.65f,
+                            baselineShift = BaselineShift.Superscript
+                        )
+                    ) {
+                        append(token.toString())
+                    }
+                    i = j
+                } else {
+                    append(grouped[i])
+                    i++
+                }
+            } else {
+                append(grouped[i])
+                i++
+            }
+        }
+    }
+}
+
+private fun formatForDisplay(raw: String): String {
+    var display = raw
+        .replace("sqrt(", "√(")
+        .replace("cbrt(", "∛(")
+        .replace("log10(", "log(")
+        .replace("pi", "π")
+        .replace("*", "×")
+        .replace("/", "÷")
+        .replace("-", "−")
+    return display.replace(Regex("\\d+(\\.\\d+)?")) { match ->
+        val parts = match.value.split(".")
+        val grouped = parts[0].reversed().chunked(3).joinToString(",").reversed()
+        if (parts.size > 1) grouped + "." + parts[1] else grouped
+    }
+}
+
+private fun dayLabel(timestamp: Long): String {
+    val itemCalendar = Calendar.getInstance().apply { timeInMillis = timestamp }
+    val today = Calendar.getInstance()
+    val yesterday = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, -1) }
+    return when {
+        isSameDay(itemCalendar, today) -> "Today"
+        isSameDay(itemCalendar, yesterday) -> "Yesterday"
+        else -> SimpleDateFormat("dd MMM yyyy", Locale.getDefault()).format(Date(timestamp))
+    }
+}
+
+private fun isSameDay(a: Calendar, b: Calendar): Boolean {
+    return a.get(Calendar.YEAR) == b.get(Calendar.YEAR) &&
+            a.get(Calendar.DAY_OF_YEAR) == b.get(Calendar.DAY_OF_YEAR)
+}

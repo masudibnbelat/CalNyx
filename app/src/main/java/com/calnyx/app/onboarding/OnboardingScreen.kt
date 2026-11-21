@@ -1,0 +1,906 @@
+// THEME VARIABLES (2026-11-20) - REPLACE. Look, logic and texts
+// UNCHANGED. Only the colours: the hardcoded palette below is
+// gone, everything now reads MaterialTheme.colorScheme (dark is
+// still the same soft charcoal, not pitch black: background
+// #1F1F1F was #1E1E1E, cards #333333 were #2A2A2A, borders
+// #434343 were #3D3D3D). Status + navigation bar follow pageBg.
+// FILE: app/src/main/java/com/calnyx/app/ui/screens/OnboardingScreen.kt
+// NEW FILE - first-run introduction. Shows once, on the very first
+// open after install (NavGraph gates on OnboardingPrefs.isDone).
+// 7 steps, swipe is off - move with Next / Back / Skip only:
+//   0 Welcome - app logo + name, what CalNyx is.
+//   1 Calculators - Normal, Scientific, CalTape, Converter,
+//     Base System, ICT, and how to use them.
+//   2 Black Hole + App Lock - the hidden vault and locked apps.
+//   3 Moan, Hardcore & Network - sound, power, network, ball.
+//   4 Third Eye + Clipboard - secret camera and screen
+//     recording, clipboard history.
+//   5 Permissions - every permission the app needs, one by one.
+//     Each row has a Grant button; granting shows a check. The
+//     Next button stays DISABLED until every required permission
+//     is granted. Skip (top right) exits the whole introduction.
+//   6 Welcome - the word WELCOME in two big lines (WEL /
+//     COME), made of 6s and 9s: a field of generated digits
+//     dissolves into the word, then Start appears and opens
+//     the calculator.
+// English only, black / white only. The permission list comes from
+// OnboardingPermissions - the same list the About dialog shows.
+// UPDATED (2026-11-20): the feature lists now match the app as
+// it is today - six calculators (no Notepad), Moan / Hardcore /
+// Network (not Sound / Hardware), Third Eye (not Spy, now with
+// screen recording too). No developer description anywhere.
+package com.calnyx.app.onboarding
+
+import android.app.Activity
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color as AndroidColor
+import android.graphics.Paint
+import android.graphics.Typeface
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas as ComposeCanvas
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.ArrowForward
+import androidx.compose.material.icons.filled.Calculate
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Computer
+import androidx.compose.material.icons.filled.ContentPaste
+import androidx.compose.material.icons.filled.Functions
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Numbers
+import androidx.compose.material.icons.filled.PowerSettingsNew
+import androidx.compose.material.icons.filled.ReceiptLong
+import androidx.compose.material.icons.filled.SignalCellularAlt
+import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.core.view.WindowInsetsControllerCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import com.calnyx.app.onboarding.AppPermission
+import com.calnyx.app.onboarding.OnboardingPermissions
+import com.calnyx.app.onboarding.PermissionKind
+import kotlinx.coroutines.launch
+import kotlin.math.ceil
+import kotlin.random.Random
+
+private const val PAGE_COUNT = 7
+private const val PAGE_PERMISSIONS = 5
+private const val PAGE_DONE = 6
+
+@Composable
+fun OnboardingScreen(darkTheme: Boolean, onFinish: () -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val pagerState = rememberPagerState(initialPage = 0, pageCount = { PAGE_COUNT })
+    // THEME VARIABLES (2026-11-20): the old hardcoded palette
+    // is gone - colours now come from the theme (Color.kt).
+    // Status + navigation bar follow pageBg.
+    val pageBg = MaterialTheme.colorScheme.background
+    val cardBg = MaterialTheme.colorScheme.surfaceContainer
+    val cardBorder = MaterialTheme.colorScheme.outline
+    val onPageColor = MaterialTheme.colorScheme.onBackground
+    val thumbBg = MaterialTheme.colorScheme.surfaceVariant
+
+    // Status + navigation bar match the page background.
+    val view = LocalView.current
+    SideEffect {
+        val window = (view.context as? Activity)?.window
+        if (window != null) {
+            window.statusBarColor = pageBg.toArgb()
+            window.navigationBarColor = pageBg.toArgb()
+            val controller = WindowInsetsControllerCompat(window, view)
+            controller.isAppearanceLightStatusBars = !darkTheme
+            controller.isAppearanceLightNavigationBars = !darkTheme
+        }
+    }
+
+    // Permission states, refreshed after every grant and every
+    // return from a Settings screen (ON_RESUME).
+    var permStates by remember { mutableStateOf(OnboardingPermissions.checkAll(context)) }
+    fun refreshPerms() {
+        permStates = OnboardingPermissions.checkAll(context)
+    }
+    val runtimeLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { refreshPerms() }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) refreshPerms()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    val page = pagerState.currentPage
+    val allRequiredDone = OnboardingPermissions.required().all { permStates[it.id] == true }
+    val nextEnabled = page != PAGE_PERMISSIONS || allRequiredDone
+
+    // WELCOME REVEAL (2026-11-20): the final page is a field of
+    // 6s and 9s that dissolves into the word WELCOME. The Start
+    // button stays hidden until the reveal finishes - the page
+    // tells us through onRevealDone. Leaving the page resets it,
+    // so the animation replays if the user comes back.
+    var welcomeRevealDone by remember { mutableStateOf(false) }
+    LaunchedEffect(page) {
+        if (page != PAGE_DONE) welcomeRevealDone = false
+    }
+    val startButtonAlpha by animateFloatAsState(
+        targetValue = if (page == PAGE_DONE && !welcomeRevealDone) 0f else 1f,
+        animationSpec = tween(durationMillis = 400),
+        label = "startButton"
+    )
+
+    fun toggle(permission: AppPermission, value: Boolean) {
+        OnboardingPermissions.setToggle(context, permission, value)
+        refreshPerms()
+    }
+
+    fun grant(permission: AppPermission) {
+        try {
+            if (permission.kind == PermissionKind.RUNTIME) {
+                if (permission.runtimePermissions.isNotEmpty()) {
+                    runtimeLauncher.launch(permission.runtimePermissions.toTypedArray())
+                } else {
+                    refreshPerms()
+                }
+            } else {
+                val intent = OnboardingPermissions.settingsIntent(context, permission)
+                if (intent != null) context.startActivity(intent)
+            }
+        } catch (_: Exception) {
+        }
+    }
+
+    Column(
+        modifier = Modifier.fillMaxSize()
+            .background(pageBg)
+            .statusBarsPadding()
+            .navigationBarsPadding()
+            .padding(horizontal = 20.dp)
+    ) {
+        // Top row: page dots on the left, Skip on the right.
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                modifier = Modifier.weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                repeat(PAGE_COUNT) { index ->
+                    Box(
+                        modifier = Modifier.size(if (index == page) 10.dp else 7.dp)
+                            .clip(CircleShape)
+                            .background(
+                                if (index == page) onPageColor
+                                else onPageColor.copy(alpha = 0.3f)
+                            )
+                    )
+                }
+            }
+            if (page != PAGE_DONE) {
+                Text(
+                    text = "Skip",
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = onPageColor,
+                    modifier = Modifier.clickable { onFinish() }.padding(8.dp)
+                )
+            }
+        }
+
+        HorizontalPager(
+            state = pagerState,
+            userScrollEnabled = false,
+            modifier = Modifier.fillMaxWidth().weight(1f)
+        ) { pagerPage ->
+            Column(
+                modifier = Modifier.fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(vertical = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                when (pagerPage) {
+                    0 -> WelcomePage(onPageColor, thumbBg, cardBg, cardBorder)
+                    1 -> CalculatorsPage(onPageColor, thumbBg)
+                    2 -> BlackHolePage(onPageColor, thumbBg)
+                    3 -> SoundHardwarePage(onPageColor, thumbBg)
+                    4 -> SpyClipboardPage(onPageColor, thumbBg)
+                    5 -> PermissionsPage(
+                        onPageColor = onPageColor,
+                        cardBg = cardBg,
+                        cardBorder = cardBorder,
+                        permStates = permStates,
+                        allRequiredDone = allRequiredDone,
+                        onGrant = ::grant,
+                        onToggle = ::toggle
+                    )
+                    6 -> FinalWelcomePage(
+                        onPageColor = onPageColor,
+                        active = page == PAGE_DONE,
+                        onRevealDone = { welcomeRevealDone = true }
+                    )
+                }
+            }
+        }
+
+        // Bottom row: Back + Next / Start.
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (page > 0) {
+                Row(
+                    modifier = Modifier.clickable {
+                        scope.launch { pagerState.animateScrollToPage(page - 1) }
+                    }.padding(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.ArrowBack,
+                        contentDescription = null,
+                        tint = onPageColor,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "Back",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = onPageColor
+                    )
+                }
+            } else {
+                Spacer(modifier = Modifier.weight(1f))
+            }
+            Spacer(modifier = Modifier.weight(1f))
+            Box(
+                modifier = Modifier.clip(RoundedCornerShape(16.dp))
+                    .alpha(startButtonAlpha)
+                    .background(
+                        if (nextEnabled) onPageColor
+                        else onPageColor.copy(alpha = 0.25f)
+                    )
+                    .clickable(enabled = nextEnabled && (page != PAGE_DONE || welcomeRevealDone)) {
+                        if (page == PAGE_DONE) {
+                            onFinish()
+                        } else {
+                            scope.launch { pagerState.animateScrollToPage(page + 1) }
+                        }
+                    }
+                    .padding(horizontal = 24.dp, vertical = 14.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = if (page == PAGE_DONE) "Start" else "Next",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = pageBg
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Icon(
+                        Icons.Default.ArrowForward,
+                        contentDescription = null,
+                        tint = pageBg,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+// App icon WITHOUT painterResource (the launcher icon is an
+// adaptive-icon XML and painterResource throws on it - same fix
+// as the About dialog). PackageManager returns the real drawable;
+// draw it into a bitmap once. Null -> Calculate icon fallback.
+@Composable
+private fun AppIconImage(size: androidx.compose.ui.unit.Dp, bgColor: Color, fgColor: Color) {
+    val context = LocalContext.current
+    val bitmap: ImageBitmap? = remember(context) {
+        try {
+            val drawable = context.packageManager.getApplicationIcon(context.applicationInfo)
+            val sizePx = 192
+            val bmp = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(bmp)
+            drawable.setBounds(0, 0, sizePx, sizePx)
+            drawable.draw(canvas)
+            bmp.asImageBitmap()
+        } catch (_: Exception) {
+            null
+        }
+    }
+    if (bitmap != null) {
+        Image(
+            bitmap = bitmap,
+            contentDescription = "CalNyx logo",
+            modifier = Modifier.size(size).clip(CircleShape)
+        )
+    } else {
+        Box(
+            modifier = Modifier.size(size).clip(CircleShape).background(bgColor),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                Icons.Default.Calculate,
+                contentDescription = "CalNyx logo",
+                tint = fgColor,
+                modifier = Modifier.size(size * 0.5f)
+            )
+        }
+    }
+}
+
+@Composable
+private fun PageTitle(text: String, color: Color) {
+    Text(
+        text = text,
+        fontSize = 26.sp,
+        fontWeight = FontWeight.Bold,
+        color = color
+    )
+}
+
+@Composable
+private fun PageSubtitle(text: String, color: Color) {
+    Text(
+        text = text,
+        fontSize = 15.sp,
+        color = color.copy(alpha = 0.75f)
+    )
+}
+
+@Composable
+private fun FeatureRow(icon: ImageVector, title: String, text: String, onPageColor: Color, thumbBg: Color, textIcon: String? = null) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier.size(52.dp).clip(CircleShape).background(thumbBg),
+            contentAlignment = Alignment.Center
+        ) {
+            // textIcon (e.g. "69" for Base System) renders as a
+            // bold text logo instead of the icon; the icon is
+            // ignored when textIcon is set.
+            if (textIcon != null) {
+                Text(
+                    text = textIcon,
+                    fontSize = 26.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = onPageColor,
+                    maxLines = 1
+                )
+            } else {
+                Icon(icon, contentDescription = null, tint = onPageColor, modifier = Modifier.size(26.dp))
+            }
+        }
+        Spacer(modifier = Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = title, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = onPageColor)
+            Text(text = text, fontSize = 14.sp, color = onPageColor.copy(alpha = 0.75f))
+        }
+    }
+}
+
+@Composable
+private fun WelcomePage(onPageColor: Color, thumbBg: Color, cardBg: Color, cardBorder: Color) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Spacer(modifier = Modifier.height(24.dp))
+        AppIconImage(size = 96.dp, bgColor = onPageColor, fgColor = cardBg)
+        Text(
+            text = "Welcome to CalNyx",
+            fontSize = 28.sp,
+            fontWeight = FontWeight.Bold,
+            color = onPageColor,
+            textAlign = TextAlign.Center
+        )
+        Text(
+            text = "Your all-in-one calculator",
+            fontSize = 16.sp,
+            color = onPageColor.copy(alpha = 0.75f),
+            textAlign = TextAlign.Center
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Column(
+            modifier = Modifier.fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .background(cardBg)
+                .border(1.dp, cardBorder, RoundedCornerShape(16.dp))
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = "What is CalNyx?",
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+                color = onPageColor
+            )
+            Text(
+                text = "Six calculators, a hidden vault for your private photos and videos, an app lock, sound and power controls, a floating ball, secret camera and screen recording, and a clipboard history - all in one app.",
+                fontSize = 14.sp,
+                color = onPageColor.copy(alpha = 0.8f)
+            )
+            Text(
+                text = "Everything works offline and stays on this phone.",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+                color = onPageColor
+            )
+        }
+    }
+}
+
+@Composable
+private fun CalculatorsPage(onPageColor: Color, thumbBg: Color) {
+    PageTitle("Calculators", onPageColor)
+    PageSubtitle("Six calculators in one place. Tap one in the menu to open it.", onPageColor)
+    FeatureRow(Icons.Default.Calculate, "Normal", "Everyday calculator with history and Ans. Swipe right for History.", onPageColor, thumbBg)
+    FeatureRow(Icons.Default.Functions, "Scientific", "Advanced functions. Pull the keypad down to reveal them.", onPageColor, thumbBg)
+    FeatureRow(Icons.Default.ReceiptLong, "CalTape", "A tape with sheets and totals. Swipe left on it to open the menu.", onPageColor, thumbBg)
+    FeatureRow(Icons.Default.SwapHoriz, "Converter", "Length, weight, volume and more.", onPageColor, thumbBg)
+    FeatureRow(Icons.Default.Numbers, "Base System", "Binary, decimal, octal and hex.", onPageColor, thumbBg, textIcon = "69")
+    FeatureRow(Icons.Default.Computer, "ICT", "Binary arithmetic for ICT study.", onPageColor, thumbBg)
+    PageSubtitle("Tip: swipe left anywhere to open the menu.", onPageColor)
+}
+
+@Composable
+private fun BlackHolePage(onPageColor: Color, thumbBg: Color) {
+    PageTitle("Black Hole & App Lock", onPageColor)
+    PageSubtitle("Your private space, hidden inside the calculator.", onPageColor)
+    FeatureRow(Icons.Default.Lock, "Black Hole vault", "Photos, videos, documents and audio, hidden from the gallery and the Files app. Nothing leaves this phone.", onPageColor, thumbBg)
+    FeatureRow(Icons.Default.Calculate, "How to open it", "Type your secret calculation, then tap =. Long-press = to set or change the secret.", onPageColor, thumbBg)
+    FeatureRow(Icons.Default.Lock, "App Lock", "Lock any app. Opening it shows the calculator instead, until you type the secret code and tap =.", onPageColor, thumbBg)
+    PageSubtitle("The vault closes itself the moment you leave the app.", onPageColor)
+}
+
+@Composable
+private fun SoundHardwarePage(onPageColor: Color, thumbBg: Color) {
+    PageTitle("Moan, Hardcore & Network", onPageColor)
+    PageSubtitle("Your phone's controls, from inside the calculator.", onPageColor)
+    FeatureRow(Icons.Default.VolumeUp, "Moan", "Ringer modes and Media, Ringtone, Alarm and Call volumes.", onPageColor, thumbBg)
+    FeatureRow(Icons.Default.PowerSettingsNew, "Hardcore", "Power menu, Lock screen, screen orientation and the floating ball.", onPageColor, thumbBg)
+    FeatureRow(Icons.Default.SignalCellularAlt, "Network", "Network switcher and Open in WhatsApp.", onPageColor, thumbBg)
+    PageSubtitle("The ball never opens the app by itself - tap it and only its small panel opens.", onPageColor)
+}
+
+@Composable
+private fun SpyClipboardPage(onPageColor: Color, thumbBg: Color) {
+    PageTitle("Third Eye & Clipboard", onPageColor)
+    PageSubtitle("Two quiet tools that work in the background.", onPageColor)
+    FeatureRow(Icons.Default.Visibility, "Third Eye", "Secret camera recording with the front or back camera, and screen recording with drawing tools. Videos stay inside the app, never in the gallery.", onPageColor, thumbBg)
+    FeatureRow(Icons.Default.ContentPaste, "Clipboard", "Everything you copy is saved offline - text and images. Open it from the menu any time.", onPageColor, thumbBg)
+    PageSubtitle("Both work fully offline.", onPageColor)
+}
+
+// FINAL PAGE (2026-11-20): only the word WELCOME, big in the
+// middle of the screen - no icon, no extra text. The word is
+// split in two lines (WEL on top, COME below) and made of 6s
+// and 9s: when the page opens, the whole word area is filled
+// with generated 6 / 9 digits, then the digits that are NOT part
+// of the letters fade away one by one (each with its own random
+// delay), and WELCOME is left standing. When it is fully
+// revealed, onRevealDone fires and the Start button appears.
+// % ONLY: the digit cell is 3% of the smaller side, so the whole
+// matrix scales on every device. Colours are theme variables
+// (onPageColor for the digits, pageBg behind) - no hardcoded
+// colour anywhere here.
+private data class WelcomeCell(
+    val cx: Float,
+    val cy: Float,
+    val isLetter: Boolean,
+    val digit: String,
+    val delay: Float
+)
+
+private data class WelcomeGrid(
+    val cells: List<WelcomeCell>,
+    val widthPx: Float,
+    val heightPx: Float
+)
+
+// Draws WELCOME on a bitmap and samples each cell centre for
+// ink. Returns the grid that covers the word's bounding box.
+// The word is split in two lines - WEL on top, COME below -
+// so each line can be drawn much bigger and the letters are
+// made of far more digits, which makes the word clearly
+// readable.
+private fun buildWelcomeCells(availableWidthPx: Float, cellPx: Float): WelcomeGrid {
+    val line1 = "WEL"
+    val line2 = "COME"
+    val paint = Paint().apply {
+        typeface = Typeface.DEFAULT_BOLD
+        isAntiAlias = true
+        color = AndroidColor.WHITE
+        textAlign = Paint.Align.CENTER
+    }
+    // Size the word from its wider line (COME) so it spans
+    // ~94% of the available width.
+    paint.textSize = 100f
+    val w100 = paint.measureText(line2)
+    paint.textSize = 100f * (availableWidthPx * 0.94f / w100)
+    val fm = paint.fontMetrics
+    val lineH = fm.descent - fm.ascent
+    val lineW = paint.measureText(line2)
+    // A small gap between the two lines.
+    val gap = lineH * 0.25f
+    val blockW = lineW
+    val blockH = lineH * 2f + gap
+    val cols = maxOf(1, ceil(blockW / cellPx).toInt())
+    val rows = maxOf(1, ceil(blockH / cellPx).toInt())
+    val gridW = cols * cellPx
+    val gridH = rows * cellPx
+    val bitmap = Bitmap.createBitmap(gridW.toInt(), gridH.toInt(), Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bitmap)
+    val midShift = (fm.ascent + fm.descent) / 2f
+    // WEL on the top line, COME on the bottom line, both centred.
+    canvas.drawText(line1, gridW / 2f, lineH / 2f - midShift, paint)
+    canvas.drawText(line2, gridW / 2f, lineH + gap + lineH / 2f - midShift, paint)
+    val random = Random(69)
+    val cells = ArrayList<WelcomeCell>(cols * rows)
+    for (r in 0 until rows) {
+        for (c in 0 until cols) {
+            val px = ((c + 0.5f) * cellPx).toInt().coerceIn(0, gridW.toInt() - 1)
+            val py = ((r + 0.5f) * cellPx).toInt().coerceIn(0, gridH.toInt() - 1)
+            val isLetter = AndroidColor.alpha(bitmap.getPixel(px, py)) > 80
+            cells.add(
+                WelcomeCell(
+                    cx = (c + 0.5f) * cellPx,
+                    cy = (r + 0.5f) * cellPx,
+                    isLetter = isLetter,
+                    digit = if (random.nextBoolean()) "6" else "9",
+                    delay = random.nextFloat() * 0.65f
+                )
+            )
+        }
+    }
+    bitmap.recycle()
+    return WelcomeGrid(cells, gridW, gridH)
+}
+
+@Composable
+private fun FinalWelcomePage(
+    onPageColor: Color,
+    active: Boolean,
+    onRevealDone: () -> Unit
+) {
+    BoxWithConstraints(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        val density = LocalDensity.current
+        val minDim = minOf(maxWidth, maxHeight)
+        val cellDp = minDim * 0.03f
+        val cellPx = with(density) { cellDp.toPx() }
+        val availableWidthPx = with(density) { maxWidth.toPx() }
+        val grid = remember(availableWidthPx, cellPx) {
+            buildWelcomeCells(availableWidthPx, cellPx)
+        }
+
+        var started by remember { mutableStateOf(false) }
+        var revealCalled by remember { mutableStateOf(false) }
+        LaunchedEffect(active) {
+            if (active) {
+                started = true
+            } else {
+                started = false
+                revealCalled = false
+            }
+        }
+        val progress by animateFloatAsState(
+            targetValue = if (started) 1f else 0f,
+            animationSpec = tween(durationMillis = 2600, easing = LinearEasing),
+            label = "welcomeReveal"
+        )
+        LaunchedEffect(progress, started) {
+            if (started && progress >= 1f && !revealCalled) {
+                revealCalled = true
+                onRevealDone()
+            }
+        }
+        // The first 15% is a hold: the field stays full so the
+        // user sees it, then the dissolve runs.
+        val fadeProgress = ((progress - 0.15f) / 0.85f).coerceIn(0f, 1f)
+
+        // The digits are pre-rendered to tiny bitmaps once (no
+        // nativeCanvas - this project's Compose Canvas has no
+        // nativeCanvas member, so text is drawn off-screen with
+        // plain android Canvas + Paint and the Canvas below just
+        // blits the bitmaps with a per-cell alpha).
+        val digitBitmaps = remember(cellPx, onPageColor) {
+            val size = ceil(cellPx).toInt().coerceAtLeast(1)
+            val paint = Paint().apply {
+                typeface = Typeface.DEFAULT_BOLD
+                isAntiAlias = true
+                textAlign = Paint.Align.CENTER
+                textSize = cellPx * 0.82f
+                color = onPageColor.toArgb()
+            }
+            val fm = paint.fontMetrics
+            val baseline = size / 2f - (fm.ascent + fm.descent) / 2f
+            fun makeBitmap(digit: String): ImageBitmap {
+                val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+                val c = Canvas(bmp)
+                c.drawText(digit, size / 2f, baseline, paint)
+                return bmp.asImageBitmap()
+            }
+            mapOf("6" to makeBitmap("6"), "9" to makeBitmap("9"))
+        }
+        ComposeCanvas(
+            modifier = Modifier.size(
+                width = with(density) { grid.widthPx.toDp() },
+                height = with(density) { grid.heightPx.toDp() }
+            )
+        ) {
+            val bmpSize = digitBitmaps["6"]?.width?.toFloat() ?: cellPx
+            grid.cells.forEach { cell ->
+                val alpha = if (cell.isLetter) {
+                    1f
+                } else {
+                    1f - ((fadeProgress - cell.delay) / 0.3f).coerceIn(0f, 1f)
+                }
+                if (alpha <= 0.01f) return@forEach
+                val bmp = digitBitmaps[cell.digit] ?: return@forEach
+                drawImage(
+                    image = bmp,
+                    topLeft = Offset(cell.cx - bmpSize / 2f, cell.cy - bmpSize / 2f),
+                    alpha = alpha
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PermissionsPage(
+    onPageColor: Color,
+    cardBg: Color,
+    cardBorder: Color,
+    permStates: Map<String, Boolean>,
+    allRequiredDone: Boolean,
+    onGrant: (AppPermission) -> Unit,
+    onToggle: (AppPermission, Boolean) -> Unit
+) {
+    PageTitle("Permissions", onPageColor)
+    PageSubtitle(
+        "CalNyx needs these to work. Grant each one - Next unlocks when everything required is granted. You can check this list later in About this app.",
+        onPageColor
+    )
+    var notificationsKeptOn by remember { mutableStateOf(false) }
+    OnboardingPermissions.all().forEach { permission ->
+        val granted = permStates[permission.id] == true
+        val isStop = permission.id == OnboardingPermissions.ID_STOP_NOTIFICATIONS
+        val isToggle = permission.kind == PermissionKind.TOGGLE
+        Column(
+            modifier = Modifier.fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .background(cardBg)
+                .border(1.dp, cardBorder, RoundedCornerShape(16.dp))
+                .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier.size(44.dp).clip(CircleShape)
+                        .background(if (granted) onPageColor else cardBorder),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (granted) {
+                        Icon(
+                            Icons.Default.Check,
+                            contentDescription = null,
+                            tint = cardBg,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    } else {
+                        Icon(
+                            permission.icon,
+                            contentDescription = null,
+                            tint = onPageColor,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = permission.title,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = onPageColor
+                        )
+                        if (permission.optional) {
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Optional",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = onPageColor.copy(alpha = 0.6f)
+                            )
+                        }
+                    }
+                    Text(
+                        text = permission.description,
+                        fontSize = 13.sp,
+                        color = onPageColor.copy(alpha = 0.75f)
+                    )
+                }
+            }
+            // TOGGLE items get a black / white Switch, never a
+            // Grant button. The Switch is B/W only - no M3 purple.
+            if (isToggle) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = if (granted) "Hidden" else "Showing",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = onPageColor.copy(alpha = 0.75f),
+                        modifier = Modifier.weight(1f)
+                    )
+                    Switch(
+                        checked = granted,
+                        onCheckedChange = { onToggle(permission, it) },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = cardBg,
+                            checkedTrackColor = onPageColor,
+                            uncheckedThumbColor = onPageColor,
+                            uncheckedTrackColor = cardBorder
+                        )
+                    )
+                }
+            }
+            if (!granted && !isStop && !isToggle) {
+                Box(
+                    modifier = Modifier.fillMaxWidth().height(44.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(onPageColor)
+                        .clickable { onGrant(permission) },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "Grant",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = cardBg
+                    )
+                }
+            }
+            if (isStop && !granted) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Box(
+                        modifier = Modifier.weight(1f).height(44.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(onPageColor)
+                            .clickable { onGrant(permission) },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "Turn off",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = cardBg
+                        )
+                    }
+                    Box(
+                        modifier = Modifier.weight(1f).height(44.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .border(1.dp, onPageColor, RoundedCornerShape(12.dp))
+                            .clickable { notificationsKeptOn = true },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "Keep on",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = onPageColor
+                        )
+                    }
+                }
+            }
+            if (isStop && notificationsKeptOn && !granted) {
+                Text(
+                    text = "Notifications stay on. You can turn them off later from About this app.",
+                    fontSize = 13.sp,
+                    color = onPageColor.copy(alpha = 0.75f)
+                )
+            }
+        }
+    }
+    if (allRequiredDone) {
+        Text(
+            text = "All required permissions granted - tap Next.",
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Medium,
+            color = onPageColor,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth()
+        )
+    } else {
+        Text(
+            text = "Grant the remaining permissions to continue, or tap Skip to finish the introduction.",
+            fontSize = 14.sp,
+            color = onPageColor.copy(alpha = 0.75f),
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth()
+        )
+    }
+}

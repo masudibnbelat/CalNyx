@@ -352,7 +352,7 @@ package com.calnyx.app.applock
 import com.calnyx.app.clipboard.ClipboardCapture
 import com.calnyx.app.clipboard.ClipboardService
 import com.calnyx.app.clipboard.SaveResult
-import com.calnyx.app.moan.OrientationGuard
+import com.calnyx.app.hardcore.OrientationGuard
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
