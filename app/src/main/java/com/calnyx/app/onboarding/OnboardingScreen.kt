@@ -29,12 +29,16 @@
 // it is today - six calculators (no Notepad), Moan / Hardcore /
 // Network (not Sound / Hardware), Third Eye (not Spy, now with
 // screen recording too). No developer description anywhere.
-package com.calnyx.app.onboarding
+// UPDATED (2026-11-21): Screen Stream (live screen sharing to
+// any browser) added to the intro - "What is CalNyx?" and the
+// Network row. WELCOME final page fixed: letters are pixel
+// patterns with exactly 2-digit-thick strokes, and the page
+// sits directly in the pager so the word is truly centred.
+package com.calnyx.app.ui.screens
 
 import android.app.Activity
 import android.graphics.Bitmap
 import android.graphics.Canvas
-import android.graphics.Color as AndroidColor
 import android.graphics.Paint
 import android.graphics.Typeface
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -258,32 +262,41 @@ fun OnboardingScreen(darkTheme: Boolean, onFinish: () -> Unit) {
             userScrollEnabled = false,
             modifier = Modifier.fillMaxWidth().weight(1f)
         ) { pagerPage ->
-            Column(
-                modifier = Modifier.fillMaxSize()
-                    .verticalScroll(rememberScrollState())
-                    .padding(vertical = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                when (pagerPage) {
-                    0 -> WelcomePage(onPageColor, thumbBg, cardBg, cardBorder)
-                    1 -> CalculatorsPage(onPageColor, thumbBg)
-                    2 -> BlackHolePage(onPageColor, thumbBg)
-                    3 -> SoundHardwarePage(onPageColor, thumbBg)
-                    4 -> SpyClipboardPage(onPageColor, thumbBg)
-                    5 -> PermissionsPage(
-                        onPageColor = onPageColor,
-                        cardBg = cardBg,
-                        cardBorder = cardBorder,
-                        permStates = permStates,
-                        allRequiredDone = allRequiredDone,
-                        onGrant = ::grant,
-                        onToggle = ::toggle
-                    )
-                    6 -> FinalWelcomePage(
-                        onPageColor = onPageColor,
-                        active = page == PAGE_DONE,
-                        onRevealDone = { welcomeRevealDone = true }
-                    )
+            // The final page is NOT inside the scrolling Column:
+            // in a verticalScroll the height is unbounded, so its
+            // fillMaxSize Box sized to content and the word sat at
+            // the top instead of the middle of the screen. Placed
+            // directly in the pager it gets the real height, and
+            // its centred Box truly centres the word.
+            if (pagerPage == PAGE_DONE) {
+                FinalWelcomePage(
+                    onPageColor = onPageColor,
+                    active = page == PAGE_DONE,
+                    onRevealDone = { welcomeRevealDone = true }
+                )
+            } else {
+                Column(
+                    modifier = Modifier.fillMaxSize()
+                        .verticalScroll(rememberScrollState())
+                        .padding(vertical = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    when (pagerPage) {
+                        0 -> WelcomePage(onPageColor, thumbBg, cardBg, cardBorder)
+                        1 -> CalculatorsPage(onPageColor, thumbBg)
+                        2 -> BlackHolePage(onPageColor, thumbBg)
+                        3 -> SoundHardwarePage(onPageColor, thumbBg)
+                        4 -> SpyClipboardPage(onPageColor, thumbBg)
+                        5 -> PermissionsPage(
+                            onPageColor = onPageColor,
+                            cardBg = cardBg,
+                            cardBorder = cardBorder,
+                            permStates = permStates,
+                            allRequiredDone = allRequiredDone,
+                            onGrant = ::grant,
+                            onToggle = ::toggle
+                        )
+                    }
                 }
             }
         }
@@ -486,7 +499,7 @@ private fun WelcomePage(onPageColor: Color, thumbBg: Color, cardBg: Color, cardB
                 color = onPageColor
             )
             Text(
-                text = "Six calculators, a hidden vault for your private photos and videos, an app lock, sound and power controls, a floating ball, secret camera and screen recording, and a clipboard history - all in one app.",
+                text = "Six calculators, a hidden vault for your private photos and videos, an app lock, sound and power controls, a floating ball, secret camera and screen recording, live screen sharing to any browser, and a clipboard history - all in one app.",
                 fontSize = 14.sp,
                 color = onPageColor.copy(alpha = 0.8f)
             )
@@ -529,7 +542,7 @@ private fun SoundHardwarePage(onPageColor: Color, thumbBg: Color) {
     PageSubtitle("Your phone's controls, from inside the calculator.", onPageColor)
     FeatureRow(Icons.Default.VolumeUp, "Moan", "Ringer modes and Media, Ringtone, Alarm and Call volumes.", onPageColor, thumbBg)
     FeatureRow(Icons.Default.PowerSettingsNew, "Hardcore", "Power menu, Lock screen, screen orientation and the floating ball.", onPageColor, thumbBg)
-    FeatureRow(Icons.Default.SignalCellularAlt, "Network", "Network switcher and Open in WhatsApp.", onPageColor, thumbBg)
+    FeatureRow(Icons.Default.SignalCellularAlt, "Network", "Network switcher, live screen sharing to any browser, and Open in WhatsApp.", onPageColor, thumbBg)
     PageSubtitle("The ball never opens the app by itself - tap it and only its small panel opens.", onPageColor)
 }
 
@@ -542,18 +555,29 @@ private fun SpyClipboardPage(onPageColor: Color, thumbBg: Color) {
     PageSubtitle("Both work fully offline.", onPageColor)
 }
 
-// FINAL PAGE (2026-11-20): only the word WELCOME, big in the
-// middle of the screen - no icon, no extra text. The word is
-// split in two lines (WEL on top, COME below) and made of 6s
-// and 9s: when the page opens, the whole word area is filled
-// with generated 6 / 9 digits, then the digits that are NOT part
-// of the letters fade away one by one (each with its own random
-// delay), and WELCOME is left standing. When it is fully
-// revealed, onRevealDone fires and the Start button appears.
-// % ONLY: the digit cell is 3% of the smaller side, so the whole
-// matrix scales on every device. Colours are theme variables
-// (onPageColor for the digits, pageBg behind) - no hardcoded
-// colour anywhere here.
+// FINAL PAGE (2026-11-20, FIXED 2026-11-21): only the word
+// WELCOME, big in the middle of the screen - no icon, no extra
+// text. The word is split in two lines (WEL on top, COME below)
+// and made of 6s and 9s: when the page opens, the whole word
+// area is filled with generated 6 / 9 digits, then the digits
+// that are NOT part of the letters fade away one by one (each
+// with its own random delay), and WELCOME is left standing.
+// When it is fully revealed, onRevealDone fires and the Start
+// button appears.
+// TWO-DIGIT STROKES (2026-11-21): the letters are pixel
+// patterns (WELCOME_LETTERS below), and every pattern cell is
+// exactly 2 x 2 digit cells - so every stroke is exactly 2
+// digits thick. The old version drew the word with a font and
+// sampled it, which gave mostly 1-digit strokes (the L was a
+// single digit wide).
+// CENTRED (2026-11-21): this page is placed directly in the
+// pager, NOT inside the scrolling Column - in a verticalScroll
+// the height is unbounded, so the word sat at the top of the
+// screen instead of the middle.
+// % ONLY: the cells are sized from the width (the wider line
+// spans ~94%), so the whole matrix scales on every device.
+// Colours are theme variables (onPageColor for the digits,
+// pageBg behind) - no hardcoded colour anywhere here.
 private data class WelcomeCell(
     val cx: Float,
     val cy: Float,
@@ -565,66 +589,143 @@ private data class WelcomeCell(
 private data class WelcomeGrid(
     val cells: List<WelcomeCell>,
     val widthPx: Float,
-    val heightPx: Float
+    val heightPx: Float,
+    val cellPx: Float
 )
 
-// Draws WELCOME on a bitmap and samples each cell centre for
-// ink. Returns the grid that covers the word's bounding box.
-// The word is split in two lines - WEL on top, COME below -
-// so each line can be drawn much bigger and the letters are
-// made of far more digits, which makes the word clearly
-// readable.
-private fun buildWelcomeCells(availableWidthPx: Float, cellPx: Float): WelcomeGrid {
+// LETTER PATTERNS (2026-11-21): each letter is a 7-row x 5-col
+// pixel pattern, and every pattern cell is exactly 2 x 2 digit
+// cells - so every stroke of every letter is exactly 2 digits
+// thick, never 1. A "1" in a pattern row is ink.
+private val WELCOME_LETTERS: Map<Char, List<String>> = mapOf(
+    'W' to listOf(
+        "10001",
+        "10001",
+        "10001",
+        "10101",
+        "10101",
+        "01010",
+        "01010"
+    ),
+    'E' to listOf(
+        "11111",
+        "10000",
+        "10000",
+        "11110",
+        "10000",
+        "10000",
+        "11111"
+    ),
+    'L' to listOf(
+        "10000",
+        "10000",
+        "10000",
+        "10000",
+        "10000",
+        "10000",
+        "11111"
+    ),
+    'C' to listOf(
+        "01110",
+        "10001",
+        "10000",
+        "10000",
+        "10000",
+        "10001",
+        "01110"
+    ),
+    'O' to listOf(
+        "01110",
+        "10001",
+        "10001",
+        "10001",
+        "10001",
+        "10001",
+        "01110"
+    ),
+    'M' to listOf(
+        "10001",
+        "11011",
+        "10101",
+        "10101",
+        "10001",
+        "10001",
+        "10001"
+    )
+)
+
+private const val LETTER_UNITS_W = 5
+private const val LETTER_UNITS_H = 7
+private const val UNIT_CELLS = 2
+private const val LETTER_GAP_CELLS = 2
+private const val LINE_GAP_CELLS = 2
+
+// Builds the WELCOME grid from the pixel patterns above - no
+// font, no bitmap sampling, so every stroke is exactly 2 digit
+// cells thick. Returns the grid that covers the word's bounding
+// box. The word is split in two lines - WEL on top, COME below
+// - and the shorter line is centred on the wider one.
+private fun buildWelcomeCells(availableWidthPx: Float): WelcomeGrid {
     val line1 = "WEL"
     val line2 = "COME"
-    val paint = Paint().apply {
-        typeface = Typeface.DEFAULT_BOLD
-        isAntiAlias = true
-        color = AndroidColor.WHITE
-        textAlign = Paint.Align.CENTER
+    // Width in digit cells: COME is the wider line.
+    fun lineCells(line: String): Int {
+        return line.length * LETTER_UNITS_W * UNIT_CELLS +
+            (line.length - 1) * LETTER_GAP_CELLS
     }
-    // Size the word from its wider line (COME) so it spans
-    // ~94% of the available width.
-    paint.textSize = 100f
-    val w100 = paint.measureText(line2)
-    paint.textSize = 100f * (availableWidthPx * 0.94f / w100)
-    val fm = paint.fontMetrics
-    val lineH = fm.descent - fm.ascent
-    val lineW = paint.measureText(line2)
-    // A small gap between the two lines.
-    val gap = lineH * 0.25f
-    val blockW = lineW
-    val blockH = lineH * 2f + gap
-    val cols = maxOf(1, ceil(blockW / cellPx).toInt())
-    val rows = maxOf(1, ceil(blockH / cellPx).toInt())
+    val cols = lineCells(line2)
+    val rows = LETTER_UNITS_H * UNIT_CELLS * 2 + LINE_GAP_CELLS
+    // Size the cells so the wider line spans ~94% of the width.
+    val cellPx = availableWidthPx * 0.94f / cols
     val gridW = cols * cellPx
     val gridH = rows * cellPx
-    val bitmap = Bitmap.createBitmap(gridW.toInt(), gridH.toInt(), Bitmap.Config.ARGB_8888)
-    val canvas = Canvas(bitmap)
-    val midShift = (fm.ascent + fm.descent) / 2f
-    // WEL on the top line, COME on the bottom line, both centred.
-    canvas.drawText(line1, gridW / 2f, lineH / 2f - midShift, paint)
-    canvas.drawText(line2, gridW / 2f, lineH + gap + lineH / 2f - midShift, paint)
     val random = Random(69)
+    val line1Offset = (cols - lineCells(line1)) / 2
+    fun isLetterCell(c: Int, r: Int): Boolean {
+        val line: String
+        val lineTop: Int
+        val lineOffset: Int
+        if (r < LETTER_UNITS_H * UNIT_CELLS) {
+            line = line1
+            lineTop = 0
+            lineOffset = line1Offset
+        } else if (r < LETTER_UNITS_H * UNIT_CELLS + LINE_GAP_CELLS) {
+            return false
+        } else {
+            line = line2
+            lineTop = LETTER_UNITS_H * UNIT_CELLS + LINE_GAP_CELLS
+            lineOffset = 0
+        }
+        val localC = c - lineOffset
+        if (localC < 0) return false
+        val letterIndex = localC / (LETTER_UNITS_W * UNIT_CELLS + LETTER_GAP_CELLS)
+        if (letterIndex >= line.length) return false
+        val letterStart = letterIndex * (LETTER_UNITS_W * UNIT_CELLS + LETTER_GAP_CELLS)
+        val inLetterC = localC - letterStart
+        if (inLetterC >= LETTER_UNITS_W * UNIT_CELLS) return false
+        val pattern = WELCOME_LETTERS[line[letterIndex]] ?: return false
+        val unitR = (r - lineTop) / UNIT_CELLS
+        val unitC = inLetterC / UNIT_CELLS
+        if (unitR !in pattern.indices) return false
+        val row = pattern[unitR]
+        if (unitC !in row.indices) return false
+        return row[unitC] == '1'
+    }
     val cells = ArrayList<WelcomeCell>(cols * rows)
     for (r in 0 until rows) {
         for (c in 0 until cols) {
-            val px = ((c + 0.5f) * cellPx).toInt().coerceIn(0, gridW.toInt() - 1)
-            val py = ((r + 0.5f) * cellPx).toInt().coerceIn(0, gridH.toInt() - 1)
-            val isLetter = AndroidColor.alpha(bitmap.getPixel(px, py)) > 80
             cells.add(
                 WelcomeCell(
                     cx = (c + 0.5f) * cellPx,
                     cy = (r + 0.5f) * cellPx,
-                    isLetter = isLetter,
+                    isLetter = isLetterCell(c, r),
                     digit = if (random.nextBoolean()) "6" else "9",
                     delay = random.nextFloat() * 0.65f
                 )
             )
         }
     }
-    bitmap.recycle()
-    return WelcomeGrid(cells, gridW, gridH)
+    return WelcomeGrid(cells, gridW, gridH, cellPx)
 }
 
 @Composable
@@ -638,13 +739,13 @@ private fun FinalWelcomePage(
         contentAlignment = Alignment.Center
     ) {
         val density = LocalDensity.current
-        val minDim = minOf(maxWidth, maxHeight)
-        val cellDp = minDim * 0.03f
-        val cellPx = with(density) { cellDp.toPx() }
         val availableWidthPx = with(density) { maxWidth.toPx() }
-        val grid = remember(availableWidthPx, cellPx) {
-            buildWelcomeCells(availableWidthPx, cellPx)
+        val grid = remember(availableWidthPx) {
+            buildWelcomeCells(availableWidthPx)
         }
+        // The digit cell size comes from the grid itself: the
+        // wider line spans ~94% of the width.
+        val cellPx = grid.cellPx
 
         var started by remember { mutableStateOf(false) }
         var revealCalled by remember { mutableStateOf(false) }
