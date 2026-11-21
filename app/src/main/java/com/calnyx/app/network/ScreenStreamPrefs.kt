@@ -15,12 +15,24 @@ object ScreenStreamPrefs {
     private const val KEY_QUALITY = "quality"
 
     // Relay URL - CODE ONLY, never shown in the app UI (2026-11-21).
-    // Change this line only if the relay moves to a different address.
-    const val DEFAULT_RELAY_URL = "https://calnyx-stream.onrender.com"
+    // The live Render service is "calnyx-screen-stream" - the first
+    // build shipped "calnyx-stream" (missing "screen") and that host
+    // answers 404, so no stream could ever start. Change this line
+    // only if the relay moves to a different address.
+    const val DEFAULT_RELAY_URL = "https://calnyx-screen-stream.onrender.com"
 
     fun savedRelayUrl(context: Context): String {
-        return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val saved = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .getString(KEY_RELAY_URL, DEFAULT_RELAY_URL) ?: DEFAULT_RELAY_URL
+        // WRONG-HOST FIX (2026-11-21): the first build shipped
+        // "calnyx-stream" (missing "screen") and saved it on the
+        // phone. That host is not the relay - it answers 404. If
+        // the saved URL is that wrong host, use the correct default.
+        return if (saved.trim().trimEnd('/') == "https://calnyx-stream.onrender.com") {
+            DEFAULT_RELAY_URL
+        } else {
+            saved
+        }
     }
 
     fun saveRelayUrl(context: Context, url: String) {

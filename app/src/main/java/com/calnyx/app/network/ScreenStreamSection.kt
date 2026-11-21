@@ -23,8 +23,14 @@
 //      2 characters), tap Start Stream, the phone's screen goes
 //      live through the relay server and a link appears to copy
 //      and send to anyone. Anyone opening it in any browser
-//      types the password and watches. Settings (folded, like
-//      a folder) holds the stream quality only.
+//      types the password and watches. Quality (Low / Medium /
+//      High) sits right in the card as three small pills - no
+//      Settings button, no expander (2026-11-21).
+//   LIVE BLOCK REDESIGN (2026-11-21): while streaming, three
+//      compact copy rows - Stream link, Room ID, Password - each
+//      with its own copy button. "Room" is now called "Room ID"
+//      everywhere. Tight spacing, % sizes only, all colours from
+//      the theme (colorScheme + the card colours passed in).
 //
 // RELAY URL IS CODE-ONLY (2026-11-21): the server address lives
 // only in ScreenStreamPrefs.DEFAULT_RELAY_URL - it is NEVER
@@ -53,6 +59,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -71,11 +78,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.ExpandLess
-import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.OpenInBrowser
 import androidx.compose.material.icons.filled.ScreenShare
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Button
@@ -120,6 +124,56 @@ private fun formatElapsed(seconds: Long): String {
     return "%02d:%02d".format(m, s)
 }
 
+// One compact copy row for the live block: a small label, the
+// value, and a copy button on the right. Material 3 pieces only,
+// % sizes only, colours from the theme - no hardcoded colours.
+@Composable
+private fun StreamCopyRow(
+    label: String,
+    value: String,
+    onCopy: () -> Unit,
+    minDim: Dp,
+    onPageColor: Color,
+    labelColor: Color,
+    rowBg: Color
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth()
+            .clip(RoundedCornerShape(minDim * 0.022f))
+            .background(rowBg)
+            .padding(horizontal = minDim * 0.033f, vertical = minDim * 0.016f),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                label,
+                fontSize = (minDim * 0.033f).value.sp,
+                color = labelColor
+            )
+            Text(
+                value,
+                fontSize = (minDim * 0.042f).value.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = onPageColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        Spacer(modifier = Modifier.width(minDim * 0.022f))
+        IconButton(
+            onClick = onCopy,
+            modifier = Modifier.size(minDim * 0.1f)
+        ) {
+            Icon(
+                Icons.Default.ContentCopy,
+                contentDescription = "Copy $label",
+                modifier = Modifier.size(minDim * 0.05f),
+                tint = onPageColor
+            )
+        }
+    }
+}
+
 @Composable
 fun ScreenStreamSection(
     cardBg: Color,
@@ -150,7 +204,6 @@ fun ScreenStreamSection(
     var sharePassword by remember { mutableStateOf(ScreenStreamPrefs.savedPassword(context)) }
     var sharePasswordVisible by remember { mutableStateOf(false) }
     var quality by remember { mutableStateOf(ScreenStreamPrefs.savedQuality(context)) }
-    var settingsExpanded by remember { mutableStateOf(false) }
     var waitingProjection by remember { mutableStateOf(false) }
 
     // Live state from the service, polled like Third Eye does.
@@ -199,7 +252,7 @@ fun ScreenStreamSection(
             return
         }
         if (!relayUrl.startsWith("http://") && !relayUrl.startsWith("https://")) {
-            note = "Set your relay server URL in Settings first."
+            note = "Relay server address is not valid."
             return
         }
         ScreenStreamPrefs.savePassword(context, sharePassword)
@@ -234,19 +287,19 @@ fun ScreenStreamSection(
         )
     }
 
-    fun copyLink(url: String) {
+    fun copyText(label: String, value: String) {
         try {
             val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-            cm.setPrimaryClip(ClipData.newPlainText("Screen stream link", url))
-            note = "Link copied."
+            cm.setPrimaryClip(ClipData.newPlainText(label, value))
+            note = "$label copied."
         } catch (_: Exception) {
-            note = "Could not copy the link."
+            note = "Could not copy."
         }
     }
 
     Column(
         modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(minDim * 0.022f)
+        verticalArrangement = Arrangement.spacedBy(minDim * 0.016f)
     ) {
         if (note != null) {
             Text(
@@ -265,8 +318,8 @@ fun ScreenStreamSection(
             border = BorderStroke(1.dp, cardBorder)
         ) {
             Column(
-                modifier = Modifier.fillMaxWidth().padding(minDim * 0.044f),
-                verticalArrangement = Arrangement.spacedBy(minDim * 0.022f)
+                modifier = Modifier.fillMaxWidth().padding(minDim * 0.033f),
+                verticalArrangement = Arrangement.spacedBy(minDim * 0.016f)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
@@ -279,7 +332,7 @@ fun ScreenStreamSection(
                     Text("Watch a screen", fontWeight = FontWeight.SemiBold, fontSize = (minDim * 0.05f).value.sp, color = onPageColor, modifier = Modifier.weight(1f))
                 }
                 Text(
-                    "Paste someone's stream link and password to watch their screen.",
+                    "Watch someone else's screen. Paste the link they sent you, type their password, then tap Open.",
                     fontSize = (minDim * 0.039f).value.sp,
                     color = colorScheme.onSurfaceVariant
                 )
@@ -325,7 +378,7 @@ fun ScreenStreamSection(
                 Button(
                     onClick = { openWatch() },
                     enabled = watchUrl.isNotBlank() && watchPassword.length >= 2,
-                    modifier = Modifier.fillMaxWidth().height(minDim * 0.144f),
+                    modifier = Modifier.fillMaxWidth().height(minDim * 0.133f),
                     shape = RoundedCornerShape(minDim * 0.033f),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = buttonBg,
@@ -349,8 +402,8 @@ fun ScreenStreamSection(
             border = BorderStroke(1.dp, cardBorder)
         ) {
             Column(
-                modifier = Modifier.fillMaxWidth().padding(minDim * 0.044f),
-                verticalArrangement = Arrangement.spacedBy(minDim * 0.022f)
+                modifier = Modifier.fillMaxWidth().padding(minDim * 0.033f),
+                verticalArrangement = Arrangement.spacedBy(minDim * 0.016f)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
@@ -363,7 +416,7 @@ fun ScreenStreamSection(
                     Text("Share my screen", fontWeight = FontWeight.SemiBold, fontSize = (minDim * 0.05f).value.sp, color = onPageColor, modifier = Modifier.weight(1f))
                 }
                 Text(
-                    "Anyone with the link and password can watch this screen in any browser, from anywhere. Keep the screen on while streaming.",
+                    "Anyone with the link and password can watch in any browser. Keep the screen on while streaming.",
                     fontSize = (minDim * 0.039f).value.sp,
                     color = colorScheme.onSurfaceVariant
                 )
@@ -391,62 +444,36 @@ fun ScreenStreamSection(
                         cursorColor = onPageColor
                     )
                 )
-                // SETTINGS - folded, tap to open like a folder.
-                // Quality only - the relay URL is code-only and
-                // is never shown here.
-                Row(
-                    modifier = Modifier.fillMaxWidth()
-                        .clip(RoundedCornerShape(minDim * 0.033f))
-                        .clickable { settingsExpanded = !settingsExpanded }
-                        .padding(vertical = minDim * 0.011f),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        Icons.Default.Settings,
-                        contentDescription = null,
-                        modifier = Modifier.size(minDim * 0.056f),
-                        tint = onPageColor
-                    )
-                    Spacer(modifier = Modifier.width(minDim * 0.022f))
-                    Text(
-                        "Settings",
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = (minDim * 0.044f).value.sp,
-                        color = onPageColor,
-                        modifier = Modifier.weight(1f)
-                    )
-                    Icon(
-                        if (settingsExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                        contentDescription = null,
-                        modifier = Modifier.size(minDim * 0.061f),
-                        tint = onPageColor
-                    )
-                }
-                if (settingsExpanded) {
-                    Text(
-                        "Quality",
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = (minDim * 0.044f).value.sp,
-                        color = onPageColor
-                    )
-                    Row(modifier = Modifier.fillMaxWidth()) {
-                        listOf("Low", "Medium", "High").forEachIndexed { index, q ->
-                            if (index > 0) Spacer(modifier = Modifier.width(minDim * 0.022f))
-                            Box(
-                                modifier = Modifier.weight(1f)
-                                    .clip(RoundedCornerShape(minDim * 0.033f))
-                                    .background(if (quality == q) buttonBg else cardBg)
-                                    .clickable { quality = q }
-                                    .padding(vertical = minDim * 0.033f),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    q,
-                                    fontWeight = FontWeight.SemiBold,
-                                    fontSize = (minDim * 0.039f).value.sp,
-                                    color = if (quality == q) buttonText else onPageColor
+                // QUALITY - always visible, three small pills.
+                // No Settings button and no expander: this is the
+                // only setting, and the pills take very little room.
+                Text(
+                    "Quality",
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = (minDim * 0.039f).value.sp,
+                    color = onPageColor
+                )
+                Row(modifier = Modifier.fillMaxWidth()) {
+                    listOf("Low", "Medium", "High").forEachIndexed { index, q ->
+                        if (index > 0) Spacer(modifier = Modifier.width(minDim * 0.022f))
+                        Box(
+                            modifier = Modifier.weight(1f)
+                                .clip(RoundedCornerShape(minDim * 0.022f))
+                                .background(if (quality == q) buttonBg else cardBg)
+                                .border(
+                                    BorderStroke(1.dp, if (quality == q) buttonBg else cardBorder),
+                                    RoundedCornerShape(minDim * 0.022f)
                                 )
-                            }
+                                .clickable { quality = q }
+                                .padding(vertical = minDim * 0.022f),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                q,
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = (minDim * 0.036f).value.sp,
+                                color = if (quality == q) buttonText else onPageColor
+                            )
                         }
                     }
                 }
@@ -456,7 +483,7 @@ fun ScreenStreamSection(
                         else startStream()
                     },
                     enabled = !waitingProjection && (isStreaming || isStarting || sharePassword.length >= 2),
-                    modifier = Modifier.fillMaxWidth().height(minDim * 0.144f),
+                    modifier = Modifier.fillMaxWidth().height(minDim * 0.133f),
                     shape = RoundedCornerShape(minDim * 0.033f),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = if (isStreaming || isStarting) CalNyxRed else buttonBg,
@@ -492,45 +519,41 @@ fun ScreenStreamSection(
                 }
                 if (isStreaming) {
                     Text(
-                        "Live  ${formatElapsed(elapsedSec)}  •  Room ${roomCode ?: ""}  •  Watching: $viewerCount",
+                        "Live  ${formatElapsed(elapsedSec)}  •  Room ID ${roomCode ?: ""}  •  Watching: $viewerCount",
                         fontSize = (minDim * 0.039f).value.sp,
                         color = colorScheme.onSurfaceVariant
                     )
                     streamUrl?.let { url ->
-                        OutlinedTextField(
+                        StreamCopyRow(
+                            label = "Stream link",
                             value = url,
-                            onValueChange = {},
-                            readOnly = true,
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(minDim * 0.033f),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = onPageColor,
-                                unfocusedBorderColor = cardBorder
-                            )
+                            onCopy = { copyText("Link", url) },
+                            minDim = minDim,
+                            onPageColor = onPageColor,
+                            labelColor = colorScheme.onSurfaceVariant,
+                            rowBg = thumbBg
                         )
-                        Button(
-                            onClick = { copyLink(url) },
-                            modifier = Modifier.fillMaxWidth().height(minDim * 0.144f),
-                            shape = RoundedCornerShape(minDim * 0.033f),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = buttonBg,
-                                contentColor = buttonText
-                            )
-                        ) {
-                            Icon(
-                                Icons.Default.ContentCopy,
-                                contentDescription = null,
-                                modifier = Modifier.size(minDim * 0.056f)
-                            )
-                            Spacer(modifier = Modifier.width(minDim * 0.022f))
-                            Text(
-                                "Copy link",
-                                fontSize = (minDim * 0.044f).value.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
                     }
+                    roomCode?.let { code ->
+                        StreamCopyRow(
+                            label = "Room ID",
+                            value = code,
+                            onCopy = { copyText("Room ID", code) },
+                            minDim = minDim,
+                            onPageColor = onPageColor,
+                            labelColor = colorScheme.onSurfaceVariant,
+                            rowBg = thumbBg
+                        )
+                    }
+                    StreamCopyRow(
+                        label = "Password",
+                        value = sharePassword,
+                        onCopy = { copyText("Password", sharePassword) },
+                        minDim = minDim,
+                        onPageColor = onPageColor,
+                        labelColor = colorScheme.onSurfaceVariant,
+                        rowBg = thumbBg
+                    )
                 }
             }
         }
@@ -560,7 +583,7 @@ fun ScreenStreamSection(
                         Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White, modifier = Modifier.size(minDim * 0.067f))
                     }
                     Text(
-                        "Room $code",
+                        "Room ID $code",
                         fontWeight = FontWeight.SemiBold,
                         fontSize = (minDim * 0.044f).value.sp,
                         color = Color.White,

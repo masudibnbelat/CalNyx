@@ -30,6 +30,11 @@
 // on the relay). The password is never in the share link - the
 // viewer types it on the page.
 //
+// DIAGNOSIS (2026-11-21): every connect / failure is logged with
+// tag "ScreenStream", so `adb logcat -d -s ScreenStream` shows
+// exactly where a stream dies (wrong host, relay asleep, denied
+// capture, ...).
+//
 // Needs in app/build.gradle.kts (dependencies block):
 //   implementation("com.squareup.okhttp3:okhttp:4.12.0")
 // And in AndroidManifest.xml (inside <application>):
@@ -67,6 +72,7 @@ import android.os.HandlerThread
 import android.os.IBinder
 import android.os.Looper
 import android.util.Size
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import okhttp3.OkHttpClient
@@ -86,6 +92,7 @@ class ScreenStreamService : Service() {
         const val ACTION_STOP = "com.calnyx.app.network.SCREEN_STREAM_STOP"
         private const val NOTIF_ID = 2003
         private const val CHANNEL_ID = "calnyx_screen_stream"
+        private const val TAG = "ScreenStream"
         private const val MAX_RETRIES = 3
         private const val RETRY_DELAY_MS = 5000L
 
@@ -232,6 +239,7 @@ class ScreenStreamService : Service() {
         }
         retryCount = 0
         isStarting = true
+        Log.i(TAG, "startStreaming relay=$relayUrl quality=$quality")
         // Foreground FIRST (Android 14 rule: the mediaProjection
         // type must be active before getMediaProjection).
         try {
@@ -258,6 +266,7 @@ class ScreenStreamService : Service() {
                 getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
             val projection = manager.getMediaProjection(resultCode, data) ?: run {
                 isStarting = false
+                Log.e(TAG, "getMediaProjection returned null")
                 lastError = "Screen capture was not allowed."
                 cleanup()
                 stopSelf()
@@ -330,10 +339,12 @@ class ScreenStreamService : Service() {
         val request = Request.Builder()
             .url(ScreenStreamPrefs.wsUrl(relayUrl))
             .build()
+        Log.i(TAG, "connecting to " + ScreenStreamPrefs.wsUrl(relayUrl))
         socket = httpClient.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 if (webSocket !== socket) return
                 retryCount = 0
+                Log.i(TAG, "socket open, asking relay for a room")
                 // Ask the relay for a room. The password goes in
                 // this message only - never in the share link.
                 try {
@@ -361,6 +372,7 @@ class ScreenStreamService : Service() {
                             }
                             retryCount = 0
                             roomCode = code
+                            Log.i(TAG, "created room=$code")
                             streamUrl = ScreenStreamPrefs.streamLink(relayUrl, code)
                             viewerCount = 0
                             startedAtMillis = System.currentTimeMillis()
@@ -373,6 +385,7 @@ class ScreenStreamService : Service() {
                             viewerCount = msg.optInt("count", viewerCount)
                         }
                         "error" -> {
+                            Log.e(TAG, "relay error: " + msg.optString("message"))
                             fail(msg.optString("message", "Relay error."))
                         }
                     }
@@ -388,11 +401,13 @@ class ScreenStreamService : Service() {
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 if (webSocket !== socket) return
                 if (!isStreaming && !isStarting) return
+                Log.e(TAG, "socket failed: " + t.message + " http=" + (response?.code ?: -1), t)
                 onSocketFailure()
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                 if (webSocket !== socket) return
+                Log.w(TAG, "socket closed code=$code reason=$reason")
                 if (isStarting) {
                     onSocketFailure()
                 } else if (isStreaming) {
@@ -413,6 +428,7 @@ class ScreenStreamService : Service() {
         }
         if (isStarting && retryCount < MAX_RETRIES && !isStopping) {
             retryCount++
+            Log.w(TAG, "retrying in 5s (attempt $retryCount/$MAX_RETRIES)")
             closeSocket()
             streamHandler?.postDelayed(
                 { if (!isStreaming && !isStopping) connectSocket() },
@@ -432,6 +448,7 @@ class ScreenStreamService : Service() {
 
     private fun fail(message: String) {
         lastError = message
+        Log.e(TAG, "fail: $message")
         streamHandler?.post { stopStreaming() } ?: stopStreaming()
     }
 
