@@ -4,7 +4,7 @@
 // still the same soft charcoal, not pitch black: background
 // #1F1F1F was #1E1E1E, cards #333333 were #2A2A2A, borders
 // #434343 were #3D3D3D). Status + navigation bar follow pageBg.
-// FILE: app/src/main/java/com/calnyx/app/ui/screens/OnboardingScreen.kt
+// FILE: app/src/main/java/com/calnyx/app/onboarding/OnboardingScreen.kt
 // NEW FILE - first-run introduction. Shows once, on the very first
 // open after install (NavGraph gates on OnboardingPrefs.isDone).
 // 7 steps, swipe is off - move with Next / Back / Skip only:
@@ -34,7 +34,7 @@
 // Network row. WELCOME final page fixed: letters are pixel
 // patterns with exactly 2-digit-thick strokes, and the page
 // sits directly in the pager so the word is truly centred.
-package com.calnyx.app.ui.screens
+package com.calnyx.app.onboarding
 
 import android.app.Activity
 import android.graphics.Bitmap
