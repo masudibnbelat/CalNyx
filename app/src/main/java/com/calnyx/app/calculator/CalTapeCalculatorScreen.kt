@@ -131,7 +131,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.calnyx.app.data.HistoryEntity
-import com.calnyx.app.data.SheetEntity
+import com.calnyx.app.navigation.SheetEntity
 import com.calnyx.app.calculator.CalTapeViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay

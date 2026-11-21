@@ -31,6 +31,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 import com.calnyx.app.core.ThemePrefs
+import com.calnyx.app.core.MainActivity
 
 private val LightColorScheme = lightColorScheme(
     primary = md_theme_light_primary,

@@ -1,4 +1,4 @@
-// FILE: app/src/main/java/com/calnyx/app/BlueFilm/BlueFilmStore.kt
+// FILE: app/src/main/java/com/calnyx/app/ThirdEye/ThirdEyeStore.kt
 // BLUE FILM RENAME + OPTIMIZATION (2026-11-20) - REPLACE.
 //  - RENAME: the page is "Blue Film" again, so the default
 //    folder is "My Blue Film" again. ensureMigrated() moves the
@@ -10,7 +10,7 @@
 //    it on every refresh, and re-scanning the folders each
 //    time was wasted work. The flag resets on process restart
 //    and the migration itself is idempotent, so nothing is lost.
-// PLAIN VERSION (2026-11-06) - REPLACE the old BlueFilmStore.kt.
+// PLAIN VERSION (2026-11-06) - REPLACE the old ThirdEyeStore.kt.
 // Based on the FOLDERS version. ENCRYPTION IS GONE:
 //  - Recordings are now plain .mp4 files in filesDir/bluefilm/,
 //    inside folders exactly as before. No .bfenc, no AES/GCM,
@@ -23,17 +23,17 @@
 //    encryption was removed, at the user's request.
 //  - ONE-TIME MIGRATION (first open after this update):
 //    ensureMigrated() converts old encrypted .bfenc videos to
-//    plain .mp4 with BlueFilmCrypto (decrypt once, delete the
+//    plain .mp4 with ThirdEyeCrypto (decrypt once, delete the
 //    .bfenc on success), and moves the intermediate default
 //    folder "My Spy" back to "My Blue Film". A .bfenc that fails
 //    (the old damaged ones) is left alone - it simply does not
-//    list. BlueFilmCrypto.kt STAYS in the project for this one
+//    list. ThirdEyeCrypto.kt STAYS in the project for this one
 //    migration only; no new recording is ever encrypted.
 //  - DEFAULT_FOLDER is now "My Blue Film" again (page renamed
 //    back to Blue Film).
 //  - Everything else is unchanged: folders, New Folder, Move,
 //    Rename video/folder, Delete video/folder, sizes, dates.
-package com.calnyx.app.bluefilm
+package com.calnyx.app.thirdeye
 
 import android.content.ContentValues
 import android.content.Context
@@ -51,8 +51,9 @@ import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import com.calnyx.app.navigation.Screen
 
-object BlueFilmStore {
+object ThirdEyeStore {
 
     const val EXT = ".mp4"
     const val DEFAULT_FOLDER = "My Blue Film"
@@ -137,7 +138,7 @@ object BlueFilmStore {
                         val tmpDest = File(folder, dest.name + ".tmp")
                         try {
                             if (tmpDest.exists()) tmpDest.delete()
-                            BlueFilmCrypto.decryptFile(context, enc, tmpDest)
+                            ThirdEyeCrypto.decryptFile(context, enc, tmpDest)
                             if (tmpDest.exists() && tmpDest.length() > 0) {
                                 if (tmpDest.renameTo(dest)) {
                                     enc.delete()

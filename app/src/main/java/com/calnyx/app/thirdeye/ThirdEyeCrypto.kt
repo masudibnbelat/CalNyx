@@ -1,4 +1,4 @@
-// FILE: app/src/main/java/com/calnyx/app/BlueFilm/BlueFilmCrypto.kt
+// FILE: app/src/main/java/com/calnyx/app/ThirdEye/ThirdEyeCrypto.kt
 // NEW FILE - AES/GCM encryption for Blue Film recordings.
 //
 // Recordings are stored encrypted in the app's private storage,
@@ -9,7 +9,7 @@
 // Encryption / decryption stream the file, so even long
 // recordings never sit whole in memory.
 
-package com.calnyx.app.bluefilm
+package com.calnyx.app.thirdeye
 
 import android.content.Context
 import android.util.Base64
@@ -25,7 +25,7 @@ import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
 
-object BlueFilmCrypto {
+object ThirdEyeCrypto {
 
     private const val PREFS = "bluefilm_crypto"
     private const val KEY_PREF = "aes_key_b64"

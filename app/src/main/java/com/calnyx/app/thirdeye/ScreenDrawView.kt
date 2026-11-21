@@ -1,4 +1,4 @@
-// FILE: app/src/main/java/com/calnyx/app/BlueFilm/ScreenDrawView.kt
+// FILE: app/src/main/java/com/calnyx/app/ThirdEye/ScreenDrawView.kt
 // NEW FILE - on-screen marks drawn DURING a screen recording
 // (2026-11-20).
 //
@@ -20,7 +20,7 @@
 // inside a circle or rectangle stays crystal clear, with no
 // darkening and no colour effect on the background. The pen is
 // a red stroke only. Clear wipes every mark at once.
-package com.calnyx.app.bluefilm
+package com.calnyx.app.thirdeye
 
 import android.content.Context
 import android.graphics.Canvas
@@ -31,7 +31,7 @@ import android.util.TypedValue
 import android.view.MotionEvent
 import android.view.View
 import androidx.compose.ui.graphics.toArgb
-import com.calnyx.app.ui.theme.CalNyxRed
+import com.calnyx.app.theme.CalNyxRed
 import kotlin.math.PI
 import kotlin.math.atan2
 import kotlin.math.cos

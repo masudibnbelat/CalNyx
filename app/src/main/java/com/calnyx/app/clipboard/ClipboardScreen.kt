@@ -153,8 +153,8 @@ import com.calnyx.app.clipboard.ClipboardItem
 import com.calnyx.app.clipboard.ClipboardPrefs
 import com.calnyx.app.clipboard.ClipboardRepository
 import com.calnyx.app.clipboard.ClipboardService
-import com.calnyx.app.ui.theme.CalNyxGreen
-import com.calnyx.app.ui.theme.CalNyxRed
+import com.calnyx.app.theme.CalNyxGreen
+import com.calnyx.app.theme.CalNyxRed
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch

@@ -20,6 +20,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import com.calnyx.app.core.MainActivity
 
 class ClipboardBootReceiver : BroadcastReceiver() {
 

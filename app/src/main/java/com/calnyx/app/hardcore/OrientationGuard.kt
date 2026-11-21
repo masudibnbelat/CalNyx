@@ -32,6 +32,9 @@ import android.database.ContentObserver
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
+import com.calnyx.app.applock.AppLockService
+import com.calnyx.app.ball.FloatingBallService
+import com.calnyx.app.moan.MoanControlPrefs
 
 object OrientationGuard {
 

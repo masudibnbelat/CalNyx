@@ -12,6 +12,7 @@ package com.calnyx.app.hardcore
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import com.calnyx.app.moan.MoanControlPrefs
 
 class OrientationBootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {

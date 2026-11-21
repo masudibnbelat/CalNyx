@@ -5,8 +5,8 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.calnyx.app.core.CalNyxApp
 import com.calnyx.app.data.HistoryEntity
-import com.calnyx.app.data.NavStateDatabase
-import com.calnyx.app.data.SheetEntity
+import com.calnyx.app.navigation.NavStateDatabase
+import com.calnyx.app.navigation.SheetEntity
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow

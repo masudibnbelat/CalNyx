@@ -11,7 +11,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import com.calnyx.app.navigation.CalNyxNavGraph
-import com.calnyx.app.ui.theme.CalNyxTheme
+import com.calnyx.app.theme.CalNyxTheme
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {

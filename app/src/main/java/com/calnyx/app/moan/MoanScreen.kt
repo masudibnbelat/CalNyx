@@ -54,6 +54,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.calnyx.app.hardcore.HardcoreScreen
+import com.calnyx.app.network.NetworkScreen
 
 private data class StreamRow(
     val stream: Int,

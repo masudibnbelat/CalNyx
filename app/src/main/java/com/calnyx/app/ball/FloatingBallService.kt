@@ -40,8 +40,10 @@ import android.view.WindowManager
 import android.widget.FrameLayout
 import android.widget.Toast
 import androidx.core.app.NotificationCompat
-import com.calnyx.app.bluefilm.ScreenRecordService
+import com.calnyx.app.thirdeye.ScreenRecordService
 import com.calnyx.app.R
+import com.calnyx.app.moan.MoanControlPrefs
+import com.calnyx.app.hardcore.OrientationGuard
 
 class FloatingBallService : Service() {
 

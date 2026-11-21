@@ -1,4 +1,4 @@
-// FILE: app/src/main/java/com/calnyx/app/BlueFilm/ScreenRecordToolbarActivity.kt
+// FILE: app/src/main/java/com/calnyx/app/ThirdEye/ScreenRecordToolbarActivity.kt
 // NEW FILE - recording toolbar as a transparent Activity (2026-11-20).
 //
 // Opens when the floating ball (or the mini ball) is tapped while
@@ -27,7 +27,7 @@
 //   normal again. Stop ends the recording and closes.
 // The header shows a red dot + the elapsed time (1 / sec); if
 // the recording ends elsewhere, the panel closes itself.
-package com.calnyx.app.bluefilm
+package com.calnyx.app.thirdeye
 
 import android.graphics.Color as AndroidColor
 import android.os.Build
@@ -92,11 +92,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.calnyx.app.applock.AppLockService
 import com.calnyx.app.ball.FloatingBallService
-import com.calnyx.app.ui.theme.CalNyxRed
-import com.calnyx.app.ui.theme.CalNyxTheme
+import com.calnyx.app.theme.CalNyxRed
+import com.calnyx.app.theme.CalNyxTheme
 import kotlinx.coroutines.delay
 import kotlin.math.atan2
 import kotlin.math.hypot
+import com.calnyx.app.ball.BallPanelActivity
 
 class ScreenRecordToolbarActivity : ComponentActivity() {
 

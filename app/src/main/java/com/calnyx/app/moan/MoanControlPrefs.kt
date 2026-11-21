@@ -4,6 +4,7 @@
 package com.calnyx.app.moan
 
 import android.content.Context
+import com.calnyx.app.navigation.Screen
 
 object MoanControlPrefs {
 

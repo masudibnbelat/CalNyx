@@ -13,6 +13,7 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import com.calnyx.app.navigation.NavStateDatabase
 
 @Database(entities = [ClipboardItem::class], version = 1, exportSchema = false)
 abstract class ClipboardDatabase : RoomDatabase() {

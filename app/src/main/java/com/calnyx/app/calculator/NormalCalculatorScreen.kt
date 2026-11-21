@@ -238,7 +238,7 @@ import android.content.Intent
 import android.app.Activity
 import com.calnyx.app.applock.AppLockManager
 import com.calnyx.app.blackhole.BlackHolePrefs
-import com.calnyx.app.ui.theme.CalNyxRed
+import com.calnyx.app.theme.CalNyxRed
 import com.calnyx.app.calculator.CalculatorViewModel
 import com.calnyx.app.calculator.HistoryViewModel
 import java.text.SimpleDateFormat

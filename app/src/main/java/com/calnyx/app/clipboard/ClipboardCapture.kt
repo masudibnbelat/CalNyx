@@ -57,6 +57,7 @@ import android.content.Context
 import android.content.Intent
 import android.provider.Settings
 import java.security.MessageDigest
+import com.calnyx.app.applock.AppLockService
 
 enum class SaveResult {
     SAVED,

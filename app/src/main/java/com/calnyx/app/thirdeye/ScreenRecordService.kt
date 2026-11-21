@@ -1,12 +1,12 @@
-// FILE: app/src/main/java/com/calnyx/app/BlueFilm/ScreenRecordService.kt
+// FILE: app/src/main/java/com/calnyx/app/ThirdEye/ScreenRecordService.kt
 // NEW FILE - screen recording with on-screen marks (2026-11-20).
 //
-// Same home as the camera recorder (BlueFilmService), but this
+// Same home as the camera recorder (ThirdEyeService), but this
 // one records the SCREEN, not the camera:
 //  - MediaProjection: the system asks once per recording, with
 //    its own dialog (Android's rule - it cannot be skipped, and
 //    the user can also stop from the system's own recording
-//    chip). The grant token arrives from BlueFilmScreen.
+//    chip). The grant token arrives from ThirdEyeScreen.
 //  - Video + optional mic audio (AAC 128 kbps, same as the
 //    camera), 720p / 1080p from the same Settings. Files save
 //    to the same Blue Film folders, "SR_" prefix, plain .mp4.
@@ -40,7 +40,7 @@
 //    so it shows in the video for the second it is open.
 //    And the system dialog appears every time a recording
 //    starts.
-package com.calnyx.app.bluefilm
+package com.calnyx.app.thirdeye
 
 import android.app.Activity
 import android.app.Notification
@@ -72,19 +72,20 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.calnyx.app.ball.FloatingBallService
-import com.calnyx.app.ui.theme.CalNyxRed
+import com.calnyx.app.theme.CalNyxRed
 import java.io.File
+import com.calnyx.app.navigation.Screen
 
 class ScreenRecordService : Service() {
 
     companion object {
-        const val ACTION_START = "com.calnyx.app.bluefilm.SCREEN_START"
-        const val ACTION_STOP = "com.calnyx.app.bluefilm.SCREEN_STOP"
-        private const val ACTION_SET_TOOL = "com.calnyx.app.bluefilm.SCREEN_SET_TOOL"
-        private const val ACTION_CLEAR_MARKS = "com.calnyx.app.bluefilm.SCREEN_CLEAR_MARKS"
-        private const val ACTION_SET_DRAW_MODE = "com.calnyx.app.bluefilm.SCREEN_SET_DRAW_MODE"
-        private const val ACTION_SET_EMOJI = "com.calnyx.app.bluefilm.SCREEN_SET_EMOJI"
-        private const val ACTION_SET_COLOR = "com.calnyx.app.bluefilm.SCREEN_SET_COLOR"
+        const val ACTION_START = "com.calnyx.app.thirdeye.SCREEN_START"
+        const val ACTION_STOP = "com.calnyx.app.thirdeye.SCREEN_STOP"
+        private const val ACTION_SET_TOOL = "com.calnyx.app.thirdeye.SCREEN_SET_TOOL"
+        private const val ACTION_CLEAR_MARKS = "com.calnyx.app.thirdeye.SCREEN_CLEAR_MARKS"
+        private const val ACTION_SET_DRAW_MODE = "com.calnyx.app.thirdeye.SCREEN_SET_DRAW_MODE"
+        private const val ACTION_SET_EMOJI = "com.calnyx.app.thirdeye.SCREEN_SET_EMOJI"
+        private const val ACTION_SET_COLOR = "com.calnyx.app.thirdeye.SCREEN_SET_COLOR"
         private const val PREFS = "bluefilm_prefs"
         private const val KEY_MODE = "record_mode"
         private const val KEY_COLOR = "draw_color"
@@ -614,7 +615,7 @@ class ScreenRecordService : Service() {
             val tmp = tmpFile
             if (tmp != null && tmp.exists() && tmp.length() > 0) {
                 try {
-                    val dest = BlueFilmStore.newScreenVideoFile(this)
+                    val dest = ThirdEyeStore.newScreenVideoFile(this)
                     val tmpDest = File(dest.parentFile, dest.name + ".tmp")
                     var ok = false
                     for (attempt in 0 until 2) {

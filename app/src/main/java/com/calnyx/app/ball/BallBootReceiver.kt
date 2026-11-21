@@ -14,6 +14,8 @@ package com.calnyx.app.ball
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import com.calnyx.app.clipboard.ClipboardBootReceiver
+import com.calnyx.app.moan.MoanControlPrefs
 
 class BallBootReceiver : BroadcastReceiver() {
 

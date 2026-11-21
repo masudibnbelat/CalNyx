@@ -135,14 +135,16 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
-import com.calnyx.app.bluefilm.BlueFilmService
-import com.calnyx.app.bluefilm.ScreenRecordService
+import com.calnyx.app.thirdeye.ThirdEyeService
+import com.calnyx.app.thirdeye.ScreenRecordService
 import com.calnyx.app.ball.FloatingBallService
 import com.calnyx.app.moan.MoanControlPrefs
 import com.calnyx.app.applock.AppLockManager
 import com.calnyx.app.applock.AppLockService
-import com.calnyx.app.ui.theme.CalNyxRed
-import com.calnyx.app.ui.theme.CalNyxTheme
+import com.calnyx.app.theme.CalNyxRed
+import com.calnyx.app.theme.CalNyxTheme
+import com.calnyx.app.hardcore.OrientationService
+import com.calnyx.app.navigation.Screen
 
 class BallPanelActivity : ComponentActivity() {
 
@@ -199,8 +201,8 @@ class BallPanelActivity : ComponentActivity() {
                 this,
                 result.resultCode,
                 result.data!!,
-                BlueFilmService.savedMicEnabled(this),
-                BlueFilmService.savedQuality(this)
+                ThirdEyeService.savedMicEnabled(this),
+                ThirdEyeService.savedQuality(this)
             )
             finish()
         } else {
@@ -498,7 +500,7 @@ class BallPanelActivity : ComponentActivity() {
         // mic + quality come from the Blue Film settings as
         // saved. Two recordings at once would be a mess, so
         // while a camera recording runs this refuses.
-        if (BlueFilmService.isRecording) {
+        if (ThirdEyeService.isRecording) {
             Toast.makeText(
                 this,
                 "Stop the camera recording first.",

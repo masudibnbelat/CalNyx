@@ -57,6 +57,8 @@ import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowInsetsControllerCompat
 import com.calnyx.app.R
 import com.calnyx.app.network.WhatsAppHelper
+import com.calnyx.app.hardcore.HardcoreScreen
+import com.calnyx.app.moan.MoanScreen
 
 private fun tryStart(context: Context, intent: Intent): Boolean {
     return try {

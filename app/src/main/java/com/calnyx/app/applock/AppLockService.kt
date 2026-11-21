@@ -384,6 +384,10 @@ import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
+import com.calnyx.app.ball.BallPanelActivity
+import com.calnyx.app.clipboard.ClipboardCaptureActivity
+import com.calnyx.app.calculator.NormalCalculatorScreen
+import com.calnyx.app.navigation.Screen
 
 class AppLockService : AccessibilityService() {
 

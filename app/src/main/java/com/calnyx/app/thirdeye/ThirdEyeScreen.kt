@@ -4,7 +4,7 @@
 // (2) MICROPHONE BUTTON: a Microphone On/Off toggle in Settings,
 // next to Camera and Quality - the video records with sound
 // only when the toggle is ON and the permission is granted
-// (BlueFilmService.savedMicEnabled). (3) OPTIMIZATION: folder
+// (ThirdEyeService.savedMicEnabled). (3) OPTIMIZATION: folder
 // covers + video counts are computed once in refreshAll() and
 // kept in remembered state - the folders grid used to call
 // listVideosInFolder() + folderCount() (disk I/O) for every
@@ -32,15 +32,15 @@
 // (windowW / windowH / minDim). Only 1.dp hairline borders and
 // .sp as the conversion of a % value remain fixed. Swipe
 // threshold is 6.7% of minDim. No logic / colour / text change.
-// SPY + PLAIN VERSION (2026-11-06) - REPLACE BlueFilmScreen.kt.
-//  1. PLAIN: no encryption any more (see BlueFilmStore).
+// SPY + PLAIN VERSION (2026-11-06) - REPLACE ThirdEyeScreen.kt.
+//  1. PLAIN: no encryption any more (see ThirdEyeStore).
 //     Play / thumbnails / Download use the stored .mp4
 //     directly. "Damaged" now means the file itself is
 //     unreadable, not a decrypt failure.
 //  2. RENAMED: the page is now "Spy" (drawer + title).
 //  3. DRAWER SWIPE: leftward drag anywhere opens the drawer.
-// FILE: app/src/main/java/com/calnyx/app/ui/screens/BlueFilmScreen.kt
-// FOLDERS VERSION - replace your old BlueFilmScreen.kt with this file.
+// FILE: app/src/main/java/com/calnyx/app/ui/screens/ThirdEyeScreen.kt
+// FOLDERS VERSION - replace your old ThirdEyeScreen.kt with this file.
 // Based on V8.2. Only change: folder Rename + folder Delete.
 // Long-press a folder card -> small options card (Rename / Delete).
 // Single tap still opens the folder. Video long-press (Move),
@@ -137,7 +137,7 @@
 //     Every Text has an explicit color, every Icon an
 //     explicit tint, screenW = maxWidth and
 //     screenH = maxHeight captured once.
-package com.calnyx.app.bluefilm
+package com.calnyx.app.thirdeye
 
 import android.Manifest
 import android.app.Activity
@@ -216,9 +216,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
-import com.calnyx.app.bluefilm.BlueFilmService
-import com.calnyx.app.bluefilm.BlueFilmStore
-import com.calnyx.app.ui.theme.CalNyxRed
+import com.calnyx.app.thirdeye.ThirdEyeService
+import com.calnyx.app.thirdeye.ThirdEyeStore
+import com.calnyx.app.theme.CalNyxRed
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -229,7 +229,7 @@ import kotlinx.coroutines.withContext
 // foundation API - opt in so the build does not fail on it.
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun BlueFilmScreen(
+fun ThirdEyeScreen(
     darkTheme: Boolean,
     onOpenDrawer: () -> Unit = {}
 ) {
@@ -267,26 +267,26 @@ fun BlueFilmScreen(
         }
     }
 
-    var isRecording by remember { mutableStateOf(BlueFilmService.isRecording) }
-    var isStarting by remember { mutableStateOf(BlueFilmService.isStarting) }
+    var isRecording by remember { mutableStateOf(ThirdEyeService.isRecording) }
+    var isStarting by remember { mutableStateOf(ThirdEyeService.isStarting) }
     var elapsedSec by remember { mutableStateOf(0L) }
     var note by remember { mutableStateOf<String?>(null) }
     var deleteFile by remember { mutableStateOf<File?>(null) }
-    var facing by remember { mutableStateOf(BlueFilmService.savedFacing(context)) }
-    var quality by remember { mutableStateOf(BlueFilmService.savedQuality(context)) }
+    var facing by remember { mutableStateOf(ThirdEyeService.savedFacing(context)) }
+    var quality by remember { mutableStateOf(ThirdEyeService.savedQuality(context)) }
     // MIC BUTTON (2026-11-20): the user's choice, saved in
     // SharedPreferences. The video records with sound only
     // when this is ON and the permission is granted.
-    var micOn by remember { mutableStateOf(BlueFilmService.savedMicEnabled(context)) }
+    var micOn by remember { mutableStateOf(ThirdEyeService.savedMicEnabled(context)) }
     var showSettings by remember { mutableStateOf(false) }
-    var folders by remember { mutableStateOf(BlueFilmStore.listFolders(context)) }
+    var folders by remember { mutableStateOf(ThirdEyeStore.listFolders(context)) }
     // OPTIMIZATION (2026-11-20): folder covers + video counts,
     // computed once here (first composition) and kept fresh by
     // refreshAll(). The folders grid reads these instead of
     // calling listVideosInFolder() + folderCount() (disk I/O)
     // for every folder on every recomposition.
-    var folderCovers by remember { mutableStateOf<Map<String, File?>>(folders.associateWith { BlueFilmStore.listVideosInFolder(context, it).firstOrNull() }) }
-    var folderCounts by remember { mutableStateOf<Map<String, Int>>(folders.associateWith { BlueFilmStore.folderCount(context, it) }) }
+    var folderCovers by remember { mutableStateOf<Map<String, File?>>(folders.associateWith { ThirdEyeStore.listVideosInFolder(context, it).firstOrNull() }) }
+    var folderCounts by remember { mutableStateOf<Map<String, Int>>(folders.associateWith { ThirdEyeStore.folderCount(context, it) }) }
     var currentFolder by remember { mutableStateOf<String?>(null) }
     var videos by remember { mutableStateOf<List<File>>(emptyList()) }
     var newFolderName by remember { mutableStateOf("") }
@@ -307,16 +307,16 @@ fun BlueFilmScreen(
     var damagedNames by remember { mutableStateOf<Set<String>>(emptySet()) }
 
     fun refreshAll() {
-        folders = BlueFilmStore.listFolders(context)
+        folders = ThirdEyeStore.listFolders(context)
         videos = if (currentFolder != null) {
-            BlueFilmStore.listVideosInFolder(context, currentFolder!!)
+            ThirdEyeStore.listVideosInFolder(context, currentFolder!!)
         } else {
             emptyList()
         }
         // Keep the remembered folder covers + counts in step -
         // see the OPTIMIZATION note at the state declarations.
-        folderCovers = folders.associateWith { BlueFilmStore.listVideosInFolder(context, it).firstOrNull() }
-        folderCounts = folders.associateWith { BlueFilmStore.folderCount(context, it) }
+        folderCovers = folders.associateWith { ThirdEyeStore.listVideosInFolder(context, it).firstOrNull() }
+        folderCounts = folders.associateWith { ThirdEyeStore.folderCount(context, it) }
     }
 
     fun openFolder(folder: String) {
@@ -327,7 +327,7 @@ fun BlueFilmScreen(
         folderOptions = null
         folderToRename = null
         folderToDelete = null
-        videos = BlueFilmStore.listVideosInFolder(context, folder)
+        videos = ThirdEyeStore.listVideosInFolder(context, folder)
     }
 
     // MIC: Camera + Microphone are asked together, so a Blue Film video
@@ -340,7 +340,7 @@ fun BlueFilmScreen(
         val cameraOk = result[Manifest.permission.CAMERA] == true
         val micOk = result[Manifest.permission.RECORD_AUDIO] == true
         if (cameraOk) {
-            BlueFilmService.start(context, facing)
+            ThirdEyeService.start(context, facing)
             note = if (micOk) {
                 null
             } else {
@@ -358,7 +358,7 @@ fun BlueFilmScreen(
         val micOk = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
             PackageManager.PERMISSION_GRANTED
         if (cameraOk) {
-            BlueFilmService.start(context, facing)
+            ThirdEyeService.start(context, facing)
             note = if (micOk) {
                 null
             } else {
@@ -382,7 +382,7 @@ fun BlueFilmScreen(
     // must never silently do nothing.
     fun playFile(file: File) {
         scope.launch(Dispatchers.IO) {
-            val err = BlueFilmStore.playVideoError(context, file)
+            val err = ThirdEyeStore.playVideoError(context, file)
             withContext(Dispatchers.Main) {
                 val message = when (err) {
                     null -> null
@@ -402,7 +402,7 @@ fun BlueFilmScreen(
     fun downloadFile(file: File) {
         note = "Downloading..."
         scope.launch(Dispatchers.IO) {
-            val ok = BlueFilmStore.exportToGallery(context, file)
+            val ok = ThirdEyeStore.exportToGallery(context, file)
             withContext(Dispatchers.Main) {
                 note = if (ok) "Downloaded to Movies / CalNyx." else "Download failed."
             }
@@ -412,12 +412,12 @@ fun BlueFilmScreen(
     LaunchedEffect(Unit) {
         var wasRecording = false
         while (true) {
-            val rec = BlueFilmService.isRecording
-            val starting = BlueFilmService.isStarting
+            val rec = ThirdEyeService.isRecording
+            val starting = ThirdEyeService.isStarting
             if (rec != isRecording) isRecording = rec
             if (starting != isStarting) isStarting = starting
             if (rec) {
-                elapsedSec = (System.currentTimeMillis() - BlueFilmService.startedAtMillis) / 1000
+                elapsedSec = (System.currentTimeMillis() - ThirdEyeService.startedAtMillis) / 1000
             } else if (wasRecording) {
                 elapsedSec = 0L
                 refreshAll()
@@ -438,21 +438,21 @@ fun BlueFilmScreen(
             val targets = if (currentFolder != null) {
                 videos
             } else {
-                folders.mapNotNull { BlueFilmStore.listVideosInFolder(context, it).firstOrNull() }
+                folders.mapNotNull { ThirdEyeStore.listVideosInFolder(context, it).firstOrNull() }
             }
             for (file in targets) {
-                val name = BlueFilmStore.displayName(file)
+                val name = ThirdEyeStore.displayName(file)
                 if (thumbBitmaps.containsKey(name) || damagedNames.contains(name)) continue
                 // If the file itself is missing / empty the
                 // video is damaged and can never play - mark
                 // it on the card instead of letting the user
                 // tap it and get nothing.
-                val tmp = BlueFilmStore.prepareTemp(context, file)
+                val tmp = ThirdEyeStore.prepareTemp(context, file)
                 if (tmp == null) {
                     withContext(Dispatchers.Main) { damagedNames = damagedNames + name }
                     continue
                 }
-                val thumb = BlueFilmStore.prepareThumbnail(context, file)
+                val thumb = ThirdEyeStore.prepareThumbnail(context, file)
                 if (thumb != null) {
                     val bmp = BitmapFactory.decodeFile(thumb.absolutePath)?.asImageBitmap()
                     if (bmp != null) {
@@ -580,7 +580,7 @@ fun BlueFilmScreen(
                                 .border(1.dp, cardBorder, RoundedCornerShape(cornerBtn))
                                 .clickable(enabled = !isRecording && !isStarting) {
                                     facing = CameraCharacteristics.LENS_FACING_BACK
-                                    BlueFilmService.saveFacing(context, facing)
+                                    ThirdEyeService.saveFacing(context, facing)
                                 }
                                 .padding(vertical = padY),
                             contentAlignment = Alignment.Center
@@ -596,7 +596,7 @@ fun BlueFilmScreen(
                                 .border(1.dp, cardBorder, RoundedCornerShape(cornerBtn))
                                 .clickable(enabled = !isRecording && !isStarting) {
                                     facing = CameraCharacteristics.LENS_FACING_FRONT
-                                    BlueFilmService.saveFacing(context, facing)
+                                    ThirdEyeService.saveFacing(context, facing)
                                 }
                                 .padding(vertical = padY),
                             contentAlignment = Alignment.Center
@@ -614,7 +614,7 @@ fun BlueFilmScreen(
                                 .border(1.dp, cardBorder, RoundedCornerShape(cornerBtn))
                                 .clickable(enabled = !isRecording && !isStarting) {
                                     quality = 720
-                                    BlueFilmService.saveQuality(context, 720)
+                                    ThirdEyeService.saveQuality(context, 720)
                                 }
                                 .padding(vertical = padY),
                             contentAlignment = Alignment.Center
@@ -630,7 +630,7 @@ fun BlueFilmScreen(
                                 .border(1.dp, cardBorder, RoundedCornerShape(cornerBtn))
                                 .clickable(enabled = !isRecording && !isStarting) {
                                     quality = 1080
-                                    BlueFilmService.saveQuality(context, 1080)
+                                    ThirdEyeService.saveQuality(context, 1080)
                                 }
                                 .padding(vertical = padY),
                             contentAlignment = Alignment.Center
@@ -653,7 +653,7 @@ fun BlueFilmScreen(
                                 .border(1.dp, cardBorder, RoundedCornerShape(cornerBtn))
                                 .clickable(enabled = !isRecording && !isStarting) {
                                     micOn = true
-                                    BlueFilmService.saveMicEnabled(context, true)
+                                    ThirdEyeService.saveMicEnabled(context, true)
                                 }
                                 .padding(vertical = padY),
                             contentAlignment = Alignment.Center
@@ -669,7 +669,7 @@ fun BlueFilmScreen(
                                 .border(1.dp, cardBorder, RoundedCornerShape(cornerBtn))
                                 .clickable(enabled = !isRecording && !isStarting) {
                                     micOn = false
-                                    BlueFilmService.saveMicEnabled(context, false)
+                                    ThirdEyeService.saveMicEnabled(context, false)
                                 }
                                 .padding(vertical = padY),
                             contentAlignment = Alignment.Center
@@ -725,7 +725,7 @@ fun BlueFilmScreen(
                         .clip(RoundedCornerShape(cornerBtn))
                         .background(buttonBg)
                         .clickable(enabled = !isStarting) {
-                            if (isRecording) BlueFilmService.stop(context) else startRecording()
+                            if (isRecording) ThirdEyeService.stop(context) else startRecording()
                         }
                         .padding(vertical = padY * 1.2f),
                     contentAlignment = Alignment.Center
@@ -787,11 +787,11 @@ fun BlueFilmScreen(
                                 .background(buttonBg)
                                 .clickable {
                                     scope.launch(Dispatchers.IO) {
-                                        val renamed = BlueFilmStore.renameVideo(context, renameFile!!, renameText)
+                                        val renamed = ThirdEyeStore.renameVideo(context, renameFile!!, renameText)
                                         withContext(Dispatchers.Main) {
                                             if (renamed != null) {
-                                                thumbBitmaps.remove(BlueFilmStore.displayName(renameFile!!))
-                                                damagedNames = damagedNames - BlueFilmStore.displayName(renameFile!!)
+                                                thumbBitmaps.remove(ThirdEyeStore.displayName(renameFile!!))
+                                                damagedNames = damagedNames - ThirdEyeStore.displayName(renameFile!!)
                                                 renameFile = null
                                                 renameText = ""
                                                 refreshAll()
@@ -835,7 +835,7 @@ fun BlueFilmScreen(
                 ) {
                     Text("Move to folder", fontWeight = FontWeight.Bold, fontSize = fCard, color = primary)
                     Text(
-                        BlueFilmStore.displayName(moveFile!!),
+                        ThirdEyeStore.displayName(moveFile!!),
                         fontSize = fSmall, color = secondary,
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
                     folders.filter { it != currentFolder }.forEach { target ->
@@ -845,7 +845,7 @@ fun BlueFilmScreen(
                                 .background(buttonBg)
                                 .clickable {
                                     scope.launch(Dispatchers.IO) {
-                                        val ok = BlueFilmStore.moveVideo(context, moveFile!!, target)
+                                        val ok = ThirdEyeStore.moveVideo(context, moveFile!!, target)
                                         withContext(Dispatchers.Main) {
                                             moveFile = null
                                             refreshAll()
@@ -880,7 +880,7 @@ fun BlueFilmScreen(
             // or deleted) - a note says so instead.
             if (folderOptions != null) {
                 val folder = folderOptions!!
-                val isDefault = folder == BlueFilmStore.DEFAULT_FOLDER
+                val isDefault = folder == ThirdEyeStore.DEFAULT_FOLDER
                 Column(
                     modifier = Modifier.fillMaxWidth()
                         .clip(RoundedCornerShape(cornerCard))
@@ -972,7 +972,7 @@ fun BlueFilmScreen(
                                 .clickable {
                                     val oldName = folderToRename!!
                                     scope.launch(Dispatchers.IO) {
-                                        val ok = BlueFilmStore.renameFolder(context, oldName, renameFolderText)
+                                        val ok = ThirdEyeStore.renameFolder(context, oldName, renameFolderText)
                                         withContext(Dispatchers.Main) {
                                             if (ok) {
                                                 if (currentFolder == oldName) currentFolder = null
@@ -1064,7 +1064,7 @@ fun BlueFilmScreen(
                             modifier = Modifier.clip(RoundedCornerShape(cornerBtn))
                                 .background(buttonBg)
                                 .clickable {
-                                    if (BlueFilmStore.createFolder(context, newFolderName)) {
+                                    if (ThirdEyeStore.createFolder(context, newFolderName)) {
                                         newFolderName = ""
                                         showCreate = false
                                         refreshAll()
@@ -1090,7 +1090,7 @@ fun BlueFilmScreen(
                     ) {
                         rowFolders.forEach { folder ->
                             val first = folderCovers[folder]
-                            val cover = first?.let { thumbBitmaps[BlueFilmStore.displayName(it)] }
+                            val cover = first?.let { thumbBitmaps[ThirdEyeStore.displayName(it)] }
                             Column(
                                 modifier = Modifier.weight(1f)
                                     .clip(RoundedCornerShape(cornerCard))
@@ -1190,7 +1190,7 @@ fun BlueFilmScreen(
                         horizontalArrangement = Arrangement.spacedBy(screenW * 0.02f)
                     ) {
                         rowVideos.forEach { file ->
-                            val name = BlueFilmStore.displayName(file)
+                            val name = ThirdEyeStore.displayName(file)
                             Column(
                                 modifier = Modifier.weight(1f)
                                     .clip(RoundedCornerShape(cornerCard))
@@ -1238,14 +1238,14 @@ fun BlueFilmScreen(
                                         overflow = TextOverflow.Ellipsis
                                     )
                                     Text(
-                                        BlueFilmStore.displayDate(file),
+                                        ThirdEyeStore.displayDate(file),
                                         fontSize = fMeta,
                                         color = secondary,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
                                     Text(
-                                        BlueFilmStore.sizeText(file),
+                                        ThirdEyeStore.sizeText(file),
                                         fontSize = fMeta,
                                         color = secondary,
                                         maxLines = 1,
@@ -1320,7 +1320,7 @@ fun BlueFilmScreen(
                 },
                 text = {
                     Text(
-                        BlueFilmStore.displayName(deleteFile!!) + " will be deleted.",
+                        ThirdEyeStore.displayName(deleteFile!!) + " will be deleted.",
                         fontSize = fBody,
                         color = secondary
                     )
@@ -1328,8 +1328,8 @@ fun BlueFilmScreen(
                 confirmButton = {
                     TextButton(onClick = {
                         val file = deleteFile!!
-                        val name = BlueFilmStore.displayName(file)
-                        if (BlueFilmStore.deleteVideo(context, file)) {
+                        val name = ThirdEyeStore.displayName(file)
+                        if (ThirdEyeStore.deleteVideo(context, file)) {
                             thumbBitmaps.remove(name)
                             damagedNames = damagedNames - name
                             note = "Deleted."
@@ -1357,7 +1357,7 @@ fun BlueFilmScreen(
         // but the text states how many videos go with the folder.
         if (folderToDelete != null) {
             val folder = folderToDelete!!
-            val count = BlueFilmStore.folderCount(context, folder)
+            val count = ThirdEyeStore.folderCount(context, folder)
             AlertDialog(
                 onDismissRequest = { folderToDelete = null },
                 title = {
@@ -1378,7 +1378,7 @@ fun BlueFilmScreen(
                 },
                 confirmButton = {
                     TextButton(onClick = {
-                        if (BlueFilmStore.deleteFolder(context, folder)) {
+                        if (ThirdEyeStore.deleteFolder(context, folder)) {
                             if (currentFolder == folder) currentFolder = null
                             note = "Folder deleted."
                             refreshAll()

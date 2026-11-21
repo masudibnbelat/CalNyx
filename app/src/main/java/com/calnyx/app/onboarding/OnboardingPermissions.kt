@@ -67,6 +67,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.core.content.ContextCompat
 import com.calnyx.app.applock.AppLockManager
 import com.calnyx.app.applock.LockedAppNotificationService
+import com.calnyx.app.navigation.Screen
 
 enum class PermissionKind {
     RUNTIME,

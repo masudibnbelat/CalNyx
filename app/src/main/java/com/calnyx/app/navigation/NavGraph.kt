@@ -79,7 +79,7 @@
 //     names and behaviour unchanged): Hardcore -> Hardware,
 //     Moan -> Sound, Blue Film -> Spy.
 //  2. DRAWER SWIPE: HardcoreScreen / MoanScreen /
-//     BlueFilmScreen now get onOpenDrawer, so a leftward
+//     ThirdEyeScreen now get onOpenDrawer, so a leftward
 //     swipe anywhere on Hardware, Sound or Spy opens the
 //     drawer (universal drawer rule).
 //  3. ABOUT / UPDATE (swapped 2026-11-07): the header
@@ -291,14 +291,14 @@ import com.calnyx.app.applock.AppLockManager
 import com.calnyx.app.blackhole.BlackHolePickerGuard
 import com.calnyx.app.ball.FloatingBallService
 import com.calnyx.app.moan.MoanControlPrefs
-import com.calnyx.app.data.NavStateDatabase
-import com.calnyx.app.data.NavStateEntity
-import com.calnyx.app.bluefilm.BlueFilmScreen
+import com.calnyx.app.navigation.NavStateDatabase
+import com.calnyx.app.navigation.NavStateEntity
+import com.calnyx.app.thirdeye.ThirdEyeScreen
 import com.calnyx.app.applock.AppLockScreen
 import com.calnyx.app.hardcore.HardcoreScreen
 import com.calnyx.app.moan.MoanScreen
 import com.calnyx.app.network.NetworkScreen
-import com.calnyx.app.ui.theme.CalNyxRed
+import com.calnyx.app.theme.CalNyxRed
 import com.calnyx.app.calculator.CalTapeCalculatorScreen
 import com.calnyx.app.clipboard.ClipboardScreen
 import com.calnyx.app.calculator.ConverterCalculatorScreen
@@ -313,6 +313,7 @@ import com.calnyx.app.update.AppUpdateManager
 import com.calnyx.app.update.UpdateDialog
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import com.calnyx.app.applock.AppLockService
 
 sealed class Screen(
         val route: String,
@@ -358,7 +359,7 @@ sealed class Screen(
                     "WhatsApp chat & network switcher",
                     Icons.Default.SignalCellularAlt
             )
-    object BlueFilm :
+    object ThirdEye :
             Screen("blue_film", "Third Eye", "Secret camera recorder", Icons.Default.Visibility)
     object Clipboard :
             Screen(
@@ -399,7 +400,7 @@ val menuScreens =
                 Screen.Moan,
                 Screen.Network,
                 Screen.Clipboard,
-                Screen.BlueFilm,
+                Screen.ThirdEye,
         )
 
 // The old MODERN palette (NavOffWhite / NavOffBlack / NavCardWhite /
@@ -870,7 +871,7 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
             navStateDao.save(NavStateEntity(route = route))
         } else if (route in persistRoutes) {
             // Converter / Number System / ICT / Hardcore / Moan /
-            // BlueFilm / Clipboard: remember Normal instead, so
+            // ThirdEye / Clipboard: remember Normal instead, so
             // reopen lands on the Normal calculator, not on the tool.
             navStateDao.save(NavStateEntity(route = Screen.Normal.route))
         }
@@ -1021,8 +1022,8 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
                 composable(Screen.Network.route) {
                     NetworkScreen(darkTheme = darkTheme, onOpenDrawer = { drawerOpen = true })
                 }
-                composable(Screen.BlueFilm.route) {
-                    BlueFilmScreen(darkTheme = darkTheme, onOpenDrawer = { drawerOpen = true })
+                composable(Screen.ThirdEye.route) {
+                    ThirdEyeScreen(darkTheme = darkTheme, onOpenDrawer = { drawerOpen = true })
                 }
                 composable(Screen.Clipboard.route) {
                     ClipboardScreen(
