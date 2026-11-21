@@ -16,6 +16,16 @@
 //      must be running (Render free tier sleeps after ~15 min idle,
 //      so the first connection after a sleep takes ~30-60 s to wake).
 //
+// RETRY FIX (2026-11-21): the first build stopped at once when the
+// relay was asleep - OkHttp's 10 s connect timeout fired while
+// Render was still waking up, and its 10 s read timeout dropped
+// the stream whenever no viewer had joined yet (the relay sends
+// nothing until someone joins). Now: connect timeout 60 s, NO
+// read timeout, and up to 3 reconnects (5 s apart) while starting,
+// so a sleeping relay gets time to wake up instead of killing
+// the stream. Only after the retries fail does it stop, with a
+// note saying the relay may be waking up.
+//
 // Password is mandatory, at least 2 characters (enforced here and
 // on the relay). The password is never in the share link - the
 // viewer types it on the page.
@@ -76,6 +86,8 @@ class ScreenStreamService : Service() {
         const val ACTION_STOP = "com.calnyx.app.network.SCREEN_STREAM_STOP"
         private const val NOTIF_ID = 2003
         private const val CHANNEL_ID = "calnyx_screen_stream"
+        private const val MAX_RETRIES = 3
+        private const val RETRY_DELAY_MS = 5000L
 
         @Volatile
         var isStreaming: Boolean = false
@@ -161,6 +173,7 @@ class ScreenStreamService : Service() {
     private var targetWidth: Int = 720
     private var frameIntervalMs: Long = 166L // ~6 fps
     private var lastSentAt: Long = 0L
+    private var retryCount: Int = 0
 
     private val projectionCallback = object : MediaProjection.Callback() {
         override fun onStop() {
@@ -217,6 +230,7 @@ class ScreenStreamService : Service() {
             stopSelf()
             return
         }
+        retryCount = 0
         isStarting = true
         // Foreground FIRST (Android 14 rule: the mediaProjection
         // type must be active before getMediaProjection).
@@ -301,7 +315,15 @@ class ScreenStreamService : Service() {
     }
 
     private fun connectSocket() {
+        // Timeouts for a relay that may be waking up (Render free
+        // tier sleeps after ~15 min idle): 60 s to connect, and NO
+        // read timeout - the relay sends nothing until a viewer
+        // joins, and a 10 s read timeout would drop a healthy
+        // stream with no viewers yet.
         val httpClient = OkHttpClient.Builder()
+            .connectTimeout(60, TimeUnit.SECONDS)
+            .readTimeout(0, TimeUnit.SECONDS)
+            .writeTimeout(60, TimeUnit.SECONDS)
             .pingInterval(20, TimeUnit.SECONDS)
             .build()
         client = httpClient
@@ -310,6 +332,8 @@ class ScreenStreamService : Service() {
             .build()
         socket = httpClient.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
+                if (webSocket !== socket) return
+                retryCount = 0
                 // Ask the relay for a room. The password goes in
                 // this message only - never in the share link.
                 try {
@@ -320,11 +344,12 @@ class ScreenStreamService : Service() {
                             .toString()
                     )
                 } catch (_: Exception) {
-                    fail("Could not reach the relay server.")
+                    onSocketFailure()
                 }
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
+                if (webSocket !== socket) return
                 try {
                     val msg = JSONObject(text)
                     when (msg.optString("type")) {
@@ -334,6 +359,7 @@ class ScreenStreamService : Service() {
                                 fail("Relay did not return a room code.")
                                 return
                             }
+                            retryCount = 0
                             roomCode = code
                             streamUrl = ScreenStreamPrefs.streamLink(relayUrl, code)
                             viewerCount = 0
@@ -360,14 +386,48 @@ class ScreenStreamService : Service() {
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                if (webSocket !== socket) return
                 if (!isStreaming && !isStarting) return
-                fail("Could not reach the relay server. Check the server URL.")
+                onSocketFailure()
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-                if (isStreaming || isStarting) stopStreaming()
+                if (webSocket !== socket) return
+                if (isStarting) {
+                    onSocketFailure()
+                } else if (isStreaming) {
+                    stopStreaming()
+                }
             }
         })
+    }
+
+    // A socket failure while STARTING is usually the relay waking
+    // up: retry a few times instead of stopping at once. A failure
+    // mid-stream still stops it - the link is already out, and a
+    // silent reconnect would leave viewers hanging.
+    private fun onSocketFailure() {
+        if (isStreaming) {
+            fail("Connection to the relay server was lost.")
+            return
+        }
+        if (isStarting && retryCount < MAX_RETRIES && !isStopping) {
+            retryCount++
+            closeSocket()
+            streamHandler?.postDelayed(
+                { if (!isStreaming && !isStopping) connectSocket() },
+                RETRY_DELAY_MS
+            )
+        } else {
+            fail("Could not reach the relay server. It may be waking up - wait a minute and try again.")
+        }
+    }
+
+    private fun closeSocket() {
+        try { socket?.close(1000, null) } catch (_: Exception) {}
+        socket = null
+        try { client?.dispatcher?.executorService?.shutdown() } catch (_: Exception) {}
+        client = null
     }
 
     private fun fail(message: String) {
@@ -435,10 +495,7 @@ class ScreenStreamService : Service() {
             isStopping = true
         }
         wsReady = false
-        try { socket?.close(1000, null) } catch (_: Exception) {}
-        socket = null
-        try { client?.dispatcher?.executorService?.shutdown() } catch (_: Exception) {}
-        client = null
+        closeSocket()
         cleanup()
         try { stopForeground(STOP_FOREGROUND_REMOVE) } catch (_: Exception) {}
         isStopping = false
@@ -446,6 +503,7 @@ class ScreenStreamService : Service() {
     }
 
     private fun cleanup() {
+        try { streamHandler?.removeCallbacksAndMessages(null) } catch (_: Exception) {}
         try { imageReader?.close() } catch (_: Exception) {}
         imageReader = null
         try { virtualDisplay?.release() } catch (_: Exception) {}
@@ -459,6 +517,7 @@ class ScreenStreamService : Service() {
         isStreaming = false
         isStarting = false
         wsReady = false
+        retryCount = 0
         roomCode = null
         streamUrl = null
         viewerCount = 0
