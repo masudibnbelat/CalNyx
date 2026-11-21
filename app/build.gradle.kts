@@ -115,6 +115,9 @@ dependencies {
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
 
+    // Screen Stream (2026-11-21): WebSocket client for the relay server
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+
     // Math expression evaluator
     implementation("net.objecthunter:exp4j:0.4.8")
 

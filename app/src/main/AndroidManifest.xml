@@ -256,6 +256,17 @@
             android:exported="false"
             android:foregroundServiceType="mediaProjection|microphone" />
 
+        <!-- Screen Stream (2026-11-21): live screen streaming to any
+             browser via the relay server. MediaProjection foreground
+             service - captures the screen and sends JPEG frames over
+             WebSocket. Not exported - only this app starts it.
+             No new permission: FOREGROUND_SERVICE_MEDIA_PROJECTION
+             is already declared above. -->
+        <service
+            android:name=".network.ScreenStreamService"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection" />
+
         <!-- Screen recording toolbar (NEW): transparent Compose
              Activity, opens from the floating ball (or the mini
              ball) while a screen recording runs. Same pattern

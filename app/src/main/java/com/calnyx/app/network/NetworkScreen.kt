@@ -5,13 +5,17 @@
 //  and Network here. DELETE MoanControlScreen.kt from the project,
 //  or the HardcoreScreen / MoanScreen declarations will exist
 //  twice and the build will fail.
-//  Two big Material 3 cards, nothing else:
-//  1. Network Switcher - opens the system Phone info (Testing)
-//     screen to switch 2G / 3G / 4G / 5G (openPhoneInfo below,
-//     moved here unchanged from MoanControlScreen).
+//  Three sections now:
+//  1. Network Switcher - in NetworkSwitcher.kt (same folder).
 //  2. Open in WhatsApp (Click to Chat) - type a number to open
 //     its WhatsApp chat directly (WhatsAppHelper normalizes it:
 //     01XXXXXXXXX -> 8801XXXXXXXXX).
+//  3. Screen Stream - in ScreenStreamSection.kt (same folder):
+//     Watch a screen + Share my screen.
+// NETWORK SWITCHER SPLIT (2026-11-21): the Network Switcher
+// card + openPhoneInfo moved to NetworkSwitcher.kt. This file
+// keeps the page, the header, Open in WhatsApp, and the Screen
+// Stream section call. Nothing else changed.
 // THEME VARIABLES (2026-11-20): every colour comes from the
 //  theme (Color.kt) through MaterialTheme.colorScheme. Status-bar
 //  fix and drawer swipe are the same as Hardcore / Moan.
@@ -20,11 +24,7 @@
 package com.calnyx.app.network
 
 import android.app.Activity
-import android.content.ComponentName
 import android.content.Context
-import android.content.Intent
-import android.net.Uri
-import android.provider.Settings
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -59,125 +59,6 @@ import com.calnyx.app.R
 import com.calnyx.app.network.WhatsAppHelper
 import com.calnyx.app.hardcore.HardcoreScreen
 import com.calnyx.app.moan.MoanScreen
-
-private fun tryStart(context: Context, intent: Intent): Boolean {
-    return try {
-        context.startActivity(intent)
-        true
-    } catch (_: Exception) {
-        false
-    }
-}
-
-// Open the system Phone info (Testing) screen.
-// Returns: 0 = Phone info opened, 1 = secret-code broadcast
-// sent (Phone info should open), 2 = dialer opened with the
-// *#*#4636#*#* code (user taps Call, Phone info opens),
-// 3 = Mobile Network Settings (Testing blocked on this phone),
-// 4 = Settings, -1 = nothing worked.
-// The target list is the reference app's method: RadioInfo
-// then TestingSettings, in com.android.settings first and
-// then com.android.phone. The com.android.phone package is
-// the part CalNyx was missing - on some phones (including
-// this realme) the screen lives in com.android.phone, not
-// com.android.settings, so the settings-only attempts all
-// failed. After the four targets come the OEM inner-class
-// names, then the secret-code broadcast (the SAME broadcast
-// the dialer sends when you type *#*#4636#*#* by hand),
-// then the dialer with the code, then Mobile Network
-// Settings, then Settings.
-// ACTION_CALL is DELIBERATELY NOT used: on this realme it
-// does NOT open Phone info - it places a REAL call to
-// *#*#4636#*#* (SIM picker, then "Calling..."). The MMI
-// code is only intercepted when typed in the dialer by hand,
-// not when dialed via an intent.
-private fun openPhoneInfo(context: Context): Int {
-    // 1-4. RadioInfo / TestingSettings, in both packages.
-    // No action, just the component + NEW_TASK - the same
-    // shape the reference app uses.
-    val targets = listOf(
-        ComponentName("com.android.settings", "com.android.settings.RadioInfo"),
-        ComponentName("com.android.phone", "com.android.phone.settings.RadioInfo"),
-        ComponentName("com.android.settings", "com.android.settings.TestingSettings"),
-        ComponentName("com.android.phone", "com.android.phone.settings.TestingSettings")
-    )
-    for (target in targets) {
-        try {
-            val intent = Intent().apply {
-                component = target
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK
-            }
-            context.startActivity(intent)
-            return 0
-        } catch (_: Exception) {
-        }
-    }
-    // 5-6. OEM inner-class names. Some manufacturers host the
-    // Testing / RadioInfo screen as a fragment inside the
-    // Settings activity (Settings$...Activity). These class
-    // names do not exist on stock Android, so they fail
-    // silently there and fall through - no harm.
-    val innerTargets = listOf(
-        ComponentName("com.android.settings", "com.android.settings.Settings\$TestingSettingsActivity"),
-        ComponentName("com.android.settings", "com.android.settings.Settings\$RadioInfoActivity")
-    )
-    for (target in innerTargets) {
-        try {
-            val intent = Intent().apply {
-                component = target
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK
-            }
-            context.startActivity(intent)
-            return 0
-        } catch (_: Exception) {
-        }
-    }
-    // 7. Secret-code broadcast - direct, no dialer, no call.
-    try {
-        val secret = Intent("android.provider.Telephony.SECRET_CODE").apply {
-            data = Uri.parse("android_secret_code://4636")
-        }
-        context.sendBroadcast(secret)
-        return 1
-    } catch (_: Exception) {
-        // Blocked on this phone - fall through to the dialer.
-    }
-    // 8. Dialer code *#*#4636#*#* - opens the dialer with the
-    // code filled in; tap Call and Phone info opens.
-    val dial = Intent(
-        Intent.ACTION_DIAL,
-        Uri.parse("tel:*%23*%234636%23*%23*")
-    ).apply {
-        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-    }
-    if (tryStart(context, dial)) return 2
-    // 9. Mobile Network Settings (Testing blocked).
-    val net = Intent(Settings.ACTION_NETWORK_OPERATOR_SETTINGS).apply {
-        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-    }
-    if (tryStart(context, net)) return 3
-    // 10. Settings.
-    val settings = Intent(Settings.ACTION_SETTINGS).apply {
-        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-    }
-    if (tryStart(context, settings)) return 4
-    return -1
-}
-
-// Runs openPhoneInfo and tells the user what happened.
-private fun openNetworkSwitcher(
-    context: Context,
-    onNote: (String?) -> Unit
-) {
-    when (openPhoneInfo(context)) {
-        0 -> onNote(null)
-        1 -> onNote(null)
-        2 -> onNote("Dialer opened with *#*#4636#*#* - tap Call and Phone info will open.")
-        3 -> onNote("Phone info is blocked on this phone - Mobile Network Settings opened instead.")
-        4 -> onNote("Phone info could not be opened - Settings opened instead.")
-        else -> onNote("Phone info could not be opened on this phone.")
-    }
-}
 
 @Composable
 fun NetworkScreen(
@@ -298,51 +179,16 @@ private fun NetworkContent(
             Spacer(modifier = Modifier.width(minDim * 0.033f))
             Text("Network", fontWeight = FontWeight.Bold, fontSize = (minDim * 0.078f).value.sp, color = onPageColor)
         }
-        // NETWORK SWITCHER - big Material 3 card. One tap opens
-        // the system Phone info screen, where the network mode
-        // (2G / 3G / 4G / 5G) can be switched.
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(minDim * 0.044f),
-            colors = CardDefaults.cardColors(containerColor = cardBg),
-            border = BorderStroke(1.dp, cardBorder)
-        ) {
-            Column(
-                modifier = Modifier.fillMaxWidth().padding(minDim * 0.044f),
-                verticalArrangement = Arrangement.spacedBy(minDim * 0.022f)
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier.size(minDim * 0.122f).clip(CircleShape).background(thumbBg),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(Icons.Default.SignalCellularAlt, contentDescription = null, modifier = Modifier.size(minDim * 0.061f), tint = onPageColor)
-                    }
-                    Spacer(modifier = Modifier.width(minDim * 0.033f))
-                    Text("Network Switcher", fontWeight = FontWeight.SemiBold, fontSize = (minDim * 0.05f).value.sp, color = onPageColor, modifier = Modifier.weight(1f))
-                }
-                Text(
-                    "Open Phone info to switch between 2G, 3G, 4G and 5G.",
-                    fontSize = (minDim * 0.039f).value.sp,
-                    color = colorScheme.onSurfaceVariant
-                )
-                Button(
-                    onClick = { openNetworkSwitcher(context, onNote) },
-                    modifier = Modifier.fillMaxWidth().height(minDim * 0.144f),
-                    shape = RoundedCornerShape(minDim * 0.033f),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = onPageColor,
-                        contentColor = cardBg
-                    )
-                ) {
-                    Text(
-                        "Open Phone Info",
-                        fontSize = (minDim * 0.044f).value.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            }
-        }
+        // NETWORK SWITCHER - now in its own file (NetworkSwitcher.kt,
+        // same folder). Same card, same behaviour.
+        NetworkSwitcherCard(
+            cardBg = cardBg,
+            cardBorder = cardBorder,
+            onPageColor = onPageColor,
+            thumbBg = thumbBg,
+            minDim = minDim,
+            onNote = onNote
+        )
         // OPEN IN WHATSAPP (Click to Chat) - big Material 3 card.
         // Type a number to open its WhatsApp chat directly. The
         // input has a proper label, the WhatsApp logo as its
@@ -445,6 +291,16 @@ private fun NetworkContent(
                 }
             }
         }
+        // SCREEN STREAM - Watch a screen + Share my screen
+        // (ScreenStreamSection.kt, same folder). No import needed -
+        // it is in this same package.
+        ScreenStreamSection(
+            cardBg = cardBg,
+            cardBorder = cardBorder,
+            onPageColor = onPageColor,
+            thumbBg = thumbBg,
+            minDim = minDim
+        )
         Spacer(modifier = Modifier.height(minDim * 0.022f))
     }
 }
