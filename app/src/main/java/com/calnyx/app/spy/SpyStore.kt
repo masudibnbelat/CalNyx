@@ -1,8 +1,8 @@
-// FILE: app/src/main/java/com/calnyx/app/ThirdEye/ThirdEyeStore.kt
+// FILE: app/src/main/java/com/calnyx/app/Spy/SpyStore.kt
 // BLUE FILM RENAME + OPTIMIZATION (2026-11-20) - REPLACE.
 //  - RENAME: the page is "Blue Film" again, so the default
-//    folder is "My Blue Film" again. ensureMigrated() moves the
-//    intermediate "My Spy" folder back (only when "My Blue
+//    folder is "My Spy" again. ensureMigrated() moves the
+//    intermediate "My Blue Film" folder back (only when "My Blue
 //    Film" does not already exist - if both exist, both stay).
 //    The old .bfenc migration below is unchanged.
 //  - OPTIMIZATION: ensureMigrated() now runs at most once per
@@ -10,7 +10,7 @@
 //    it on every refresh, and re-scanning the folders each
 //    time was wasted work. The flag resets on process restart
 //    and the migration itself is idempotent, so nothing is lost.
-// PLAIN VERSION (2026-11-06) - REPLACE the old ThirdEyeStore.kt.
+// PLAIN VERSION (2026-11-06) - REPLACE the old SpyStore.kt.
 // Based on the FOLDERS version. ENCRYPTION IS GONE:
 //  - Recordings are now plain .mp4 files in filesDir/bluefilm/,
 //    inside folders exactly as before. No .bfenc, no AES/GCM,
@@ -23,17 +23,17 @@
 //    encryption was removed, at the user's request.
 //  - ONE-TIME MIGRATION (first open after this update):
 //    ensureMigrated() converts old encrypted .bfenc videos to
-//    plain .mp4 with ThirdEyeCrypto (decrypt once, delete the
+//    plain .mp4 with SpyCrypto (decrypt once, delete the
 //    .bfenc on success), and moves the intermediate default
-//    folder "My Spy" back to "My Blue Film". A .bfenc that fails
+//    folder "My Blue Film" back to "My Spy". A .bfenc that fails
 //    (the old damaged ones) is left alone - it simply does not
-//    list. ThirdEyeCrypto.kt STAYS in the project for this one
+//    list. SpyCrypto.kt STAYS in the project for this one
 //    migration only; no new recording is ever encrypted.
-//  - DEFAULT_FOLDER is now "My Blue Film" again (page renamed
+//  - DEFAULT_FOLDER is now "My Spy" again (page renamed
 //    back to Blue Film).
 //  - Everything else is unchanged: folders, New Folder, Move,
 //    Rename video/folder, Delete video/folder, sizes, dates.
-package com.calnyx.app.thirdeye
+package com.calnyx.app.spy
 
 import android.content.ContentValues
 import android.content.Context
@@ -53,10 +53,10 @@ import java.util.Date
 import java.util.Locale
 import com.calnyx.app.navigation.Screen
 
-object ThirdEyeStore {
+object SpyStore {
 
     const val EXT = ".mp4"
-    const val DEFAULT_FOLDER = "My Blue Film"
+    const val DEFAULT_FOLDER = "My Spy"
     private const val DIR = "bluefilm"
 
     fun dir(context: Context): File =
@@ -78,8 +78,8 @@ object ThirdEyeStore {
     }
 
     // ONE-TIME MIGRATION, first open after the plain update:
-    //  (1) the intermediate default folder "My Spy" moves back
-    //      to "My Blue Film" (only when "My Blue Film" does not
+    //  (1) the intermediate default folder "My Blue Film" moves back
+    //      to "My Spy" (only when "My Spy" does not
     //      already exist - if both exist, both stay as they are);
     //  (2) loose root .bfenc files move into the default folder;
     //  (3) every .bfenc video is decrypted ONCE to a plain .mp4
@@ -100,7 +100,7 @@ object ThirdEyeStore {
         migrated = true
         val root = dir(context)
         try {
-            val intermediate = File(root, "My Spy")
+            val intermediate = File(root, "My Blue Film")
             val newDefault = File(root, DEFAULT_FOLDER)
             if (intermediate.exists() && intermediate.isDirectory && !newDefault.exists()) {
                 intermediate.renameTo(newDefault)
@@ -138,7 +138,7 @@ object ThirdEyeStore {
                         val tmpDest = File(folder, dest.name + ".tmp")
                         try {
                             if (tmpDest.exists()) tmpDest.delete()
-                            ThirdEyeCrypto.decryptFile(context, enc, tmpDest)
+                            SpyCrypto.decryptFile(context, enc, tmpDest)
                             if (tmpDest.exists() && tmpDest.length() > 0) {
                                 if (tmpDest.renameTo(dest)) {
                                     enc.delete()

@@ -1,4 +1,4 @@
-// FILE: app/src/main/java/com/calnyx/app/ThirdEye/ThirdEyeService.kt
+// FILE: app/src/main/java/com/calnyx/app/Spy/SpyService.kt
 // MIC BUTTON + BLUE FILM RENAME (2026-11-20) - REPLACE.
 //  - MIC BUTTON: the microphone can now be turned On/Off from
 //    the Settings card in the Screen. savedMicEnabled() /
@@ -6,18 +6,18 @@
 //    (default ON - same behaviour as before for existing
 //    users). startRecording() records sound only when the
 //    toggle is ON and RECORD_AUDIO is granted.
-//  - The page is "Blue Film" again - no code change here, the
+//  - The page is "Spy" again - no code change here, the
 //    service never showed the name.
-// PLAIN VERSION (2026-11-06) - REPLACE the old ThirdEyeService.kt.
+// PLAIN VERSION (2026-11-06) - REPLACE the old SpyService.kt.
 // Based on V8.2. ONLY change: NO ENCRYPTION on stop any more.
 //  - The recorder still writes a plain .mp4 temp file.
 //  - On stop the temp is now COPIED (via .tmp, size-checked,
 //    retry once, then renamed) straight to its final plain
-//    .mp4 name from ThirdEyeStore.newVideoFile(). The isStopping
+//    .mp4 name from SpyStore.newVideoFile(). The isStopping
 //    guard, the wake lock, Camera2, quality, facing and the
 //    notification are all unchanged.
 //  - Old encrypted .bfenc videos are converted by
-//    ThirdEyeStore.ensureMigrated() on first open - not here.
+//    SpyStore.ensureMigrated() on first open - not here.
 //  - MIC (2026-11-07): video now records WITH microphone audio
 //    (AAC, 128 kbps, 44.1 kHz) when RECORD_AUDIO is granted at
 //    start time; without it the video records silently, exactly
@@ -26,7 +26,7 @@
 //    permission, so a denied mic can never crash a recording.
 //    Note: Android shows its green mic dot while recording,
 //    same as the camera dot - the OS, no app can hide it.
-package com.calnyx.app.thirdeye
+package com.calnyx.app.spy
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -57,11 +57,11 @@ import androidx.core.content.ContextCompat
 import java.io.File
 import com.calnyx.app.navigation.Screen
 
-class ThirdEyeService : Service() {
+class SpyService : Service() {
 
     companion object {
-        const val ACTION_START = "com.calnyx.app.thirdeye.START"
-        const val ACTION_STOP = "com.calnyx.app.thirdeye.STOP"
+        const val ACTION_START = "com.calnyx.app.spy.START"
+        const val ACTION_STOP = "com.calnyx.app.spy.STOP"
         const val EXTRA_FACING = "camera_facing"
         private const val PREFS = "bluefilm_prefs"
         private const val KEY_FACING = "camera_facing"
@@ -121,7 +121,7 @@ class ThirdEyeService : Service() {
 
         fun start(context: Context, facing: Int) {
             saveFacing(context, facing)
-            val intent = Intent(context, ThirdEyeService::class.java).apply {
+            val intent = Intent(context, SpyService::class.java).apply {
                 action = ACTION_START
                 putExtra(EXTRA_FACING, facing)
             }
@@ -129,7 +129,7 @@ class ThirdEyeService : Service() {
         }
 
         fun stop(context: Context) {
-            val intent = Intent(context, ThirdEyeService::class.java).apply {
+            val intent = Intent(context, SpyService::class.java).apply {
                 action = ACTION_STOP
             }
             ContextCompat.startForegroundService(context, intent)
@@ -271,7 +271,7 @@ class ThirdEyeService : Service() {
             startForeground(NOTIF_ID, buildNotification())
         }
         // Heavy work OFF the main thread from here on.
-        val thread = HandlerThread("ThirdEyeCamera").apply { start() }
+        val thread = HandlerThread("SpyCamera").apply { start() }
         cameraThread = thread
         cameraHandler = Handler(thread.looper)
         cameraHandler?.post { startRecordingInternal(facing) }
@@ -284,7 +284,7 @@ class ThirdEyeService : Service() {
             try {
                 val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
                 wakeLock = pm.newWakeLock(
-                    PowerManager.PARTIAL_WAKE_LOCK, "CalNyx:ThirdEyeRecord"
+                    PowerManager.PARTIAL_WAKE_LOCK, "CalNyx:SpyRecord"
                 ).apply { acquire(10 * 60 * 1000L) }
             } catch (_: Exception) {}
             val manager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
@@ -400,7 +400,7 @@ class ThirdEyeService : Service() {
             val tmp = tmpFile
             if (tmp != null && tmp.exists() && tmp.length() > 0) {
                 try {
-                    val dest = ThirdEyeStore.newVideoFile(this)
+                    val dest = SpyStore.newVideoFile(this)
                     val tmpDest = File(dest.parentFile, dest.name + ".tmp")
                     var ok = false
                     for (attempt in 0 until 2) {
@@ -480,7 +480,7 @@ class ThirdEyeService : Service() {
                 .apply { setShowBadge(false) }
             nm.createNotificationChannel(channel)
         }
-        val stopIntent = Intent(this, ThirdEyeService::class.java).apply { action = ACTION_STOP }
+        val stopIntent = Intent(this, SpyService::class.java).apply { action = ACTION_STOP }
         val stopPending = PendingIntent.getService(
             this, 0, stopIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE

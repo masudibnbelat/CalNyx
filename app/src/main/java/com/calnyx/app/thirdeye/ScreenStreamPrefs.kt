@@ -1,12 +1,15 @@
 // FILE: app/src/main/java/com/calnyx/app/network/ScreenStreamPrefs.kt
+
 // NEW FILE - Screen Stream settings (2026-11-21).
 // Saved in SharedPreferences, same pattern as the other CalNyx
 // prefs files. Password is mandatory and at least 2 characters -
 // the service and the relay server both enforce it.
-package com.calnyx.app.network
+package com.calnyx.app.thirdeye
 
 import android.content.Context
 import android.net.Uri
+import java.net.URLDecoder
+import java.net.URLEncoder
 
 object ScreenStreamPrefs {
     private const val PREFS = "screenstream_prefs"
@@ -109,12 +112,52 @@ object ScreenStreamPrefs {
         }
     }
 
-    // Share link for a room: https://<relay>/?room=ABC123
-    // The password is NOT in the link - the viewer types it on
-    // the page (or the app passes it as a #pw= fragment, which
-    // is never sent to the server).
-    fun streamLink(relayUrl: String, roomCode: String): String {
-        return relayUrl.trim().trimEnd('/') + "/?room=" + roomCode
+    // Share link for a room: https://<relay>/?room=ABC123#pw=<password>
+    // PASSWORD-IN-LINK (2026-11-21, user decision): the password IS
+    // in the link now, as a #pw= fragment, so opening the link opens
+    // the stream directly with no separate password entry. A #pw=
+    // fragment is never sent to the server - it stays in the browser
+    // / app. Anyone with the link can watch.
+    // Screen Stream password minimum stays 2 characters - the
+    // min-4 rule is Camera Live only.
+    fun streamLink(relayUrl: String, roomCode: String, password: String): String {
+        val base = relayUrl.trim().trimEnd('/') + "/?room=" + roomCode
+        if (password.isBlank()) return base
+        return try {
+            base + "#pw=" + URLEncoder.encode(password, "UTF-8")
+        } catch (_: Exception) {
+            base
+        }
+    }
+
+    // Pull the password out of a pasted stream link:
+    //   https://host/?room=ABC123#pw=secret  -> "secret"
+    //   https://host/?room=ABC123?pw=secret   -> "secret" (fallback)
+    // Returns null when the link carries no password.
+    fun parsePasswordFromLink(text: String): String? {
+        val input = text.trim()
+        if (input.isEmpty()) return null
+        return try {
+            val uri = Uri.parse(input)
+            val frag = uri.fragment
+            if (!frag.isNullOrBlank()) {
+                for (part in frag.split('&')) {
+                    val kv = part.split('=', limit = 2)
+                    if (kv.size == 2 && kv[0] == "pw") {
+                        val decoded = try {
+                            URLDecoder.decode(kv[1], "UTF-8")
+                        } catch (_: Exception) {
+                            kv[1]
+                        }
+                        if (decoded.isNotBlank()) return decoded
+                    }
+                }
+            }
+            val fromQuery = uri.getQueryParameter("pw")?.trim()
+            if (!fromQuery.isNullOrBlank()) fromQuery else null
+        } catch (_: Exception) {
+            null
+        }
     }
 
     // Pull the 6-letter room code out of a pasted link:

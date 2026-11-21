@@ -1,5 +1,5 @@
-// FILE: app/src/main/java/com/calnyx/app/ThirdEye/ThirdEyeCrypto.kt
-// NEW FILE - AES/GCM encryption for Blue Film recordings.
+// FILE: app/src/main/java/com/calnyx/app/Spy/SpyCrypto.kt
+// NEW FILE - AES/GCM encryption for Spy recordings.
 //
 // Recordings are stored encrypted in the app's private storage,
 // so a video file found on the phone cannot be played directly.
@@ -9,7 +9,7 @@
 // Encryption / decryption stream the file, so even long
 // recordings never sit whole in memory.
 
-package com.calnyx.app.thirdeye
+package com.calnyx.app.spy
 
 import android.content.Context
 import android.util.Base64
@@ -25,7 +25,7 @@ import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
 
-object ThirdEyeCrypto {
+object SpyCrypto {
 
     private const val PREFS = "bluefilm_crypto"
     private const val KEY_PREF = "aes_key_b64"
@@ -69,7 +69,7 @@ object ThirdEyeCrypto {
             var read = 0
             while (read < IV_BYTES) {
                 val n = fis.read(iv, read, IV_BYTES - read)
-                if (n < 0) throw IllegalStateException("Blue Film file is too short")
+                if (n < 0) throw IllegalStateException("Spy file is too short")
                 read += n
             }
             val cipher = Cipher.getInstance(TRANSFORMATION)

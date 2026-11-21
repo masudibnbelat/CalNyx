@@ -1,17 +1,17 @@
-// FILE: app/src/main/java/com/calnyx/app/ThirdEye/ScreenRecordService.kt
+// FILE: app/src/main/java/com/calnyx/app/Spy/SpyScreenRecordService.kt
 // NEW FILE - screen recording with on-screen marks (2026-11-20).
 //
-// Same home as the camera recorder (ThirdEyeService), but this
+// Same home as the camera recorder (SpyService), but this
 // one records the SCREEN, not the camera:
 //  - MediaProjection: the system asks once per recording, with
 //    its own dialog (Android's rule - it cannot be skipped, and
 //    the user can also stop from the system's own recording
-//    chip). The grant token arrives from ThirdEyeScreen.
+//    chip). The grant token arrives from SpyScreen.
 //  - Video + optional mic audio (AAC 128 kbps, same as the
 //    camera), 720p / 1080p from the same Settings. Files save
-//    to the same Blue Film folders, "SR_" prefix, plain .mp4.
+//    to the same Spy folders, "SR_" prefix, plain .mp4.
 //  - While recording, a transparent full-screen overlay shows
-//    the marks (ScreenDrawView: pen / circle / rectangle /
+//    the marks (SpyDrawView: pen / circle / rectangle /
 //    arrow, red, plus emoji stickers). The overlay is NOT touchable by
 //    default, so the phone works normally under it - a video
 //    playing underneath keeps playing, and no tap reaches it.
@@ -26,7 +26,7 @@
 //  - The floating ball STAYS during the recording (2026-11-20,
 //    user decision): the tools are needed while recording,
 //    and the ball is the way to open the toolbar - tap it
-//    any time and the toolbar (ScreenRecordToolbarActivity)
+//    any time and the toolbar (SpyScreenRecordToolbarActivity)
 //    opens. The ball is brought above the draw overlay so it
 //    stays tappable even while a tool is active. The ball
 //    WILL be in the video - the user accepted that. NO
@@ -40,7 +40,7 @@
 //    so it shows in the video for the second it is open.
 //    And the system dialog appears every time a recording
 //    starts.
-package com.calnyx.app.thirdeye
+package com.calnyx.app.spy
 
 import android.app.Activity
 import android.app.Notification
@@ -76,16 +76,16 @@ import com.calnyx.app.theme.CalNyxRed
 import java.io.File
 import com.calnyx.app.navigation.Screen
 
-class ScreenRecordService : Service() {
+class SpyScreenRecordService : Service() {
 
     companion object {
-        const val ACTION_START = "com.calnyx.app.thirdeye.SCREEN_START"
-        const val ACTION_STOP = "com.calnyx.app.thirdeye.SCREEN_STOP"
-        private const val ACTION_SET_TOOL = "com.calnyx.app.thirdeye.SCREEN_SET_TOOL"
-        private const val ACTION_CLEAR_MARKS = "com.calnyx.app.thirdeye.SCREEN_CLEAR_MARKS"
-        private const val ACTION_SET_DRAW_MODE = "com.calnyx.app.thirdeye.SCREEN_SET_DRAW_MODE"
-        private const val ACTION_SET_EMOJI = "com.calnyx.app.thirdeye.SCREEN_SET_EMOJI"
-        private const val ACTION_SET_COLOR = "com.calnyx.app.thirdeye.SCREEN_SET_COLOR"
+        const val ACTION_START = "com.calnyx.app.spy.SCREEN_START"
+        const val ACTION_STOP = "com.calnyx.app.spy.SCREEN_STOP"
+        private const val ACTION_SET_TOOL = "com.calnyx.app.spy.SCREEN_SET_TOOL"
+        private const val ACTION_CLEAR_MARKS = "com.calnyx.app.spy.SCREEN_CLEAR_MARKS"
+        private const val ACTION_SET_DRAW_MODE = "com.calnyx.app.spy.SCREEN_SET_DRAW_MODE"
+        private const val ACTION_SET_EMOJI = "com.calnyx.app.spy.SCREEN_SET_EMOJI"
+        private const val ACTION_SET_COLOR = "com.calnyx.app.spy.SCREEN_SET_COLOR"
         private const val PREFS = "bluefilm_prefs"
         private const val KEY_MODE = "record_mode"
         private const val KEY_COLOR = "draw_color"
@@ -136,7 +136,7 @@ class ScreenRecordService : Service() {
         fun setColor(context: Context, color: Int) {
             currentColor = color
             saveColor(context, color)
-            val intent = Intent(context, ScreenRecordService::class.java).apply {
+            val intent = Intent(context, SpyScreenRecordService::class.java).apply {
                 action = ACTION_SET_COLOR
                 putExtra("color", color)
             }
@@ -158,7 +158,7 @@ class ScreenRecordService : Service() {
         }
 
         fun start(context: Context, resultCode: Int, data: Intent, micOn: Boolean, quality: Int) {
-            val intent = Intent(context, ScreenRecordService::class.java).apply {
+            val intent = Intent(context, SpyScreenRecordService::class.java).apply {
                 action = ACTION_START
                 putExtra("resultCode", resultCode)
                 putExtra("resultData", data)
@@ -169,7 +169,7 @@ class ScreenRecordService : Service() {
         }
 
         fun stop(context: Context) {
-            val intent = Intent(context, ScreenRecordService::class.java).apply {
+            val intent = Intent(context, SpyScreenRecordService::class.java).apply {
                 action = ACTION_STOP
             }
             ContextCompat.startForegroundService(context, intent)
@@ -180,7 +180,7 @@ class ScreenRecordService : Service() {
         // running service to switch the overlay's touch mode.
         fun setTool(context: Context, tool: DrawTool) {
             currentTool = tool
-            val intent = Intent(context, ScreenRecordService::class.java).apply {
+            val intent = Intent(context, SpyScreenRecordService::class.java).apply {
                 action = ACTION_SET_TOOL
                 putExtra("tool", tool.name)
             }
@@ -191,7 +191,7 @@ class ScreenRecordService : Service() {
         }
 
         fun clearMarks(context: Context) {
-            val intent = Intent(context, ScreenRecordService::class.java).apply {
+            val intent = Intent(context, SpyScreenRecordService::class.java).apply {
                 action = ACTION_CLEAR_MARKS
             }
             try {
@@ -203,7 +203,7 @@ class ScreenRecordService : Service() {
         // Remember the picked emoji for the stamp tool.
         fun setEmoji(context: Context, emoji: String) {
             currentEmoji = emoji
-            val intent = Intent(context, ScreenRecordService::class.java).apply {
+            val intent = Intent(context, SpyScreenRecordService::class.java).apply {
                 action = ACTION_SET_EMOJI
                 putExtra("emoji", emoji)
             }
@@ -218,7 +218,7 @@ class ScreenRecordService : Service() {
         // toolbar, or the touchable overlay would sit above the
         // toolbar Activity and eat its taps.
         fun setDrawMode(context: Context, enabled: Boolean) {
-            val intent = Intent(context, ScreenRecordService::class.java).apply {
+            val intent = Intent(context, SpyScreenRecordService::class.java).apply {
                 action = ACTION_SET_DRAW_MODE
                 putExtra("enabled", enabled)
             }
@@ -233,7 +233,7 @@ class ScreenRecordService : Service() {
         fun openToolbar(context: Context) {
             setDrawMode(context, false)
             try {
-                val intent = Intent(context, ScreenRecordToolbarActivity::class.java).apply {
+                val intent = Intent(context, SpyScreenRecordToolbarActivity::class.java).apply {
                     addFlags(
                         Intent.FLAG_ACTIVITY_NEW_TASK or
                             Intent.FLAG_ACTIVITY_SINGLE_TOP
@@ -270,7 +270,7 @@ class ScreenRecordService : Service() {
     private var windowManager: WindowManager? = null
     private var overlayView: View? = null
     private var overlayParams: WindowManager.LayoutParams? = null
-    private var drawView: ScreenDrawView? = null
+    private var drawView: SpyDrawView? = null
 
     private val projectionCallback = object : MediaProjection.Callback() {
         override fun onStop() {
@@ -499,7 +499,7 @@ class ScreenRecordService : Service() {
         if (!FloatingBallService.canDrawOverlays(this)) return
         val wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         windowManager = wm
-        val view = ScreenDrawView(this)
+        val view = SpyDrawView(this)
         // A tool picked before the overlay existed is not lost:
         // the new view starts with the current tool + emoji +
         // colour.
@@ -615,7 +615,7 @@ class ScreenRecordService : Service() {
             val tmp = tmpFile
             if (tmp != null && tmp.exists() && tmp.length() > 0) {
                 try {
-                    val dest = ThirdEyeStore.newScreenVideoFile(this)
+                    val dest = SpyStore.newScreenVideoFile(this)
                     val tmpDest = File(dest.parentFile, dest.name + ".tmp")
                     var ok = false
                     for (attempt in 0 until 2) {
@@ -685,7 +685,7 @@ class ScreenRecordService : Service() {
                 .apply { setShowBadge(false) }
             nm.createNotificationChannel(channel)
         }
-        val stopIntent = Intent(this, ScreenRecordService::class.java).apply { action = ACTION_STOP }
+        val stopIntent = Intent(this, SpyScreenRecordService::class.java).apply { action = ACTION_STOP }
         val stopPending = PendingIntent.getService(
             this, 0, stopIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
@@ -694,7 +694,7 @@ class ScreenRecordService : Service() {
         // for the whole recording (it must not be in the video),
         // so this notification action is the way to draw while
         // recording - pull the shade down and tap Tools.
-        val toolsIntent = Intent(this, ScreenRecordToolbarActivity::class.java).apply {
+        val toolsIntent = Intent(this, SpyScreenRecordToolbarActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         }
         val toolsPending = PendingIntent.getActivity(

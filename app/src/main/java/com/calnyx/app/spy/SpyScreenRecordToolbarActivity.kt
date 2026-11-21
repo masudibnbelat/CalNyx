@@ -1,4 +1,4 @@
-// FILE: app/src/main/java/com/calnyx/app/ThirdEye/ScreenRecordToolbarActivity.kt
+// FILE: app/src/main/java/com/calnyx/app/Spy/SpyScreenRecordToolbarActivity.kt
 // NEW FILE - recording toolbar as a transparent Activity (2026-11-20).
 //
 // Opens when the floating ball (or the mini ball) is tapped while
@@ -27,7 +27,7 @@
 //   normal again. Stop ends the recording and closes.
 // The header shows a red dot + the elapsed time (1 / sec); if
 // the recording ends elsewhere, the panel closes itself.
-package com.calnyx.app.thirdeye
+package com.calnyx.app.spy
 
 import android.graphics.Color as AndroidColor
 import android.os.Build
@@ -99,7 +99,7 @@ import kotlin.math.atan2
 import kotlin.math.hypot
 import com.calnyx.app.ball.BallPanelActivity
 
-class ScreenRecordToolbarActivity : ComponentActivity() {
+class SpyScreenRecordToolbarActivity : ComponentActivity() {
 
     private var elapsedSec by mutableStateOf(0L)
     private var activeTool by mutableStateOf(DrawTool.NONE)
@@ -128,16 +128,16 @@ class ScreenRecordToolbarActivity : ComponentActivity() {
             setShowWhenLocked(true)
         }
         // Nothing to do here when no recording runs.
-        if (!ScreenRecordService.isRecording) {
+        if (!SpyScreenRecordService.isRecording) {
             finish()
             return
         }
         // Belt and braces: the drawing overlay must not eat the
         // taps on this panel (the ball tap already turned it
         // off - this covers the mini ball path too).
-        ScreenRecordService.setDrawMode(this, false)
-        activeTool = ScreenRecordService.currentTool
-        selectedColor = ScreenRecordService.savedColor(this)
+        SpyScreenRecordService.setDrawMode(this, false)
+        activeTool = SpyScreenRecordService.currentTool
+        selectedColor = SpyScreenRecordService.savedColor(this)
         setContent {
             CalNyxTheme {
                 val colorScheme = MaterialTheme.colorScheme
@@ -146,12 +146,12 @@ class ScreenRecordToolbarActivity : ComponentActivity() {
                 // close this panel by itself.
                 LaunchedEffect(Unit) {
                     while (true) {
-                        if (!ScreenRecordService.isRecording) {
+                        if (!SpyScreenRecordService.isRecording) {
                             finish()
                             return@LaunchedEffect
                         }
                         elapsedSec =
-                            (System.currentTimeMillis() - ScreenRecordService.startedAtMillis) / 1000
+                            (System.currentTimeMillis() - SpyScreenRecordService.startedAtMillis) / 1000
                         delay(1000)
                     }
                 }
@@ -376,20 +376,20 @@ class ScreenRecordToolbarActivity : ComponentActivity() {
     // Pick a tool (closes the panel so the user can draw at
     // once) or turn the active tool off again.
     private fun onToolClick(tool: DrawTool) {
-        if (tool == ScreenRecordService.currentTool) {
-            ScreenRecordService.setTool(this, DrawTool.NONE)
+        if (tool == SpyScreenRecordService.currentTool) {
+            SpyScreenRecordService.setTool(this, DrawTool.NONE)
         } else {
-            ScreenRecordService.setTool(this, tool)
+            SpyScreenRecordService.setTool(this, tool)
         }
-        activeTool = ScreenRecordService.currentTool
+        activeTool = SpyScreenRecordService.currentTool
         finish()
     }
 
     // Emoji button: already active -> turn it off (like the
     // other tools). Otherwise open the sticker picker.
     private fun onEmojiClick() {
-        if (ScreenRecordService.currentTool == DrawTool.EMOJI) {
-            ScreenRecordService.setTool(this, DrawTool.NONE)
+        if (SpyScreenRecordService.currentTool == DrawTool.EMOJI) {
+            SpyScreenRecordService.setTool(this, DrawTool.NONE)
             activeTool = DrawTool.NONE
             finish()
         } else {
@@ -400,8 +400,8 @@ class ScreenRecordToolbarActivity : ComponentActivity() {
     // A sticker was picked: remember it, arm the stamp tool,
     // close the panel - tap the screen to stamp it.
     private fun onEmojiPicked(emoji: String) {
-        ScreenRecordService.setEmoji(this, emoji)
-        ScreenRecordService.setTool(this, DrawTool.EMOJI)
+        SpyScreenRecordService.setEmoji(this, emoji)
+        SpyScreenRecordService.setTool(this, DrawTool.EMOJI)
         activeTool = DrawTool.EMOJI
         finish()
     }
@@ -410,15 +410,15 @@ class ScreenRecordToolbarActivity : ComponentActivity() {
     // the screen is normal again. The panel STAYS open - clear,
     // then pick the next tool.
     private fun onClearClick() {
-        ScreenRecordService.clearMarks(this)
-        ScreenRecordService.setTool(this, DrawTool.NONE)
+        SpyScreenRecordService.clearMarks(this)
+        SpyScreenRecordService.setTool(this, DrawTool.NONE)
         activeTool = DrawTool.NONE
     }
 
     // A colour was picked: remember it (saved) and keep the
     // panel open, so a tool can be picked right after.
     private fun onColorClick(color: Int) {
-        ScreenRecordService.setColor(this, color)
+        SpyScreenRecordService.setColor(this, color)
         selectedColor = color
     }
 
@@ -451,7 +451,7 @@ class ScreenRecordToolbarActivity : ComponentActivity() {
     }
 
     private fun onStopClick() {
-        ScreenRecordService.stop(this)
+        SpyScreenRecordService.stop(this)
         finish()
     }
 }

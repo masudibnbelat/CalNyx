@@ -1,9 +1,9 @@
-// FILE: app/src/main/java/com/calnyx/app/ThirdEye/ScreenDrawView.kt
+// FILE: app/src/main/java/com/calnyx/app/Spy/SpyDrawView.kt
 // NEW FILE - on-screen marks drawn DURING a screen recording
 // (2026-11-20).
 //
 // The view lives in a transparent full-screen overlay window
-// owned by ScreenRecordService. It draws every mark the user
+// owned by SpyScreenRecordService. It draws every mark the user
 // made (pen / circle / rectangle / triangle / arrow, in the
 // chosen colour, plus emoji stickers), so the marks are visible on
 // any screen content AND in the recorded video, because the
@@ -20,7 +20,7 @@
 // inside a circle or rectangle stays crystal clear, with no
 // darkening and no colour effect on the background. The pen is
 // a red stroke only. Clear wipes every mark at once.
-package com.calnyx.app.thirdeye
+package com.calnyx.app.spy
 
 import android.content.Context
 import android.graphics.Canvas
@@ -64,9 +64,9 @@ sealed class DrawMark {
     }
 }
 
-class ScreenDrawView(context: Context) : View(context) {
+class SpyDrawView(context: Context) : View(context) {
 
-    // The active tool, set by ScreenRecordService. NONE means
+    // The active tool, set by SpyScreenRecordService. NONE means
     // "not drawing" - touches pass straight through.
     var tool: DrawTool = DrawTool.NONE
     // The emoji picked in the toolbar, stamped when the EMOJI

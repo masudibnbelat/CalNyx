@@ -77,9 +77,9 @@
 // SPY + HARDWARE/SOUND + ABOUT VERSION (2026-11-06) - REPLACE NavGraph.kt.
 //  1. RENAMED (drawer + page titles only; routes, function
 //     names and behaviour unchanged): Hardcore -> Hardware,
-//     Moan -> Sound, Blue Film -> Spy.
+//     Moan -> Sound, Spy -> Spy.
 //  2. DRAWER SWIPE: HardcoreScreen / MoanScreen /
-//     ThirdEyeScreen now get onOpenDrawer, so a leftward
+//     SpyScreen / ThirdEyeScreen now get onOpenDrawer, so a leftward
 //     swipe anywhere on Hardware, Sound or Spy opens the
 //     drawer (universal drawer rule).
 //  3. ABOUT / UPDATE (swapped 2026-11-07): the header
@@ -102,7 +102,7 @@
 //     "About this app" - tap it and the About modal opens
 //     (WEBSITE_URL below, the developer's website).
 //  Everything else is unchanged (drawer items, swipe, privacy,
-//  reopen rule, Clipboard, Blue Film folders).
+//  reopen rule, Clipboard, Spy folders).
 //  1. New drawer item LAST: Clipboard (ContentPaste icon).
 //  2. New composable for Screen.Clipboard, passing onOpenDrawer
 //     so a leftward swipe anywhere on the Clipboard screen opens
@@ -217,6 +217,7 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.filled.Numbers
 import androidx.compose.material.icons.filled.ReceiptLong
@@ -293,6 +294,7 @@ import com.calnyx.app.ball.FloatingBallService
 import com.calnyx.app.moan.MoanControlPrefs
 import com.calnyx.app.navigation.NavStateDatabase
 import com.calnyx.app.navigation.NavStateEntity
+import com.calnyx.app.spy.SpyScreen
 import com.calnyx.app.thirdeye.ThirdEyeScreen
 import com.calnyx.app.applock.AppLockScreen
 import com.calnyx.app.hardcore.HardcoreScreen
@@ -359,8 +361,10 @@ sealed class Screen(
                     "WhatsApp chat & network switcher",
                     Icons.Default.SignalCellularAlt
             )
+    object Spy :
+            Screen("blue_film", "Spy", "Secret camera recorder", Icons.Default.Videocam)
     object ThirdEye :
-            Screen("blue_film", "Third Eye", "Secret camera recorder", Icons.Default.Visibility)
+            Screen("third_eye", "Third Eye", "Camera Live & Screen Share", Icons.Default.Visibility)
     object Clipboard :
             Screen(
                     "clipboard",
@@ -386,8 +390,10 @@ sealed class Screen(
             Screen("app_lock", "App Lock", "Locked apps", Icons.Default.Lock)
 }
 
-// ORDER (2026-11-20): Clipboard sits above Blue Film in the drawer
+// ORDER (2026-11-20): Clipboard sits above Spy in the drawer
 // (swapped - Clipboard was the last item before).
+// ORDER (2026-11-21): Third Eye is the LAST drawer item (new hub:
+// Screen Share on top, Camera Live below).
 val menuScreens =
         listOf(
                 Screen.Normal,
@@ -400,6 +406,7 @@ val menuScreens =
                 Screen.Moan,
                 Screen.Network,
                 Screen.Clipboard,
+                Screen.Spy,
                 Screen.ThirdEye,
         )
 
@@ -871,7 +878,7 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
             navStateDao.save(NavStateEntity(route = route))
         } else if (route in persistRoutes) {
             // Converter / Base System / ICT / Hardcore / Moan /
-            // ThirdEye / Clipboard: remember Normal instead, so
+            // Spy / ThirdEye / Clipboard: remember Normal instead, so
             // reopen lands on the Normal calculator, not on the tool.
             navStateDao.save(NavStateEntity(route = Screen.Normal.route))
         }
@@ -1021,6 +1028,9 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
                 }
                 composable(Screen.Network.route) {
                     NetworkScreen(darkTheme = darkTheme, onOpenDrawer = { drawerOpen = true })
+                }
+                composable(Screen.Spy.route) {
+                    SpyScreen(darkTheme = darkTheme, onOpenDrawer = { drawerOpen = true })
                 }
                 composable(Screen.ThirdEye.route) {
                     ThirdEyeScreen(darkTheme = darkTheme, onOpenDrawer = { drawerOpen = true })
@@ -1639,7 +1649,7 @@ private fun AboutDialog(
                 }
                 // What the app is.
                 Text(
-                        text = "CalNyx is an all-in-one calculator for everyday use \u2014 Normal, Scientific, CalTape, Converter, Base System and ICT \u2014 with a hidden Black Hole vault for private photos, videos, documents and audio, an App Lock, Moan and Hardcore controls, a floating ball, Third Eye camera recording and a Clipboard history. Everything works offline and stays on this phone.",
+                        text = "CalNyx is an all-in-one calculator for everyday use \u2014 Normal, Scientific, CalTape, Converter, Base System and ICT \u2014 with a hidden Black Hole vault for private photos, videos, documents and audio, an App Lock, Moan and Hardcore controls, a floating ball, Spy camera recording and a Clipboard history. Everything works offline and stays on this phone.",
                         fontSize = fBody,
                         color = onPageColor,
                         textAlign = TextAlign.Center
@@ -1786,3 +1796,6 @@ private fun AboutDialog(
         }
     }
 }
+
+
+

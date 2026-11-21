@@ -1,4 +1,5 @@
 // FILE: app/src/main/java/com/calnyx/app/network/ScreenStreamService.kt
+
 // NEW FILE - live screen streaming to any browser (2026-11-21).
 //
 // How it works (the relay is server.js in this same delivery):
@@ -27,8 +28,10 @@
 // note saying the relay may be waking up.
 //
 // Password is mandatory, at least 2 characters (enforced here and
-// on the relay). The password is never in the share link - the
-// viewer types it on the page.
+// on the relay). The password IS in the share link now, as a #pw=
+// fragment (2026-11-21, user decision) - opening the link opens the
+// stream directly. Screen Stream minimum stays 2; min-4 is Camera
+// Live only.
 //
 // DIAGNOSIS (2026-11-21): every connect / failure is logged with
 // tag "ScreenStream", so `adb logcat -d -s ScreenStream` shows
@@ -47,7 +50,7 @@
 // Honest limits: the stream stops if the phone locks or the screen
 // turns off (MediaProjection ends). Keep the screen on while
 // streaming. Sound is NOT streamed - picture only.
-package com.calnyx.app.network
+package com.calnyx.app.thirdeye
 
 import android.app.Activity
 import android.app.Notification
@@ -88,8 +91,8 @@ import java.util.concurrent.TimeUnit
 class ScreenStreamService : Service() {
 
     companion object {
-        const val ACTION_START = "com.calnyx.app.network.SCREEN_STREAM_START"
-        const val ACTION_STOP = "com.calnyx.app.network.SCREEN_STREAM_STOP"
+        const val ACTION_START = "com.calnyx.app.thirdeye.SCREEN_STREAM_START"
+        const val ACTION_STOP = "com.calnyx.app.thirdeye.SCREEN_STREAM_STOP"
         private const val NOTIF_ID = 2003
         private const val CHANNEL_ID = "calnyx_screen_stream"
         private const val TAG = "ScreenStream"
@@ -346,7 +349,9 @@ class ScreenStreamService : Service() {
                 retryCount = 0
                 Log.i(TAG, "socket open, asking relay for a room")
                 // Ask the relay for a room. The password goes in
-                // this message only - never in the share link.
+                // this message; it also goes in the share link as a
+                // #pw= fragment (client-side only, never sent to
+                // the server).
                 try {
                     webSocket.send(
                         JSONObject()
@@ -373,7 +378,7 @@ class ScreenStreamService : Service() {
                             retryCount = 0
                             roomCode = code
                             Log.i(TAG, "created room=$code")
-                            streamUrl = ScreenStreamPrefs.streamLink(relayUrl, code)
+                            streamUrl = ScreenStreamPrefs.streamLink(relayUrl, code, password)
                             viewerCount = 0
                             startedAtMillis = System.currentTimeMillis()
                             isStarting = false

@@ -1,4 +1,5 @@
 // FILE: app/src/main/java/com/calnyx/app/network/ScreenStreamSection.kt
+
 // NEW FILE - Screen Stream section for the Network screen (2026-11-21).
 // Add ONE call in NetworkScreen.kt, in NetworkContent, after the
 // "Open in WhatsApp" Card and before the final Spacer:
@@ -15,11 +16,12 @@
 // Two clean cards, % sizes and theme colours like the rest of
 // the Network screen, no fixed dp/sp except 1.dp borders:
 //
-//   1. WATCH A SCREEN - two ways in: paste someone else's link,
+//   2. WATCH A SCREEN - two ways in: paste someone else's link,
 //      or type their Room ID - then the password, tap Open, and
 //      their screen plays in the app (WebView), full screen, no
-//      browser. The password travels as a #pw= fragment, so it
-//      is never sent to the server in the URL.
+//      browser. A pasted link already carries the password (#pw=),
+//      so it auto-fills and no separate password entry is needed.
+//      The #pw= fragment is never sent to the server in the URL.
 //      PERSISTENT WATCH (2026-11-21): the watch is saved, so
 //      leaving the app or the Network screen and coming back
 //      reopens it by itself, live, until "Stop watching" is
@@ -31,11 +33,12 @@
 //      card padding, gaps, titles, icons, buttons and fonts - so
 //      the section takes less room and feels light. Still % sizes
 //      only, still Material 3, still theme colours only.
-//   2. SHARE MY SCREEN - type a password (mandatory, at least
+//   1. SHARE MY SCREEN - type a password (mandatory, at least
 //      2 characters), tap Start Stream, the phone's screen goes
 //      live through the relay server and a link appears to copy
-//      and send to anyone. Anyone opening it in any browser
-//      types the password and watches. Quality (Low / Medium /
+//      and send to anyone. Anyone opening it in any browser watches
+//      at once - the link already carries the password (#pw=).
+//      Quality (Low / Medium /
 //      High) sits right in the card as three small pills - no
 //      Settings button, no expander (2026-11-21).
 //   LIVE BLOCK REDESIGN (2026-11-21): while streaming, three
@@ -56,7 +59,7 @@
 // (Android's rule). The stream stops if the phone locks or the
 // screen turns off - keep the screen on while streaming.
 // Sound is NOT streamed - picture only.
-package com.calnyx.app.network
+package com.calnyx.app.thirdeye
 
 import android.app.Activity
 import android.content.ClipData
@@ -247,6 +250,15 @@ fun ScreenStreamSection(
         }
     }
 
+    // PASSWORD-IN-LINK (2026-11-21): pasting a link that carries
+    // #pw= auto-fills the password field, so the viewer never
+    // types it separately.
+    LaunchedEffect(watchUrl) {
+        if (watchPassword.isBlank()) {
+            ScreenStreamPrefs.parsePasswordFromLink(watchUrl)?.let { watchPassword = it }
+        }
+    }
+
     val projectionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
@@ -298,14 +310,21 @@ fun ScreenStreamSection(
             else "Type the 6-letter Room ID."
             return
         }
-        if (watchPassword.length < 2) {
+        // PASSWORD-IN-LINK (2026-11-21): the typed password wins;
+        // otherwise the password carried by the pasted link (#pw=)
+        // is used, so opening a shared link needs no separate
+        // password entry. Screen Stream minimum stays 2 (min-4
+        // is Camera Live only).
+        val effectivePassword = if (watchPassword.isNotBlank()) watchPassword
+            else ScreenStreamPrefs.parsePasswordFromLink(watchUrl) ?: ""
+        if (effectivePassword.length < 2) {
             note = "Password must be at least 2 characters."
             return
         }
         note = null
         val baseUrl = ScreenStreamPrefs.parseBaseUrl(watchUrl, relayUrl)
-        ScreenStreamPrefs.saveWatchSession(context, baseUrl, code, watchPassword)
-        viewerOpen = Triple(baseUrl, code, watchPassword)
+        ScreenStreamPrefs.saveWatchSession(context, baseUrl, code, effectivePassword)
+        viewerOpen = Triple(baseUrl, code, effectivePassword)
     }
 
     fun copyText(label: String, value: String) {
@@ -331,143 +350,6 @@ fun ScreenStreamSection(
             )
         }
 
-        // WATCH A SCREEN - paste a link, type the password, Open.
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(minDim * 0.044f),
-            colors = CardDefaults.cardColors(containerColor = cardBg),
-            border = BorderStroke(1.dp, cardBorder)
-        ) {
-            Column(
-                modifier = Modifier.fillMaxWidth().padding(minDim * 0.028f),
-                verticalArrangement = Arrangement.spacedBy(minDim * 0.012f)
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier.size(minDim * 0.1f).clip(CircleShape).background(thumbBg),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(Icons.Default.Visibility, contentDescription = null, modifier = Modifier.size(minDim * 0.05f), tint = onPageColor)
-                    }
-                    Spacer(modifier = Modifier.width(minDim * 0.033f))
-                    Text("Watch a screen", fontWeight = FontWeight.SemiBold, fontSize = (minDim * 0.044f).value.sp, color = onPageColor, modifier = Modifier.weight(1f))
-                }
-                Text(
-                    "Watch someone else's screen. Paste their link, or type their Room ID - then the password, and tap Open.",
-                    fontSize = (minDim * 0.036f).value.sp,
-                    color = colorScheme.onSurfaceVariant
-                )
-                OutlinedTextField(
-                    value = watchUrl,
-                    onValueChange = { watchUrl = it },
-                    label = { Text("Stream link") },
-                    placeholder = { Text("https://…/?room=ABC123") },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(minDim * 0.033f),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = onPageColor,
-                        unfocusedBorderColor = cardBorder,
-                        cursorColor = onPageColor
-                    )
-                )
-                // - or - Room ID instead of a link.
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(
-                        modifier = Modifier.weight(1f).height(1.dp).background(cardBorder)
-                    )
-                    Text(
-                        "or",
-                        fontSize = (minDim * 0.033f).value.sp,
-                        color = colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = minDim * 0.022f)
-                    )
-                    Box(
-                        modifier = Modifier.weight(1f).height(1.dp).background(cardBorder)
-                    )
-                }
-                OutlinedTextField(
-                    value = watchRoomId,
-                    onValueChange = { watchRoomId = it.uppercase().filter { c -> c.isLetterOrDigit() }.take(6) },
-                    label = { Text("Room ID") },
-                    placeholder = { Text("ABC123") },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(minDim * 0.033f),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = onPageColor,
-                        unfocusedBorderColor = cardBorder,
-                        cursorColor = onPageColor
-                    )
-                )
-                OutlinedTextField(
-                    value = watchPassword,
-                    onValueChange = { watchPassword = it },
-                    label = { Text("Password") },
-                    placeholder = { Text("At least 2 characters") },
-                    singleLine = true,
-                    visualTransformation = if (watchPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                    trailingIcon = {
-                        IconButton(onClick = { watchPasswordVisible = !watchPasswordVisible }) {
-                            Icon(
-                                if (watchPasswordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                contentDescription = if (watchPasswordVisible) "Hide password" else "Show password",
-                                modifier = Modifier.size(minDim * 0.056f)
-                            )
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(minDim * 0.033f),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = onPageColor,
-                        unfocusedBorderColor = cardBorder,
-                        cursorColor = onPageColor
-                    )
-                )
-                Button(
-                    onClick = { openWatch() },
-                    enabled = (watchUrl.isNotBlank() || watchRoomId.isNotBlank()) && watchPassword.length >= 2,
-                    modifier = Modifier.fillMaxWidth().height(minDim * 0.12f),
-                    shape = RoundedCornerShape(minDim * 0.033f),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = buttonBg,
-                        contentColor = buttonText
-                    )
-                ) {
-                    Text(
-                        "Open",
-                        fontSize = (minDim * 0.044f).value.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-                // A hidden watch can be brought back without
-                // typing anything: the session is still saved.
-                val savedWatch = ScreenStreamPrefs.loadWatchSession(context)
-                if (savedWatch != null && viewerOpen == null) {
-                    Button(
-                        onClick = { viewerOpen = savedWatch },
-                        modifier = Modifier.fillMaxWidth().height(minDim * 0.12f),
-                        shape = RoundedCornerShape(minDim * 0.033f),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = buttonBg,
-                            contentColor = buttonText
-                        )
-                    ) {
-                        Text(
-                            "Resume watching Room ID ${savedWatch.second}",
-                            fontSize = (minDim * 0.044f).value.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-            }
-        }
-
         // SHARE MY SCREEN - password, then Start Stream.
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -490,7 +372,7 @@ fun ScreenStreamSection(
                     Text("Share my screen", fontWeight = FontWeight.SemiBold, fontSize = (minDim * 0.044f).value.sp, color = onPageColor, modifier = Modifier.weight(1f))
                 }
                 Text(
-                    "Anyone with the link and password can watch in any browser. Keep the screen on while streaming.",
+                    "Anyone with the link can watch in any browser - the link includes the password. Keep the screen on while streaming.",
                     fontSize = (minDim * 0.036f).value.sp,
                     color = colorScheme.onSurfaceVariant
                 )
@@ -631,6 +513,143 @@ fun ScreenStreamSection(
                 }
             }
         }
+
+        // WATCH A SCREEN - paste a link, type the password, Open.
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(minDim * 0.044f),
+            colors = CardDefaults.cardColors(containerColor = cardBg),
+            border = BorderStroke(1.dp, cardBorder)
+        ) {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(minDim * 0.028f),
+                verticalArrangement = Arrangement.spacedBy(minDim * 0.012f)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier.size(minDim * 0.1f).clip(CircleShape).background(thumbBg),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Default.Visibility, contentDescription = null, modifier = Modifier.size(minDim * 0.05f), tint = onPageColor)
+                    }
+                    Spacer(modifier = Modifier.width(minDim * 0.033f))
+                    Text("Watch a screen", fontWeight = FontWeight.SemiBold, fontSize = (minDim * 0.044f).value.sp, color = onPageColor, modifier = Modifier.weight(1f))
+                }
+                Text(
+                    "Watch someone else's screen. Paste their link - it already carries the password - or type their Room ID, then the password, and tap Open.",
+                    fontSize = (minDim * 0.036f).value.sp,
+                    color = colorScheme.onSurfaceVariant
+                )
+                OutlinedTextField(
+                    value = watchUrl,
+                    onValueChange = { watchUrl = it },
+                    label = { Text("Stream link") },
+                    placeholder = { Text("https://…/?room=ABC123#pw=...") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(minDim * 0.033f),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = onPageColor,
+                        unfocusedBorderColor = cardBorder,
+                        cursorColor = onPageColor
+                    )
+                )
+                // - or - Room ID instead of a link.
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier.weight(1f).height(1.dp).background(cardBorder)
+                    )
+                    Text(
+                        "or",
+                        fontSize = (minDim * 0.033f).value.sp,
+                        color = colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = minDim * 0.022f)
+                    )
+                    Box(
+                        modifier = Modifier.weight(1f).height(1.dp).background(cardBorder)
+                    )
+                }
+                OutlinedTextField(
+                    value = watchRoomId,
+                    onValueChange = { watchRoomId = it.uppercase().filter { c -> c.isLetterOrDigit() }.take(6) },
+                    label = { Text("Room ID") },
+                    placeholder = { Text("ABC123") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(minDim * 0.033f),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = onPageColor,
+                        unfocusedBorderColor = cardBorder,
+                        cursorColor = onPageColor
+                    )
+                )
+                OutlinedTextField(
+                    value = watchPassword,
+                    onValueChange = { watchPassword = it },
+                    label = { Text("Password") },
+                    placeholder = { Text("At least 2 characters") },
+                    singleLine = true,
+                    visualTransformation = if (watchPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                    trailingIcon = {
+                        IconButton(onClick = { watchPasswordVisible = !watchPasswordVisible }) {
+                            Icon(
+                                if (watchPasswordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                contentDescription = if (watchPasswordVisible) "Hide password" else "Show password",
+                                modifier = Modifier.size(minDim * 0.056f)
+                            )
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(minDim * 0.033f),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = onPageColor,
+                        unfocusedBorderColor = cardBorder,
+                        cursorColor = onPageColor
+                    )
+                )
+                Button(
+                    onClick = { openWatch() },
+                    enabled = (watchUrl.isNotBlank() || watchRoomId.isNotBlank()) && watchPassword.length >= 2,
+                    modifier = Modifier.fillMaxWidth().height(minDim * 0.12f),
+                    shape = RoundedCornerShape(minDim * 0.033f),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = buttonBg,
+                        contentColor = buttonText
+                    )
+                ) {
+                    Text(
+                        "Open",
+                        fontSize = (minDim * 0.044f).value.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                // A hidden watch can be brought back without
+                // typing anything: the session is still saved.
+                val savedWatch = ScreenStreamPrefs.loadWatchSession(context)
+                if (savedWatch != null && viewerOpen == null) {
+                    Button(
+                        onClick = { viewerOpen = savedWatch },
+                        modifier = Modifier.fillMaxWidth().height(minDim * 0.12f),
+                        shape = RoundedCornerShape(minDim * 0.033f),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = buttonBg,
+                            contentColor = buttonText
+                        )
+                    ) {
+                        Text(
+                            "Resume watching Room ID ${savedWatch.second}",
+                            fontSize = (minDim * 0.044f).value.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+        }
     }
 
     // VIEWER - full-screen dialog with the stream in a WebView.
@@ -672,7 +691,7 @@ fun ScreenStreamSection(
                         try {
                             val intent = Intent(
                                 Intent.ACTION_VIEW,
-                                Uri.parse("$baseUrl/?room=$code")
+                                Uri.parse(viewerUrl)
                             )
                             context.startActivity(intent)
                         } catch (_: Exception) {
