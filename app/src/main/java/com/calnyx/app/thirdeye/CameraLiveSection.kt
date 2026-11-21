@@ -118,6 +118,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -888,8 +889,10 @@ fun CameraLiveSection(
                     modifier = Modifier.fillMaxSize()
                         .padding(bottom = minDim * 0.19f, end = minDim * 0.028f)
                 ) {
-                    val pipHeightPx = (minDim * 0.40f).toPx()
-                    val travelPx = (maxHeight.toPx() - pipHeightPx).coerceAtLeast(0f)
+                    val density = LocalDensity.current
+                    val pipHeightPx = with(density) { (minDim * 0.40f).toPx() }
+                    val travelPx = with(density) { maxHeight.toPx() - pipHeightPx }
+                        .coerceAtLeast(0f)
                     Box(
                         modifier = Modifier
                             .align(Alignment.TopEnd)
@@ -1080,8 +1083,10 @@ fun CameraLiveSection(
                     modifier = Modifier.fillMaxSize()
                         .padding(bottom = minDim * 0.37f, end = minDim * 0.028f)
                 ) {
-                    val pipHeightPx = (minDim * 0.40f).toPx()
-                    val travelPx = (maxHeight.toPx() - pipHeightPx).coerceAtLeast(0f)
+                    val density = LocalDensity.current
+                    val pipHeightPx = with(density) { (minDim * 0.40f).toPx() }
+                    val travelPx = with(density) { maxHeight.toPx() - pipHeightPx }
+                        .coerceAtLeast(0f)
                     Box(
                         modifier = Modifier
                             .align(Alignment.TopEnd)
