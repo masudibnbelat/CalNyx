@@ -15,10 +15,15 @@
 // Two clean cards, % sizes and theme colours like the rest of
 // the Network screen, no fixed dp/sp except 1.dp borders:
 //
-//   1. WATCH A SCREEN - paste someone else's link + password,
-//      tap Open, their screen plays in the app (WebView). The
-//      password travels as a #pw= fragment, so it is never sent
-//      to the server in the URL.
+//   1. WATCH A SCREEN - two ways in: paste someone else's link,
+//      or type their Room ID - then the password, tap Open, and
+//      their screen plays in the app (WebView). The password
+//      travels as a #pw= fragment, so it is never sent to the
+//      server in the URL.
+//   MINIMAL PASS (2026-11-21): everything made smaller - tighter
+//      card padding, gaps, titles, icons, buttons and fonts - so
+//      the section takes less room and feels light. Still % sizes
+//      only, still Material 3, still theme colours only.
 //   2. SHARE MY SCREEN - type a password (mandatory, at least
 //      2 characters), tap Start Stream, the phone's screen goes
 //      live through the relay server and a link appears to copy
@@ -139,20 +144,20 @@ private fun StreamCopyRow(
 ) {
     Row(
         modifier = Modifier.fillMaxWidth()
-            .clip(RoundedCornerShape(minDim * 0.022f))
+            .clip(RoundedCornerShape(minDim * 0.016f))
             .background(rowBg)
-            .padding(horizontal = minDim * 0.033f, vertical = minDim * 0.016f),
+            .padding(horizontal = minDim * 0.028f, vertical = minDim * 0.012f),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 label,
-                fontSize = (minDim * 0.033f).value.sp,
+                fontSize = (minDim * 0.03f).value.sp,
                 color = labelColor
             )
             Text(
                 value,
-                fontSize = (minDim * 0.042f).value.sp,
+                fontSize = (minDim * 0.036f).value.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = onPageColor,
                 maxLines = 1,
@@ -162,12 +167,12 @@ private fun StreamCopyRow(
         Spacer(modifier = Modifier.width(minDim * 0.022f))
         IconButton(
             onClick = onCopy,
-            modifier = Modifier.size(minDim * 0.1f)
+            modifier = Modifier.size(minDim * 0.089f)
         ) {
             Icon(
                 Icons.Default.ContentCopy,
                 contentDescription = "Copy $label",
-                modifier = Modifier.size(minDim * 0.05f),
+                modifier = Modifier.size(minDim * 0.044f),
                 tint = onPageColor
             )
         }
@@ -195,6 +200,7 @@ fun ScreenStreamSection(
 
     // WATCH - someone else's stream.
     var watchUrl by remember { mutableStateOf("") }
+    var watchRoomId by remember { mutableStateOf("") }
     var watchPassword by remember { mutableStateOf("") }
     var watchPasswordVisible by remember { mutableStateOf(false) }
     // baseUrl + room + password of the stream being watched.
@@ -270,9 +276,17 @@ fun ScreenStreamSection(
     }
 
     fun openWatch() {
-        val code = ScreenStreamPrefs.parseRoomCode(watchUrl)
+        // Two ways in: a pasted link, or a typed Room ID.
+        // The link wins when both are filled.
+        val code = if (watchUrl.isNotBlank()) {
+            ScreenStreamPrefs.parseRoomCode(watchUrl)
+        } else {
+            val typed = watchRoomId.trim().uppercase()
+            if (Regex("^[A-Za-z0-9]{6}$").matches(typed)) typed else null
+        }
         if (code == null) {
-            note = "That link has no room code."
+            note = if (watchUrl.isNotBlank()) "That link has no room code."
+            else "Type the 6-letter Room ID."
             return
         }
         if (watchPassword.length < 2) {
@@ -299,7 +313,7 @@ fun ScreenStreamSection(
 
     Column(
         modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(minDim * 0.016f)
+        verticalArrangement = Arrangement.spacedBy(minDim * 0.012f)
     ) {
         if (note != null) {
             Text(
@@ -318,22 +332,22 @@ fun ScreenStreamSection(
             border = BorderStroke(1.dp, cardBorder)
         ) {
             Column(
-                modifier = Modifier.fillMaxWidth().padding(minDim * 0.033f),
-                verticalArrangement = Arrangement.spacedBy(minDim * 0.016f)
+                modifier = Modifier.fillMaxWidth().padding(minDim * 0.028f),
+                verticalArrangement = Arrangement.spacedBy(minDim * 0.012f)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
-                        modifier = Modifier.size(minDim * 0.122f).clip(CircleShape).background(thumbBg),
+                        modifier = Modifier.size(minDim * 0.1f).clip(CircleShape).background(thumbBg),
                         contentAlignment = Alignment.Center
                     ) {
-                        Icon(Icons.Default.Visibility, contentDescription = null, modifier = Modifier.size(minDim * 0.061f), tint = onPageColor)
+                        Icon(Icons.Default.Visibility, contentDescription = null, modifier = Modifier.size(minDim * 0.05f), tint = onPageColor)
                     }
                     Spacer(modifier = Modifier.width(minDim * 0.033f))
-                    Text("Watch a screen", fontWeight = FontWeight.SemiBold, fontSize = (minDim * 0.05f).value.sp, color = onPageColor, modifier = Modifier.weight(1f))
+                    Text("Watch a screen", fontWeight = FontWeight.SemiBold, fontSize = (minDim * 0.044f).value.sp, color = onPageColor, modifier = Modifier.weight(1f))
                 }
                 Text(
-                    "Watch someone else's screen. Paste the link they sent you, type their password, then tap Open.",
-                    fontSize = (minDim * 0.039f).value.sp,
+                    "Watch someone else's screen. Paste their link, or type their Room ID - then the password, and tap Open.",
+                    fontSize = (minDim * 0.036f).value.sp,
                     color = colorScheme.onSurfaceVariant
                 )
                 OutlinedTextField(
@@ -343,6 +357,39 @@ fun ScreenStreamSection(
                     placeholder = { Text("https://…/?room=ABC123") },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(minDim * 0.033f),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = onPageColor,
+                        unfocusedBorderColor = cardBorder,
+                        cursorColor = onPageColor
+                    )
+                )
+                // - or - Room ID instead of a link.
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier.weight(1f).height(1.dp).background(cardBorder)
+                    )
+                    Text(
+                        "or",
+                        fontSize = (minDim * 0.033f).value.sp,
+                        color = colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = minDim * 0.022f)
+                    )
+                    Box(
+                        modifier = Modifier.weight(1f).height(1.dp).background(cardBorder)
+                    )
+                }
+                OutlinedTextField(
+                    value = watchRoomId,
+                    onValueChange = { watchRoomId = it.uppercase().filter { c -> c.isLetterOrDigit() }.take(6) },
+                    label = { Text("Room ID") },
+                    placeholder = { Text("ABC123") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(minDim * 0.033f),
                     colors = OutlinedTextFieldDefaults.colors(
@@ -377,8 +424,8 @@ fun ScreenStreamSection(
                 )
                 Button(
                     onClick = { openWatch() },
-                    enabled = watchUrl.isNotBlank() && watchPassword.length >= 2,
-                    modifier = Modifier.fillMaxWidth().height(minDim * 0.133f),
+                    enabled = (watchUrl.isNotBlank() || watchRoomId.isNotBlank()) && watchPassword.length >= 2,
+                    modifier = Modifier.fillMaxWidth().height(minDim * 0.12f),
                     shape = RoundedCornerShape(minDim * 0.033f),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = buttonBg,
@@ -402,22 +449,22 @@ fun ScreenStreamSection(
             border = BorderStroke(1.dp, cardBorder)
         ) {
             Column(
-                modifier = Modifier.fillMaxWidth().padding(minDim * 0.033f),
-                verticalArrangement = Arrangement.spacedBy(minDim * 0.016f)
+                modifier = Modifier.fillMaxWidth().padding(minDim * 0.028f),
+                verticalArrangement = Arrangement.spacedBy(minDim * 0.012f)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
-                        modifier = Modifier.size(minDim * 0.122f).clip(CircleShape).background(thumbBg),
+                        modifier = Modifier.size(minDim * 0.1f).clip(CircleShape).background(thumbBg),
                         contentAlignment = Alignment.Center
                     ) {
-                        Icon(Icons.Default.ScreenShare, contentDescription = null, modifier = Modifier.size(minDim * 0.061f), tint = onPageColor)
+                        Icon(Icons.Default.ScreenShare, contentDescription = null, modifier = Modifier.size(minDim * 0.05f), tint = onPageColor)
                     }
                     Spacer(modifier = Modifier.width(minDim * 0.033f))
-                    Text("Share my screen", fontWeight = FontWeight.SemiBold, fontSize = (minDim * 0.05f).value.sp, color = onPageColor, modifier = Modifier.weight(1f))
+                    Text("Share my screen", fontWeight = FontWeight.SemiBold, fontSize = (minDim * 0.044f).value.sp, color = onPageColor, modifier = Modifier.weight(1f))
                 }
                 Text(
                     "Anyone with the link and password can watch in any browser. Keep the screen on while streaming.",
-                    fontSize = (minDim * 0.039f).value.sp,
+                    fontSize = (minDim * 0.036f).value.sp,
                     color = colorScheme.onSurfaceVariant
                 )
                 OutlinedTextField(
@@ -450,7 +497,7 @@ fun ScreenStreamSection(
                 Text(
                     "Quality",
                     fontWeight = FontWeight.SemiBold,
-                    fontSize = (minDim * 0.039f).value.sp,
+                    fontSize = (minDim * 0.036f).value.sp,
                     color = onPageColor
                 )
                 Row(modifier = Modifier.fillMaxWidth()) {
@@ -465,7 +512,7 @@ fun ScreenStreamSection(
                                     RoundedCornerShape(minDim * 0.022f)
                                 )
                                 .clickable { quality = q }
-                                .padding(vertical = minDim * 0.022f),
+                                .padding(vertical = minDim * 0.016f),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
@@ -483,7 +530,7 @@ fun ScreenStreamSection(
                         else startStream()
                     },
                     enabled = !waitingProjection && (isStreaming || isStarting || sharePassword.length >= 2),
-                    modifier = Modifier.fillMaxWidth().height(minDim * 0.133f),
+                    modifier = Modifier.fillMaxWidth().height(minDim * 0.12f),
                     shape = RoundedCornerShape(minDim * 0.033f),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = if (isStreaming || isStarting) CalNyxRed else buttonBg,
@@ -506,21 +553,21 @@ fun ScreenStreamSection(
                 if (isStarting || waitingProjection) {
                     Text(
                         "Connecting to the relay server… If the server was asleep, this can take up to a minute.",
-                        fontSize = (minDim * 0.039f).value.sp,
+                        fontSize = (minDim * 0.036f).value.sp,
                         color = colorScheme.onSurfaceVariant
                     )
                 }
                 if (note != null) {
                     Text(
                         text = note ?: "",
-                        fontSize = (minDim * 0.039f).value.sp,
+                        fontSize = (minDim * 0.036f).value.sp,
                         color = colorScheme.onSurfaceVariant
                     )
                 }
                 if (isStreaming) {
                     Text(
                         "Live  ${formatElapsed(elapsedSec)}  •  Room ID ${roomCode ?: ""}  •  Watching: $viewerCount",
-                        fontSize = (minDim * 0.039f).value.sp,
+                        fontSize = (minDim * 0.036f).value.sp,
                         color = colorScheme.onSurfaceVariant
                     )
                     streamUrl?.let { url ->
@@ -576,7 +623,7 @@ fun ScreenStreamSection(
                 modifier = Modifier.fillMaxSize().background(Color.Black)
             ) {
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(minDim * 0.033f),
+                    modifier = Modifier.fillMaxWidth().padding(minDim * 0.028f),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     IconButton(onClick = { viewerOpen = null }) {
@@ -601,7 +648,7 @@ fun ScreenStreamSection(
                         } catch (_: Exception) {
                         }
                     }) {
-                        Icon(Icons.Default.OpenInBrowser, contentDescription = "Open in browser", tint = Color.White, modifier = Modifier.size(minDim * 0.061f))
+                        Icon(Icons.Default.OpenInBrowser, contentDescription = "Open in browser", tint = Color.White, modifier = Modifier.size(minDim * 0.05f))
                     }
                 }
                 AndroidView(
