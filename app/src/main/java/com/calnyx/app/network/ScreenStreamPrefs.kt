@@ -14,8 +14,8 @@ object ScreenStreamPrefs {
     private const val KEY_PASSWORD = "password"
     private const val KEY_QUALITY = "quality"
 
-    // Default relay URL - replace with your own Render URL after
-    // deploying server.js (or change it in Settings in the app).
+    // Relay URL - CODE ONLY, never shown in the app UI (2026-11-21).
+    // Change this line only if the relay moves to a different address.
     const val DEFAULT_RELAY_URL = "https://calnyx-stream.onrender.com"
 
     fun savedRelayUrl(context: Context): String {

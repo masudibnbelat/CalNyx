@@ -24,8 +24,15 @@
 //      live through the relay server and a link appears to copy
 //      and send to anyone. Anyone opening it in any browser
 //      types the password and watches. Settings (folded, like
-//      a folder) holds the relay server URL + stream quality.
-//      Stop ends it; the room is deleted at once.
+//      a folder) holds the stream quality only.
+//
+// RELAY URL IS CODE-ONLY (2026-11-21): the server address lives
+// only in ScreenStreamPrefs.DEFAULT_RELAY_URL - it is NEVER
+// shown or edited in the app UI, so users never see it. If the
+// relay ever moves, change that one line in the code.
+// The share link itself must contain the address (that is how
+// a browser reaches the stream) - that link is only shown while
+// streaming, to be copied and sent.
 //
 // The system capture dialog appears every time a stream starts
 // (Android's rule). The stream stops if the phone locks or the
@@ -126,6 +133,10 @@ fun ScreenStreamSection(
     val buttonBg = onPageColor
     val buttonText = cardBg
 
+    // Relay URL: code-only, from ScreenStreamPrefs. Never shown
+    // or edited in the UI - users must never see the server address.
+    val relayUrl = ScreenStreamPrefs.savedRelayUrl(context)
+
     var note by remember { mutableStateOf<String?>(null) }
 
     // WATCH - someone else's stream.
@@ -138,7 +149,6 @@ fun ScreenStreamSection(
     // SHARE - my stream.
     var sharePassword by remember { mutableStateOf(ScreenStreamPrefs.savedPassword(context)) }
     var sharePasswordVisible by remember { mutableStateOf(false) }
-    var relayUrl by remember { mutableStateOf(ScreenStreamPrefs.savedRelayUrl(context)) }
     var quality by remember { mutableStateOf(ScreenStreamPrefs.savedQuality(context)) }
     var settingsExpanded by remember { mutableStateOf(false) }
     var waitingProjection by remember { mutableStateOf(false) }
@@ -193,7 +203,6 @@ fun ScreenStreamSection(
             return
         }
         ScreenStreamPrefs.savePassword(context, sharePassword)
-        ScreenStreamPrefs.saveRelayUrl(context, relayUrl)
         ScreenStreamPrefs.saveQuality(context, quality)
         note = null
         val manager =
@@ -383,6 +392,8 @@ fun ScreenStreamSection(
                     )
                 )
                 // SETTINGS - folded, tap to open like a folder.
+                // Quality only - the relay URL is code-only and
+                // is never shown here.
                 Row(
                     modifier = Modifier.fillMaxWidth()
                         .clip(RoundedCornerShape(minDim * 0.033f))
@@ -412,21 +423,6 @@ fun ScreenStreamSection(
                     )
                 }
                 if (settingsExpanded) {
-                    OutlinedTextField(
-                        value = relayUrl,
-                        onValueChange = { relayUrl = it },
-                        label = { Text("Relay server URL") },
-                        placeholder = { Text(ScreenStreamPrefs.DEFAULT_RELAY_URL) },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(minDim * 0.033f),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = onPageColor,
-                            unfocusedBorderColor = cardBorder,
-                            cursorColor = onPageColor
-                        )
-                    )
                     Text(
                         "Quality",
                         fontWeight = FontWeight.SemiBold,
@@ -475,6 +471,23 @@ fun ScreenStreamSection(
                         },
                         fontSize = (minDim * 0.044f).value.sp,
                         fontWeight = FontWeight.Bold
+                    )
+                }
+                // Status + error, right under the button where the
+                // user is looking - the note at the top of the
+                // section is too far up to notice while starting.
+                if (isStarting || waitingProjection) {
+                    Text(
+                        "Connecting to the relay server… If the server was asleep, this can take up to a minute.",
+                        fontSize = (minDim * 0.039f).value.sp,
+                        color = colorScheme.onSurfaceVariant
+                    )
+                }
+                if (note != null) {
+                    Text(
+                        text = note ?: "",
+                        fontSize = (minDim * 0.039f).value.sp,
+                        color = colorScheme.onSurfaceVariant
                     )
                 }
                 if (isStreaming) {
