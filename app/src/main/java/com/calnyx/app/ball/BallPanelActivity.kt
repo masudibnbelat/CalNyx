@@ -1,4 +1,11 @@
-// FILE: app/src/main/java/com/calnyx/app/moan/BallPanelActivity.kt
+// BALL PANEL TWO-WAY SYNC (2026-11-21) - REPLACE BallPanelActivity.kt.
+// The Screen Record button now reads the live ScreenRecordService state:
+// if a screen recording is already running (started from the ball or
+// from inside Third Eye), the button shows Stop (inverted circle) and
+// tapping it STOPS the recording instead of starting a second one.
+// Nothing else changed: quick record still uses the saved Mic +
+// Quality from Third Eye, camera recording still blocks it.
+// FILE: app/src/main/java/com/calnyx/app/ball/BallPanelActivity.kt
 // NEW FILE - Ball mini panel as a transparent Activity.
 // Why an Activity, not a Service overlay: Jetpack Compose +
 // Material 3 need a real Activity lifecycle. A Service overlay
@@ -110,6 +117,7 @@ import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.ScreenRotation
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -171,6 +179,12 @@ class BallPanelActivity : ComponentActivity() {
     private var accessibilityOn by mutableStateOf(false)
     // Rotate toggle state: true = Down (180 deg) is active.
     private var rotateDown by mutableStateOf(false)
+    // SCREEN RECORD SYNC (2026-11-21): true while a screen recording
+    // runs, wherever it was started (ball panel or Third Eye screen).
+    // The panel reads the live service state on open / resume, so a
+    // recording started from inside Third Eye shows here as Stop.
+    private var isScreenRecording by mutableStateOf(false)
+    private var isScreenStarting by mutableStateOf(false)
     private val mainHandler = Handler(Looper.getMainLooper())
 
     private val cameraPermissionLauncher = registerForActivityResult(
@@ -222,6 +236,8 @@ class BallPanelActivity : ComponentActivity() {
         }
         accessibilityOn = AppLockManager.isAccessibilityEnabled(this)
         rotateDown = OrientationService.getSavedMode(this) == "down"
+        isScreenRecording = ScreenRecordService.isRecording
+        isScreenStarting = ScreenRecordService.isStarting
         // Torch: show the current state when the panel opens.
         // The saved state is the starting point; the torch
         // callback below corrects it from the system if the
@@ -333,12 +349,13 @@ class BallPanelActivity : ComponentActivity() {
                                     )
                                     ActionButton(
                                         label = "Screen Record",
-                                        icon = Icons.Default.FiberManualRecord,
+                                        icon = if (isScreenRecording || isScreenStarting) Icons.Default.Stop else Icons.Default.FiberManualRecord,
                                         thumbBg = thumbBg,
                                         onCard = onCard,
                                         cardBg = cardBg,
                                         minDim = minDim,
-                                        tint = CalNyxRed,
+                                        active = isScreenRecording || isScreenStarting,
+                                        tint = if (isScreenRecording || isScreenStarting) null else CalNyxRed,
                                         onClick = { doScreenRecord() }
                                     )
                                 }
@@ -459,6 +476,8 @@ class BallPanelActivity : ComponentActivity() {
         super.onResume()
         // User may have just enabled Accessibility in Settings.
         accessibilityOn = AppLockManager.isAccessibilityEnabled(this)
+        isScreenRecording = ScreenRecordService.isRecording
+        isScreenStarting = ScreenRecordService.isStarting
     }
 
     override fun onDestroy() {
@@ -496,11 +515,20 @@ class BallPanelActivity : ComponentActivity() {
     }
 
     private fun doScreenRecord() {
+        // TWO-WAY SYNC (2026-11-21): if a screen recording is already
+        // running (started from the ball, or from inside Third Eye),
+        // this same button STOPS it instead of starting a second one.
+        // The panel closes so the user sees the recording stop.
+        if (ScreenRecordService.isRecording || ScreenRecordService.isStarting) {
+            ScreenRecordService.stop(this)
+            finish()
+            return
+        }
         // Quick record: no opening the app, no settings - the
-        // mic + quality come from the Blue Film settings as
+        // mic + quality come from the Third Eye settings as
         // saved. Two recordings at once would be a mess, so
         // while a camera recording runs this refuses.
-        if (ThirdEyeService.isRecording) {
+        if (ThirdEyeService.isRecording || ThirdEyeService.isStarting) {
             Toast.makeText(
                 this,
                 "Stop the camera recording first.",
