@@ -144,7 +144,7 @@
 //    No other colour anywhere. Theme toggle at the bottom stays.
 // 5. REOPEN RULE: only the three calculator screens (Normal,
 //    Scientific, CalTape) are remembered across close/reopen.
-//    Any other menu screen (Converter, Number System, ICT,
+//    Any other menu screen (Converter, Base System, ICT,
 //    Hardcore, Moan) saves Normal instead, so reopening the
 //    app always lands on the Normal calculator.
 // Based on FIXED2 (ON_RESUME session kill stays removed, AppLock
@@ -305,7 +305,7 @@ import com.calnyx.app.calculator.ConverterCalculatorScreen
 import com.calnyx.app.calculator.HistoryScreen
 import com.calnyx.app.calculator.IctCalculatorScreen
 import com.calnyx.app.calculator.NormalCalculatorScreen
-import com.calnyx.app.calculator.NumberSystemCalculatorScreen
+import com.calnyx.app.calculator.BaseSystemCalculatorScreen
 import com.calnyx.app.calculator.ScientificCalculatorScreen
 import com.calnyx.app.blackhole.BlackHoleScreen
 import com.calnyx.app.blackhole.BlackHoleSetupScreen
@@ -333,7 +333,7 @@ sealed class Screen(
                     "Length, weight, volume & more",
                     Icons.Default.SwapHoriz
             )
-    object NumberSystem :
+    object BaseSystem :
             Screen(
                     "numbersystem",
                     "Base System",
@@ -394,7 +394,7 @@ val menuScreens =
                 Screen.CalTape,
                 Screen.Scientific,
                 Screen.Converter,
-                Screen.NumberSystem,
+                Screen.BaseSystem,
                 Screen.Ict,
                 Screen.Hardcore,
                 Screen.Moan,
@@ -870,7 +870,7 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
             // reopen restores this calculator.
             navStateDao.save(NavStateEntity(route = route))
         } else if (route in persistRoutes) {
-            // Converter / Number System / ICT / Hardcore / Moan /
+            // Converter / Base System / ICT / Hardcore / Moan /
             // ThirdEye / Clipboard: remember Normal instead, so
             // reopen lands on the Normal calculator, not on the tool.
             navStateDao.save(NavStateEntity(route = Screen.Normal.route))
@@ -999,8 +999,8 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
                         onOpenDrawer = { drawerOpen = true }
                     )
                 }
-                composable(Screen.NumberSystem.route) {
-                    NumberSystemCalculatorScreen(
+                composable(Screen.BaseSystem.route) {
+                    BaseSystemCalculatorScreen(
                             darkTheme = darkTheme,
                             onToggleTheme = onToggleTheme,
                             onOpenDrawer = { drawerOpen = true }
@@ -1278,7 +1278,7 @@ fun CalNyxNavGraph(darkTheme: Boolean, onToggleTheme: () -> Unit) {
                                         // "69" centred in the icon box,
                                         // tinted by the drawer's content
                                         // colour like the other icons.
-                                        if (screen == Screen.NumberSystem) {
+                                        if (screen == Screen.BaseSystem) {
                                             Box(
                                                 modifier = Modifier.size(drawerIconSize),
                                                 contentAlignment = Alignment.Center

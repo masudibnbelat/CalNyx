@@ -1,9 +1,9 @@
-// FILE: app/src/main/java/com/calnyx/app/ui/screens/NumberSystemCalculatorScreen.kt
+// FILE: app/src/main/java/com/calnyx/app/ui/screens/BaseSystemCalculatorScreen.kt
 // % VERSION (2026-11-07) - REPLACE. B/W base, logic UNCHANGED.
 // Only change: the last fixed values are now % — drawer swipe
 // threshold (6.7% of minDim) and the entrance slide (7.2% of
 // minDim). Everything else was already % (sw/sh fractions).
-// B/W VERSION - replace your old NumberSystemCalculatorScreen.kt with this file.
+// B/W VERSION - replace your old BaseSystemCalculatorScreen.kt with this file.
 // Logic is UNCHANGED (BigInteger parse/render, grouping, key enable
 // rules, swap, copy format, animations). Only the design changed:
 //  - BLACK / WHITE ONLY, both dark and light mode: only
@@ -168,7 +168,7 @@ private fun keyEnabledInBase(key: String, base: NumberBase): Boolean {
 }
 
 @Composable
-fun NumberSystemCalculatorScreen(
+fun BaseSystemCalculatorScreen(
     darkTheme: Boolean,
     onToggleTheme: () -> Unit,
     onOpenDrawer: () -> Unit = {}
