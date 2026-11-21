@@ -17,9 +17,16 @@
 //
 //   1. WATCH A SCREEN - two ways in: paste someone else's link,
 //      or type their Room ID - then the password, tap Open, and
-//      their screen plays in the app (WebView). The password
-//      travels as a #pw= fragment, so it is never sent to the
-//      server in the URL.
+//      their screen plays in the app (WebView), full screen, no
+//      browser. The password travels as a #pw= fragment, so it
+//      is never sent to the server in the URL.
+//      PERSISTENT WATCH (2026-11-21): the watch is saved, so
+//      leaving the app or the Network screen and coming back
+//      reopens it by itself, live, until "Stop watching" is
+//      tapped. Back / X only hides it - the session stays.
+//      (Android pauses the picture while the app is in the
+//      background; the session is what survives, and the live
+//      screen is back the moment the Network tab opens again.)
 //   MINIMAL PASS (2026-11-21): everything made smaller - tighter
 //      card padding, gaps, titles, icons, buttons and fonts - so
 //      the section takes less room and feels light. Still % sizes
@@ -204,7 +211,9 @@ fun ScreenStreamSection(
     var watchPassword by remember { mutableStateOf("") }
     var watchPasswordVisible by remember { mutableStateOf(false) }
     // baseUrl + room + password of the stream being watched.
-    var viewerOpen by remember { mutableStateOf<Triple<String, String, String>?>(null) }
+    // Restored from the saved session, so leaving the app or the
+    // Network screen and coming back reopens the watch by itself.
+    var viewerOpen by remember { mutableStateOf(ScreenStreamPrefs.loadWatchSession(context)) }
 
     // SHARE - my stream.
     var sharePassword by remember { mutableStateOf(ScreenStreamPrefs.savedPassword(context)) }
@@ -294,11 +303,9 @@ fun ScreenStreamSection(
             return
         }
         note = null
-        viewerOpen = Triple(
-            ScreenStreamPrefs.parseBaseUrl(watchUrl, relayUrl),
-            code,
-            watchPassword
-        )
+        val baseUrl = ScreenStreamPrefs.parseBaseUrl(watchUrl, relayUrl)
+        ScreenStreamPrefs.saveWatchSession(context, baseUrl, code, watchPassword)
+        viewerOpen = Triple(baseUrl, code, watchPassword)
     }
 
     fun copyText(label: String, value: String) {
@@ -437,6 +444,26 @@ fun ScreenStreamSection(
                         fontSize = (minDim * 0.044f).value.sp,
                         fontWeight = FontWeight.Bold
                     )
+                }
+                // A hidden watch can be brought back without
+                // typing anything: the session is still saved.
+                val savedWatch = ScreenStreamPrefs.loadWatchSession(context)
+                if (savedWatch != null && viewerOpen == null) {
+                    Button(
+                        onClick = { viewerOpen = savedWatch },
+                        modifier = Modifier.fillMaxWidth().height(minDim * 0.12f),
+                        shape = RoundedCornerShape(minDim * 0.033f),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = buttonBg,
+                            contentColor = buttonText
+                        )
+                    ) {
+                        Text(
+                            "Resume watching Room ID ${savedWatch.second}",
+                            fontSize = (minDim * 0.044f).value.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
             }
         }
@@ -616,6 +643,9 @@ fun ScreenStreamSection(
             "$baseUrl/?room=$code"
         }
         Dialog(
+            // Back / X only HIDES the viewer - the watch session
+            // stays saved and reopens when the Network screen is
+            // opened again. "Stop watching" below ends it for good.
             onDismissRequest = { viewerOpen = null },
             properties = DialogProperties(usePlatformDefaultWidth = false)
         ) {
@@ -670,6 +700,27 @@ fun ScreenStreamSection(
                     },
                     modifier = Modifier.fillMaxSize().weight(1f)
                 )
+                Button(
+                    onClick = {
+                        ScreenStreamPrefs.clearWatchSession(context)
+                        viewerOpen = null
+                        note = "Stopped watching."
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                        .padding(minDim * 0.028f)
+                        .height(minDim * 0.12f),
+                    shape = RoundedCornerShape(minDim * 0.033f),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = CalNyxRed,
+                        contentColor = Color.White
+                    )
+                ) {
+                    Text(
+                        "Stop watching",
+                        fontSize = (minDim * 0.044f).value.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
         }
     }

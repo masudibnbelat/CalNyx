@@ -62,6 +62,41 @@ object ScreenStreamPrefs {
             .edit().putString(KEY_QUALITY, quality).apply()
     }
 
+    // WATCH SESSION (2026-11-21) - the room being watched, so the
+    // watch survives leaving the app or the Network screen: when
+    // the Network screen opens again, the viewer reopens itself
+    // with the same room + password, full screen, until Stop.
+    private const val KEY_WATCH_BASE = "watch_base"
+    private const val KEY_WATCH_ROOM = "watch_room"
+    private const val KEY_WATCH_PASSWORD = "watch_password"
+
+    fun saveWatchSession(context: Context, baseUrl: String, roomCode: String, password: String) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putString(KEY_WATCH_BASE, baseUrl)
+            .putString(KEY_WATCH_ROOM, roomCode)
+            .putString(KEY_WATCH_PASSWORD, password)
+            .apply()
+    }
+
+    // Triple(baseUrl, roomCode, password), or null when nothing
+    // is being watched.
+    fun loadWatchSession(context: Context): Triple<String, String, String>? {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val room = prefs.getString(KEY_WATCH_ROOM, null) ?: return null
+        val base = prefs.getString(KEY_WATCH_BASE, null) ?: return null
+        val password = prefs.getString(KEY_WATCH_PASSWORD, null) ?: return null
+        if (room.isBlank() || base.isBlank()) return null
+        return Triple(base, room, password)
+    }
+
+    fun clearWatchSession(context: Context) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .remove(KEY_WATCH_BASE)
+            .remove(KEY_WATCH_ROOM)
+            .remove(KEY_WATCH_PASSWORD)
+            .apply()
+    }
+
     // Relay URL -> WebSocket URL: http(s)://host becomes
     // ws(s)://host/stream. The relay serves the viewer page on
     // the same host, so one URL is the whole setting.
