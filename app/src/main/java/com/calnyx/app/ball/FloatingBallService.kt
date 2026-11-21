@@ -40,7 +40,7 @@ import android.view.WindowManager
 import android.widget.FrameLayout
 import android.widget.Toast
 import androidx.core.app.NotificationCompat
-import com.calnyx.app.thirdeye.ScreenRecordService
+import com.calnyx.app.spy.SpyScreenRecordService
 import com.calnyx.app.R
 import com.calnyx.app.moan.MoanControlPrefs
 import com.calnyx.app.hardcore.OrientationGuard
@@ -371,9 +371,9 @@ class FloatingBallService : Service() {
                         // The ball must NEVER open the app itself.
                         // If the panel cannot open, just toast -
                         // no fallback to CalNyx.
-                        if (ScreenRecordService.isRecording) {
+                        if (SpyScreenRecordService.isRecording) {
                             try {
-                                ScreenRecordService.openToolbar(this@FloatingBallService)
+                                SpyScreenRecordService.openToolbar(this@FloatingBallService)
                             } catch (_: Exception) {
                             }
                         } else {

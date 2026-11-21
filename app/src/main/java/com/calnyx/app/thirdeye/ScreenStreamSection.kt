@@ -358,8 +358,8 @@ fun ScreenStreamSection(
             border = BorderStroke(1.dp, cardBorder)
         ) {
             Column(
-                modifier = Modifier.fillMaxWidth().padding(minDim * 0.028f),
-                verticalArrangement = Arrangement.spacedBy(minDim * 0.012f)
+                modifier = Modifier.fillMaxWidth().padding(minDim * 0.022f),
+                verticalArrangement = Arrangement.spacedBy(minDim * 0.010f)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
@@ -522,8 +522,8 @@ fun ScreenStreamSection(
             border = BorderStroke(1.dp, cardBorder)
         ) {
             Column(
-                modifier = Modifier.fillMaxWidth().padding(minDim * 0.028f),
-                verticalArrangement = Arrangement.spacedBy(minDim * 0.012f)
+                modifier = Modifier.fillMaxWidth().padding(minDim * 0.022f),
+                verticalArrangement = Arrangement.spacedBy(minDim * 0.010f)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(

@@ -1,5 +1,5 @@
 // BALL PANEL TWO-WAY SYNC (2026-11-21) - REPLACE BallPanelActivity.kt.
-// The Screen Record button now reads the live ScreenRecordService state:
+// The Screen Record button now reads the live SpyScreenRecordService state:
 // if a screen recording is already running (started from the ball or
 // from inside Third Eye), the button shows Stop (inverted circle) and
 // tapping it STOPS the recording instead of starting a second one.
@@ -143,8 +143,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
-import com.calnyx.app.thirdeye.ThirdEyeService
-import com.calnyx.app.thirdeye.ScreenRecordService
+import com.calnyx.app.spy.SpyService
+import com.calnyx.app.spy.SpyScreenRecordService
 import com.calnyx.app.ball.FloatingBallService
 import com.calnyx.app.moan.MoanControlPrefs
 import com.calnyx.app.applock.AppLockManager
@@ -211,12 +211,12 @@ class BallPanelActivity : ComponentActivity() {
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
         if (result.resultCode == Activity.RESULT_OK && result.data != null) {
-            ScreenRecordService.start(
+            SpyScreenRecordService.start(
                 this,
                 result.resultCode,
                 result.data!!,
-                ThirdEyeService.savedMicEnabled(this),
-                ThirdEyeService.savedQuality(this)
+                SpyService.savedMicEnabled(this),
+                SpyService.savedQuality(this)
             )
             finish()
         } else {
@@ -236,8 +236,8 @@ class BallPanelActivity : ComponentActivity() {
         }
         accessibilityOn = AppLockManager.isAccessibilityEnabled(this)
         rotateDown = OrientationService.getSavedMode(this) == "down"
-        isScreenRecording = ScreenRecordService.isRecording
-        isScreenStarting = ScreenRecordService.isStarting
+        isScreenRecording = SpyScreenRecordService.isRecording
+        isScreenStarting = SpyScreenRecordService.isStarting
         // Torch: show the current state when the panel opens.
         // The saved state is the starting point; the torch
         // callback below corrects it from the system if the
@@ -476,8 +476,8 @@ class BallPanelActivity : ComponentActivity() {
         super.onResume()
         // User may have just enabled Accessibility in Settings.
         accessibilityOn = AppLockManager.isAccessibilityEnabled(this)
-        isScreenRecording = ScreenRecordService.isRecording
-        isScreenStarting = ScreenRecordService.isStarting
+        isScreenRecording = SpyScreenRecordService.isRecording
+        isScreenStarting = SpyScreenRecordService.isStarting
     }
 
     override fun onDestroy() {
@@ -519,8 +519,8 @@ class BallPanelActivity : ComponentActivity() {
         // running (started from the ball, or from inside Third Eye),
         // this same button STOPS it instead of starting a second one.
         // The panel closes so the user sees the recording stop.
-        if (ScreenRecordService.isRecording || ScreenRecordService.isStarting) {
-            ScreenRecordService.stop(this)
+        if (SpyScreenRecordService.isRecording || SpyScreenRecordService.isStarting) {
+            SpyScreenRecordService.stop(this)
             finish()
             return
         }
@@ -528,7 +528,7 @@ class BallPanelActivity : ComponentActivity() {
         // mic + quality come from the Third Eye settings as
         // saved. Two recordings at once would be a mess, so
         // while a camera recording runs this refuses.
-        if (ThirdEyeService.isRecording || ThirdEyeService.isStarting) {
+        if (SpyService.isRecording || SpyService.isStarting) {
             Toast.makeText(
                 this,
                 "Stop the camera recording first.",

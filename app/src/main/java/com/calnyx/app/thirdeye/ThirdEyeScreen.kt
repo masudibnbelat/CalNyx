@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -175,7 +176,15 @@ fun ThirdEyeScreen(
                 minDim = minDim
             )
 
-            // 2. Camera Live BELOW it.
+            // 2. Camera Live BELOW it - with a clear break between
+            // the two sections: a bigger gap plus a thin divider,
+            // so Screen Share and Camera Live read as two separate
+            // sections, not one long list of similar cards.
+            Spacer(modifier = Modifier.height(screenH * 0.02f))
+            Box(
+                modifier = Modifier.fillMaxWidth().height(1.dp).background(cardBorder)
+            )
+            Spacer(modifier = Modifier.height(screenH * 0.02f))
             CameraLiveSection(
                 cardBg = cardBg,
                 cardBorder = cardBorder,
@@ -184,7 +193,7 @@ fun ThirdEyeScreen(
                 minDim = minDim
             )
 
-            Spacer(modifier = Modifier.height(screenH * 0.02f))
+            Spacer(modifier = Modifier.height(screenH * 0.01f))
         }
     }
 }

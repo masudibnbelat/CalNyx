@@ -234,6 +234,16 @@ class CameraLiveService : Service() {
         }
 
         fun stop(context: Context) {
+            // CRASH FIX (2026-11-21): do NOT start the service
+            // just to stop it. startForegroundService() gives the
+            // service ~5 s to call startForeground(), but the
+            // ACTION_STOP path never does - so stopping a service
+            // that was not running crashed the whole app with
+            // ForegroundServiceDidNotStartInTimeException (that is
+            // what killed Camera Live's Start Camera tap, via the
+            // Screen Stream stop). When nothing is running or
+            // starting there is nothing to stop, so skip it.
+            if (!isStreaming && !isStarting && !isViewerPublishing && !isViewerStarting) return
             val intent = Intent(context, CameraLiveService::class.java).apply {
                 action = ACTION_STOP
             }
@@ -241,6 +251,10 @@ class CameraLiveService : Service() {
         }
 
         fun switchFacing(context: Context) {
+            // Same crash fix as stop(): switching the lens on a
+            // service that is not running would start it without
+            // any startForeground() call, so skip it.
+            if (!isStreaming && !isStarting && !isViewerPublishing && !isViewerStarting) return
             val intent = Intent(context, CameraLiveService::class.java).apply {
                 action = ACTION_SWITCH_FACING
             }

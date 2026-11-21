@@ -155,6 +155,16 @@ class ScreenStreamService : Service() {
         }
 
         fun stop(context: Context) {
+            // CRASH FIX (2026-11-21): do NOT start the service
+            // just to stop it. startForegroundService() gives the
+            // service ~5 s to call startForeground(), but the
+            // ACTION_STOP path never does - so stopping a service
+            // that was not running crashed the whole app with
+            // ForegroundServiceDidNotStartInTimeException (that is
+            // what killed Camera Live's Start Camera tap: it stops
+            // Screen Stream first). When nothing is streaming or
+            // starting there is nothing to stop, so skip it.
+            if (!isStreaming && !isStarting) return
             val intent = Intent(context, ScreenStreamService::class.java).apply {
                 action = ACTION_STOP
             }

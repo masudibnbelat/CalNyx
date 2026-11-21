@@ -62,6 +62,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -69,12 +70,14 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -112,6 +115,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -121,6 +125,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -131,6 +136,7 @@ import android.hardware.camera2.CameraCharacteristics
 import com.calnyx.app.theme.CalNyxRed
 import java.net.URLEncoder
 import kotlinx.coroutines.delay
+import kotlin.math.roundToInt
 
 private fun formatElapsed(seconds: Long): String {
     val m = seconds / 60
@@ -213,6 +219,13 @@ fun CameraLiveSection(
     var quality by remember { mutableStateOf(CameraLivePrefs.savedQuality(context)) }
     var facing by remember { mutableStateOf(CameraLivePrefs.savedFacing(context)) }
     var callViewOpen by remember { mutableStateOf(false) }
+
+    // PiP vertical position, one per dialog: 0f = top, 1f = bottom.
+    // The user drags the small self view up / down by finger;
+    // each dialog keeps its own position so moving one never
+    // moves the other.
+    var callPipFraction by remember { mutableStateOf(1f) }
+    var viewerPipFraction by remember { mutableStateOf(1f) }
 
     // WATCH - someone else's camera.
     var watchUrl by remember { mutableStateOf("") }
@@ -419,8 +432,8 @@ fun CameraLiveSection(
             border = BorderStroke(1.dp, cardBorder)
         ) {
             Column(
-                modifier = Modifier.fillMaxWidth().padding(minDim * 0.028f),
-                verticalArrangement = Arrangement.spacedBy(minDim * 0.012f)
+                modifier = Modifier.fillMaxWidth().padding(minDim * 0.022f),
+                verticalArrangement = Arrangement.spacedBy(minDim * 0.010f)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
@@ -649,8 +662,8 @@ fun CameraLiveSection(
             border = BorderStroke(1.dp, cardBorder)
         ) {
             Column(
-                modifier = Modifier.fillMaxWidth().padding(minDim * 0.028f),
-                verticalArrangement = Arrangement.spacedBy(minDim * 0.012f)
+                modifier = Modifier.fillMaxWidth().padding(minDim * 0.022f),
+                verticalArrangement = Arrangement.spacedBy(minDim * 0.010f)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
@@ -779,21 +792,49 @@ fun CameraLiveSection(
         }
     }
 
-    // CALL VIEW (host) - big = viewer, small = self. If the
-    // viewer camera is off, there are no viewer frames yet, so
-    // you are big instead. This is a view only - Stop is the
-    // only action here; the stream itself is stopped from the
-    // card or the notification.
+    // CALL VIEW (host) - the other person's camera FULL SCREEN,
+    // with the controls floating over it: a top bar (Close +
+    // Room ID) and a Stop button bar at the bottom. The small
+    // self view is a floating PiP on the right side - drag it
+    // up / down to move it. If the viewer camera is off there
+    // are no viewer frames yet, so you are big instead. Stop is
+    // the only action here; the stream itself is stopped from
+    // the card or the notification.
     if (callViewOpen && isStreaming) {
         Dialog(
             onDismissRequest = { callViewOpen = false },
             properties = DialogProperties(usePlatformDefaultWidth = false)
         ) {
-            Column(
+            Box(
                 modifier = Modifier.fillMaxSize().background(Color.Black)
             ) {
+                // Big video, true full screen.
+                val big = viewerBitmap ?: selfBitmap
+                if (big != null) {
+                    Image(
+                        bitmap = big,
+                        contentDescription = "Viewer camera",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                } else {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            "Waiting for the camera…",
+                            fontSize = (minDim * 0.044f).value.sp,
+                            color = Color.White
+                        )
+                    }
+                }
+                // Top bar, floating over the video.
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(minDim * 0.028f),
+                    modifier = Modifier.align(Alignment.TopCenter)
+                        .fillMaxWidth()
+                        .background(Color.Black.copy(alpha = 0.35f))
+                        .padding(minDim * 0.028f),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     IconButton(onClick = { callViewOpen = false }) {
@@ -809,37 +850,63 @@ fun CameraLiveSection(
                         overflow = TextOverflow.Ellipsis
                     )
                 }
+                // Bottom bar, floating over the video: Stop only.
                 Box(
-                    modifier = Modifier.fillMaxSize().weight(1f)
+                    modifier = Modifier.align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .background(Color.Black.copy(alpha = 0.35f))
+                        .padding(minDim * 0.028f)
                 ) {
-                    val big = viewerBitmap ?: selfBitmap
-                    if (big != null) {
-                        Image(
-                            bitmap = big,
-                            contentDescription = "Viewer camera",
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop
+                    Button(
+                        onClick = {
+                            CameraLiveService.stop(context)
+                            callViewOpen = false
+                        },
+                        modifier = Modifier.fillMaxWidth().height(minDim * 0.12f),
+                        shape = RoundedCornerShape(minDim * 0.033f),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = CalNyxRed,
+                            contentColor = Color.White
                         )
-                    } else {
-                        Box(
-                            modifier = Modifier.fillMaxSize(),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                "Waiting for the camera…",
-                                fontSize = (minDim * 0.044f).value.sp,
-                                color = Color.White
-                            )
-                        }
+                    ) {
+                        Text(
+                            "Stop Camera",
+                            fontSize = (minDim * 0.044f).value.sp,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
-                    // Small self view, bottom right.
+                }
+                // Small self view: a floating PiP on the right
+                // side. Drag it up / down - it stays between the
+                // top bar and the bottom bar. Its position is a
+                // fraction (0f = top, 1f = bottom), so it works
+                // on any screen size. The BoxWithConstraints is
+                // inset from the bottom by the bottom bar height
+                // (0.028 + 0.12 + 0.028, plus a small gap), so
+                // at 1f the PiP rests just above the Stop bar.
+                BoxWithConstraints(
+                    modifier = Modifier.fillMaxSize()
+                        .padding(bottom = minDim * 0.19f, end = minDim * 0.028f)
+                ) {
+                    val pipHeightPx = (minDim * 0.40f).toPx()
+                    val travelPx = (maxHeight.toPx() - pipHeightPx).coerceAtLeast(0f)
                     Box(
-                        modifier = Modifier.align(Alignment.BottomEnd)
-                            .padding(minDim * 0.028f)
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .offset { IntOffset(0, (callPipFraction * travelPx).roundToInt()) }
                             .size(minDim * 0.30f, minDim * 0.40f)
                             .clip(RoundedCornerShape(minDim * 0.022f))
                             .background(thumbBg)
-                            .border(1.dp, Color.White, RoundedCornerShape(minDim * 0.022f)),
+                            .border(1.dp, Color.White, RoundedCornerShape(minDim * 0.022f))
+                            .pointerInput(travelPx) {
+                                detectVerticalDragGestures { change, dragAmount ->
+                                    change.consume()
+                                    if (travelPx > 0f) {
+                                        callPipFraction =
+                                            (callPipFraction + dragAmount / travelPx).coerceIn(0f, 1f)
+                                    }
+                                }
+                            },
                         contentAlignment = Alignment.Center
                     ) {
                         if (selfBitmap != null) {
@@ -858,33 +925,16 @@ fun CameraLiveSection(
                         }
                     }
                 }
-                Button(
-                    onClick = {
-                        CameraLiveService.stop(context)
-                        callViewOpen = false
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                        .padding(minDim * 0.028f)
-                        .height(minDim * 0.12f),
-                    shape = RoundedCornerShape(minDim * 0.033f),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = CalNyxRed,
-                        contentColor = Color.White
-                    )
-                ) {
-                    Text(
-                        "Stop Camera",
-                        fontSize = (minDim * 0.044f).value.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
             }
         }
     }
 
-    // VIEWER - full-screen dialog with the host camera in a
-    // WebView (same relay viewer page as Screen Stream), your
-    // own small self view, and your own Camera On/Off toggle.
+    // VIEWER - the host camera FULL SCREEN in a WebView (same
+    // relay viewer page as Screen Stream), with the controls
+    // floating over it: a top bar (Close + Room ID + open in
+    // browser) and a bottom bar with your own Camera On/Off
+    // toggle and Stop watching. The small self view is a
+    // floating PiP on the right side - drag it up / down.
     // The password goes in the URL fragment (#pw=...), so it is
     // never sent to the server as part of the address.
     viewerOpen?.let { (baseUrl, code, pw) ->
@@ -901,11 +951,35 @@ fun CameraLiveSection(
             onDismissRequest = { closeViewer() },
             properties = DialogProperties(usePlatformDefaultWidth = false)
         ) {
-            Column(
+            Box(
                 modifier = Modifier.fillMaxSize().background(Color.Black)
             ) {
+                // Host camera, true full screen.
+                AndroidView(
+                    factory = { ctx ->
+                        WebView(ctx).apply {
+                            settings.javaScriptEnabled = true
+                            settings.domStorageEnabled = true
+                            settings.mediaPlaybackRequiresUserGesture = false
+                            webViewClient = WebViewClient()
+                            loadUrl(viewerUrl)
+                        }
+                    },
+                    onRelease = { webView ->
+                        try {
+                            webView.stopLoading()
+                            webView.destroy()
+                        } catch (_: Exception) {
+                        }
+                    },
+                    modifier = Modifier.fillMaxSize()
+                )
+                // Top bar, floating over the video.
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(minDim * 0.028f),
+                    modifier = Modifier.align(Alignment.TopCenter)
+                        .fillMaxWidth()
+                        .background(Color.Black.copy(alpha = 0.35f))
+                        .padding(minDim * 0.028f),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     IconButton(onClick = { closeViewer() }) {
@@ -933,36 +1007,98 @@ fun CameraLiveSection(
                         Icon(Icons.Default.OpenInBrowser, contentDescription = "Open in browser", tint = Color.White, modifier = Modifier.size(minDim * 0.05f))
                     }
                 }
-                AndroidView(
-                    factory = { ctx ->
-                        WebView(ctx).apply {
-                            settings.javaScriptEnabled = true
-                            settings.domStorageEnabled = true
-                            settings.mediaPlaybackRequiresUserGesture = false
-                            webViewClient = WebViewClient()
-                            loadUrl(viewerUrl)
-                        }
-                    },
-                    onRelease = { webView ->
-                        try {
-                            webView.stopLoading()
-                            webView.destroy()
-                        } catch (_: Exception) {
-                        }
-                    },
-                    modifier = Modifier.fillMaxSize().weight(1f)
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(minDim * 0.028f),
-                    verticalAlignment = Alignment.CenterVertically
+                // Bottom bar, floating over the video: your own
+                // camera toggle + Stop watching.
+                Column(
+                    modifier = Modifier.align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .background(Color.Black.copy(alpha = 0.35f))
+                        .padding(minDim * 0.028f),
+                    verticalArrangement = Arrangement.spacedBy(minDim * 0.012f)
                 ) {
-                    // Small self view.
+                    Button(
+                        onClick = { toggleOwnCamera(code, pw) },
+                        enabled = !isStreaming && !isStarting,
+                        modifier = Modifier.fillMaxWidth().height(minDim * 0.12f),
+                        shape = RoundedCornerShape(minDim * 0.033f),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (isViewerPublishing || isViewerStarting) CalNyxRed else buttonBg,
+                            contentColor = if (isViewerPublishing || isViewerStarting) Color.White else buttonText
+                        )
+                    ) {
+                        Icon(
+                            if (isViewerPublishing || isViewerStarting) Icons.Default.VideocamOff else Icons.Default.Videocam,
+                            contentDescription = null,
+                            modifier = Modifier.size(minDim * 0.05f)
+                        )
+                        Spacer(modifier = Modifier.width(minDim * 0.022f))
+                        Text(
+                            when {
+                                isViewerPublishing -> "My camera: On"
+                                isViewerStarting -> "Turning on..."
+                                else -> "My camera: Off"
+                            },
+                            fontSize = (minDim * 0.04f).value.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    if (isStreaming || isStarting) {
+                        Text(
+                            "You are sharing your own camera right now - stop it first.",
+                            fontSize = (minDim * 0.033f).value.sp,
+                            color = Color.White
+                        )
+                    }
+                    Button(
+                        onClick = {
+                            CameraLivePrefs.clearWatchSession(context)
+                            closeViewer()
+                            note = "Stopped watching."
+                        },
+                        modifier = Modifier.fillMaxWidth().height(minDim * 0.12f),
+                        shape = RoundedCornerShape(minDim * 0.033f),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = CalNyxRed,
+                            contentColor = Color.White
+                        )
+                    ) {
+                        Text(
+                            "Stop watching",
+                            fontSize = (minDim * 0.04f).value.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+                // Small self view: a floating PiP on the right
+                // side. Drag it up / down - it stays between the
+                // top bar and the bottom bar. The BoxWithConstraints
+                // is inset from the bottom by the bottom bar height
+                // (two buttons + gaps + padding, plus the note
+                // line when it shows), so at 1f the PiP rests
+                // just above the bottom bar.
+                BoxWithConstraints(
+                    modifier = Modifier.fillMaxSize()
+                        .padding(bottom = minDim * 0.37f, end = minDim * 0.028f)
+                ) {
+                    val pipHeightPx = (minDim * 0.40f).toPx()
+                    val travelPx = (maxHeight.toPx() - pipHeightPx).coerceAtLeast(0f)
                     Box(
                         modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .offset { IntOffset(0, (viewerPipFraction * travelPx).roundToInt()) }
                             .size(minDim * 0.30f, minDim * 0.40f)
                             .clip(RoundedCornerShape(minDim * 0.022f))
                             .background(thumbBg)
-                            .border(1.dp, Color.White, RoundedCornerShape(minDim * 0.022f)),
+                            .border(1.dp, Color.White, RoundedCornerShape(minDim * 0.022f))
+                            .pointerInput(travelPx) {
+                                detectVerticalDragGestures { change, dragAmount ->
+                                    change.consume()
+                                    if (travelPx > 0f) {
+                                        viewerPipFraction =
+                                            (viewerPipFraction + dragAmount / travelPx).coerceIn(0f, 1f)
+                                    }
+                                }
+                            },
                         contentAlignment = Alignment.Center
                     ) {
                         if (selfBitmap != null) {
@@ -978,64 +1114,6 @@ fun CameraLiveSection(
                                 fontSize = (minDim * 0.036f).value.sp,
                                 color = Color.White,
                                 textAlign = TextAlign.Center
-                            )
-                        }
-                    }
-                    Spacer(modifier = Modifier.width(minDim * 0.028f))
-                    Column(
-                        modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(minDim * 0.012f)
-                    ) {
-                        Button(
-                            onClick = { toggleOwnCamera(code, pw) },
-                            enabled = !isStreaming && !isStarting,
-                            modifier = Modifier.fillMaxWidth().height(minDim * 0.12f),
-                            shape = RoundedCornerShape(minDim * 0.033f),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = if (isViewerPublishing || isViewerStarting) CalNyxRed else buttonBg,
-                                contentColor = if (isViewerPublishing || isViewerStarting) Color.White else buttonText
-                            )
-                        ) {
-                            Icon(
-                                if (isViewerPublishing || isViewerStarting) Icons.Default.VideocamOff else Icons.Default.Videocam,
-                                contentDescription = null,
-                                modifier = Modifier.size(minDim * 0.05f)
-                            )
-                            Spacer(modifier = Modifier.width(minDim * 0.022f))
-                            Text(
-                                when {
-                                    isViewerPublishing -> "My camera: On"
-                                    isViewerStarting -> "Turning on..."
-                                    else -> "My camera: Off"
-                                },
-                                fontSize = (minDim * 0.04f).value.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                        if (isStreaming || isStarting) {
-                            Text(
-                                "You are sharing your own camera right now - stop it first.",
-                                fontSize = (minDim * 0.033f).value.sp,
-                                color = Color.White
-                            )
-                        }
-                        Button(
-                            onClick = {
-                                CameraLivePrefs.clearWatchSession(context)
-                                closeViewer()
-                                note = "Stopped watching."
-                            },
-                            modifier = Modifier.fillMaxWidth().height(minDim * 0.12f),
-                            shape = RoundedCornerShape(minDim * 0.033f),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = CalNyxRed,
-                                contentColor = Color.White
-                            )
-                        ) {
-                            Text(
-                                "Stop watching",
-                                fontSize = (minDim * 0.04f).value.sp,
-                                fontWeight = FontWeight.Bold
                             )
                         }
                     }
