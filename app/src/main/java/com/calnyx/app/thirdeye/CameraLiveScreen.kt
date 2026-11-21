@@ -1,12 +1,10 @@
-// FILE: app/src/main/java/com/calnyx/app/network/CameraLiveSection.kt
-// NEW FILE - Camera Live section for the Third Eye screen (2026-11-21).
-// Task 5, Camera Live 1-to-1 (LIVE REDO 2026-11-21). Add ONE call
-// in ThirdEyeHubScreen.kt, BELOW the ScreenStreamSection call
-// (Screen Share on top, Camera Live below - user's order).
-// Do NOT use the old ThirdEyeScreen.kt name - it clashes with the
-// live recorder com.calnyx.app.thirdeye.ThirdEyeScreen.
+// FILE: app/src/main/java/com/calnyx/app/thirdeye/CameraLiveScreen.kt
+// Camera Live screen for the Third Eye screen (2026-11-21).
+// Task 5, Camera Live 1-to-1. Called once in ThirdEyeScreen.kt,
+// BELOW the ScreenStreamScreen call (Screen Share on top,
+// Camera Live below - user's order).
 //
-//   CameraLiveSection(
+//   CameraLiveScreen(
 //       cardBg = cardBg,
 //       cardBorder = cardBorder,
 //       onPageColor = onPageColor,
@@ -14,7 +12,7 @@
 //       minDim = minDim
 //   )
 //
-// Mirrors the 02-stream-link-top ScreenStreamSection (SHARE card
+// Mirrors the 02-stream-link-top ScreenStreamScreen (SHARE card
 // first, then WATCH; link password auto-fill; % sizes; theme
 // colours; no fixed dp/sp except 1.dp borders):
 //
@@ -196,7 +194,7 @@ private fun CameraCopyRow(
 }
 
 @Composable
-fun CameraLiveSection(
+fun CameraLiveScreen(
     cardBg: Color,
     cardBorder: Color,
     onPageColor: Color,
@@ -238,7 +236,7 @@ fun CameraLiveSection(
     // screen and coming back reopens it by itself.
     var viewerOpen by remember { mutableStateOf(CameraLivePrefs.loadWatchSession(context)) }
 
-    // Live state from the service, polled like ScreenStreamSection.
+    // Live state from the service, polled like ScreenStreamScreen.
     var isStreaming by remember { mutableStateOf(CameraLiveService.isStreaming) }
     var isStarting by remember { mutableStateOf(CameraLiveService.isStarting) }
     var isViewerPublishing by remember { mutableStateOf(CameraLiveService.isViewerPublishing) }
@@ -428,7 +426,7 @@ fun CameraLiveSection(
         // SHARE MY CAMERA - password, quality, front / back, Start.
         Card(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(minDim * 0.044f),
+            shape = RoundedCornerShape(minDim * 0.05f),
             colors = CardDefaults.cardColors(containerColor = cardBg),
             border = BorderStroke(1.dp, cardBorder)
         ) {
@@ -438,10 +436,10 @@ fun CameraLiveSection(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
-                        modifier = Modifier.size(minDim * 0.1f).clip(CircleShape).background(thumbBg),
+                        modifier = Modifier.size(minDim * 0.1f).clip(CircleShape).background(buttonBg),
                         contentAlignment = Alignment.Center
                     ) {
-                        Icon(Icons.Default.Videocam, contentDescription = null, modifier = Modifier.size(minDim * 0.05f), tint = onPageColor)
+                        Icon(Icons.Default.Videocam, contentDescription = null, modifier = Modifier.size(minDim * 0.05f), tint = buttonText)
                     }
                     Spacer(modifier = Modifier.width(minDim * 0.033f))
                     Text("Share my camera", fontWeight = FontWeight.SemiBold, fontSize = (minDim * 0.044f).value.sp, color = onPageColor, modifier = Modifier.weight(1f))
@@ -658,7 +656,7 @@ fun CameraLiveSection(
         // WATCH A CAMERA - paste a link, type the password, Open.
         Card(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(minDim * 0.044f),
+            shape = RoundedCornerShape(minDim * 0.05f),
             colors = CardDefaults.cardColors(containerColor = cardBg),
             border = BorderStroke(1.dp, cardBorder)
         ) {

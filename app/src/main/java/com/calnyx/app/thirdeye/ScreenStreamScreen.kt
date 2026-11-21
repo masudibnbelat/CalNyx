@@ -1,10 +1,10 @@
-// FILE: app/src/main/java/com/calnyx/app/network/ScreenStreamSection.kt
+// FILE: app/src/main/java/com/calnyx/app/thirdeye/ScreenStreamScreen.kt
 
-// NEW FILE - Screen Stream section for the Network screen (2026-11-21).
-// Add ONE call in NetworkScreen.kt, in NetworkContent, after the
-// "Open in WhatsApp" Card and before the final Spacer:
+// Screen Stream screen for the Third Eye screen (2026-11-21).
+// Called once in ThirdEyeScreen.kt, ABOVE the CameraLiveScreen call
+// (Screen Share on top, Camera Live below - user's order).
 //
-//   ScreenStreamSection(
+//   ScreenStreamScreen(
 //       cardBg = cardBg,
 //       cardBorder = cardBorder,
 //       onPageColor = onPageColor,
@@ -12,7 +12,7 @@
 //       minDim = minDim
 //   )
 //
-// Same package as NetworkScreen, so no import is needed for it.
+// Same package as ThirdEyeScreen, so no import is needed for it.
 // Two clean cards, % sizes and theme colours like the rest of
 // the Network screen, no fixed dp/sp except 1.dp borders:
 //
@@ -190,7 +190,7 @@ private fun StreamCopyRow(
 }
 
 @Composable
-fun ScreenStreamSection(
+fun ScreenStreamScreen(
     cardBg: Color,
     cardBorder: Color,
     onPageColor: Color,
@@ -353,7 +353,7 @@ fun ScreenStreamSection(
         // SHARE MY SCREEN - password, then Start Stream.
         Card(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(minDim * 0.044f),
+            shape = RoundedCornerShape(minDim * 0.05f),
             colors = CardDefaults.cardColors(containerColor = cardBg),
             border = BorderStroke(1.dp, cardBorder)
         ) {
@@ -363,10 +363,10 @@ fun ScreenStreamSection(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
-                        modifier = Modifier.size(minDim * 0.1f).clip(CircleShape).background(thumbBg),
+                        modifier = Modifier.size(minDim * 0.1f).clip(CircleShape).background(buttonBg),
                         contentAlignment = Alignment.Center
                     ) {
-                        Icon(Icons.Default.ScreenShare, contentDescription = null, modifier = Modifier.size(minDim * 0.05f), tint = onPageColor)
+                        Icon(Icons.Default.ScreenShare, contentDescription = null, modifier = Modifier.size(minDim * 0.05f), tint = buttonText)
                     }
                     Spacer(modifier = Modifier.width(minDim * 0.033f))
                     Text("Share my screen", fontWeight = FontWeight.SemiBold, fontSize = (minDim * 0.044f).value.sp, color = onPageColor, modifier = Modifier.weight(1f))
@@ -517,7 +517,7 @@ fun ScreenStreamSection(
         // WATCH A SCREEN - paste a link, type the password, Open.
         Card(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(minDim * 0.044f),
+            shape = RoundedCornerShape(minDim * 0.05f),
             colors = CardDefaults.cardColors(containerColor = cardBg),
             border = BorderStroke(1.dp, cardBorder)
         ) {

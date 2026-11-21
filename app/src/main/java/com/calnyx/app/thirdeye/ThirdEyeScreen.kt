@@ -3,8 +3,8 @@
 // Lives in the NEW thirdeye/ folder (after the rename script moved
 // the recorder to spy/ and Screen Stream here from network/).
 // The hub holds, in this order:
-//   1. Screen Share (ScreenStreamSection) - Share on top, Watch below
-//   2. Camera Live (CameraLiveSection) - Share my camera, Watch a camera
+//   1. Screen Share (ScreenStreamScreen) - Share on top, Watch below
+//   2. Camera Live (CameraLiveScreen) - Share my camera, Watch a camera
 // Colours come from the theme (Color.kt) only, all sizes are
 // % of the window, English only, 1.dp borders only.
 // Leftward swipe anywhere opens the drawer (universal rule).
@@ -29,7 +29,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Visibility
@@ -93,7 +93,8 @@ fun ThirdEyeScreen(
         val padX = screenW * 0.05f
         val padY = screenH * 0.02f
         val gap = screenH * 0.02f
-        val cornerCard = minDim * 0.04f
+        val labelGap = minDim * 0.008f
+        val fLabel = (minDim * 0.032f).value.sp
         val iconBox = screenW * 0.13f
 
         // DRAWER SWIPE (universal rule, 2026-11-06): a LEFTWARD
@@ -132,9 +133,9 @@ fun ThirdEyeScreen(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     modifier = Modifier.size(iconBox)
-                        .clip(RoundedCornerShape(cornerCard))
+                        .clip(CircleShape)
                         .background(cardBg)
-                        .border(1.dp, cardBorder, RoundedCornerShape(cornerCard)),
+                        .border(1.dp, cardBorder, CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
@@ -145,7 +146,10 @@ fun ThirdEyeScreen(
                     )
                 }
                 Spacer(modifier = Modifier.width(screenW * 0.03f))
-                Column(modifier = Modifier.weight(1f)) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(minDim * 0.004f)
+                ) {
                     Text(
                         "Third Eye",
                         fontWeight = FontWeight.Bold,
@@ -157,41 +161,60 @@ fun ThirdEyeScreen(
                     Text(
                         "Camera Live and Screen Share",
                         fontSize = fSmall,
-                        color = onPageColor.copy(alpha = 0.7f),
+                        color = colorScheme.onSurfaceVariant,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                 }
             }
-            Spacer(modifier = Modifier.height(screenH * 0.01f))
 
             // 1. Screen Share ON TOP (user's order). The Share-first
-            // card order inside ScreenStreamSection comes from
-            // Task B's live ScreenStreamSection.kt - apply it too.
-            ScreenStreamSection(
-                cardBg = cardBg,
-                cardBorder = cardBorder,
-                onPageColor = onPageColor,
-                thumbBg = thumbBg,
-                minDim = minDim
-            )
+            // card order inside ScreenStreamScreen comes from
+            // Task B's live ScreenStreamScreen.kt - apply it too.
+            Column(
+                verticalArrangement = Arrangement.spacedBy(labelGap)
+            ) {
+                Text(
+                    "SCREEN SHARE",
+                    fontWeight = FontWeight.Medium,
+                    fontSize = fLabel,
+                    letterSpacing = (minDim * 0.006f).value.sp,
+                    color = colorScheme.onSurfaceVariant
+                )
+                ScreenStreamScreen(
+                    cardBg = cardBg,
+                    cardBorder = cardBorder,
+                    onPageColor = onPageColor,
+                    thumbBg = thumbBg,
+                    minDim = minDim
+                )
+            }
 
             // 2. Camera Live BELOW it - with a clear break between
             // the two sections: a bigger gap plus a thin divider,
             // so Screen Share and Camera Live read as two separate
             // sections, not one long list of similar cards.
-            Spacer(modifier = Modifier.height(screenH * 0.02f))
             Box(
                 modifier = Modifier.fillMaxWidth().height(1.dp).background(cardBorder)
             )
-            Spacer(modifier = Modifier.height(screenH * 0.02f))
-            CameraLiveSection(
-                cardBg = cardBg,
-                cardBorder = cardBorder,
-                onPageColor = onPageColor,
-                thumbBg = thumbBg,
-                minDim = minDim
-            )
+            Column(
+                verticalArrangement = Arrangement.spacedBy(labelGap)
+            ) {
+                Text(
+                    "CAMERA LIVE",
+                    fontWeight = FontWeight.Medium,
+                    fontSize = fLabel,
+                    letterSpacing = (minDim * 0.006f).value.sp,
+                    color = colorScheme.onSurfaceVariant
+                )
+                CameraLiveScreen(
+                    cardBg = cardBg,
+                    cardBorder = cardBorder,
+                    onPageColor = onPageColor,
+                    thumbBg = thumbBg,
+                    minDim = minDim
+                )
+            }
 
             Spacer(modifier = Modifier.height(screenH * 0.01f))
         }
