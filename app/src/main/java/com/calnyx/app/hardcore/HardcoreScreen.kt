@@ -1,10 +1,23 @@
-// FILE: app/src/main/java/com/calnyx/app/ui/screens/HardcoreScreen.kt
-// ORIENTATION 3-IN-A-ROW (2026-11-20) - REPLACE. Up / Down / Auto
-// are now 3 equal cards in ONE row (the full-width Auto row card
-// is gone - it looked unbalanced, with the Check dangling on the
-// right). All three use the same OrientationModeCard, so the
-// selected one is just the filled card - no Check icon anywhere.
+// FILE: app/src/main/java/com/calnyx/app/hardcore/HardcoreScreen.kt
+// (package stays com.calnyx.app.ui.screens - NavGraph imports
+// it from there, and the build proves that resolves. Only the
+// FILE lives in hardcore/ now.)
+// ROTATE SYNC + NORMAL CARD (2026-11-22) - REPLACE.
+// ORIENTATION 4-IN-A-ROW: Up / Down / Auto / Normal are now
+// 4 equal cards in ONE row. Normal had NO card before, so when
+// the ball set Normal this screen showed nothing selected (or
+// the stale old mode) - that was half of the "ball and main
+// page do not match" bug. All four use the same
+// OrientationModeCard, so the selected one is just the filled
+// card - no Check icon anywhere.
+// SYNC: the screen re-reads the saved mode every time it
+// comes back (ON_RESUME), so a mode changed from the ball
+// shows here too - the ball and this page can never disagree.
 // Nothing else changed: Power, Ball, colours, % sizes, logic.
+// Package + imports match the user's current layout:
+// this file lives in hardcore/, OrientationService /
+// OrientationGuard live in hardcore/, FloatingBallService
+// lives in ball/ - but the package stays ui.screens, see above.
 // HARDCORE (HARDWARE) - SPLIT VERSION (2026-11-20).
 //  Split out of MoanControlScreen.kt (2026-11-20): Hardcore
 //  (Hardware) here, Moan (Sound) in MoanScreen.kt, and Network
@@ -21,7 +34,7 @@
 //  (V6 history: status bar matches the page bg, title on the
 //  same line as the top-bar button, compact power cards.)
 
-package com.calnyx.app.hardcore
+package com.calnyx.app.ui.screens
 
 import android.app.Activity
 import android.content.Context
@@ -40,6 +53,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Autorenew
+import androidx.compose.material.icons.filled.ScreenRotation
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material3.*
@@ -68,9 +82,6 @@ import com.calnyx.app.ball.FloatingBallService
 import com.calnyx.app.hardcore.OrientationGuard
 import com.calnyx.app.hardcore.OrientationService
 import com.calnyx.app.moan.MoanControlPrefs
-import com.calnyx.app.moan.MoanScreen
-import com.calnyx.app.network.NetworkScreen
-import com.calnyx.app.navigation.Screen
 
 @Composable
 fun HardcoreScreen(
@@ -181,10 +192,16 @@ private fun ControlTab(
     // the overlay service that enforces it outside the app. No
     // permission wait any more - the overlay enforces the mode
     // even without WRITE_SETTINGS, as long as overlay permission
-    // is granted. Shared by all 3 orientation cards below.
+    // is granted. The guard is refreshed too, so it tracks the
+    // new mode even before the next resume. Shared by all 4
+    // orientation cards below.
     fun applyOrientation(mode: String) {
         orientation = mode
         if (OrientationService.apply(context, mode)) {
+            try {
+                OrientationGuard.refresh(context)
+            } catch (_: Exception) {
+            }
             onNote(null)
         } else {
             onNote("Orientation saved but not enforced - allow overlay permission (Floating Ball) or Modify system settings for CalNyx.")
@@ -206,6 +223,12 @@ private fun ControlTab(
                 // mode is applied. This is the re-registration
                 // point if the process was restarted while the
                 // user was outside the app.
+                // SYNC (2026-11-22): re-read the saved mode
+                // too, so a mode changed from the BALL shows
+                // here as well - without this the card would
+                // keep showing the old mode until the screen
+                // was recreated.
+                orientation = MoanControlPrefs.getOrientationMode(context)
                 try {
                     OrientationGuard.refresh(context)
                 } catch (_: Exception) {
@@ -294,12 +317,13 @@ private fun ControlTab(
                 }
             )
         }
-        // Screen Orientation - 3-IN-A-ROW (2026-11-20): Up / Down /
-        // Auto as 3 equal cards in one row. The old full-width Auto
-        // row card is gone - it looked unbalanced. Selected card =
-        // filled (inverted text), others = card bg. Sob size
-        // minDim-er % - jekono screen-e ar rotate korleo design
-        // vangbe na.
+        // Screen Orientation - 4-IN-A-ROW (2026-11-22): Up / Down /
+        // Auto / Normal as 4 equal cards in one row. Normal had
+        // no card before, so the ball and this page disagreed.
+        // The old full-width Auto row card is gone - it looked
+        // unbalanced. Selected card = filled (inverted text),
+        // others = card bg. Sob size minDim-er % - jekono
+        // screen-e ar rotate korleo design vangbe na.
         Text("Screen Orientation", fontSize = (minDim * 0.033f).value.sp, fontWeight = FontWeight.SemiBold, color = colorScheme.onSurfaceVariant)
         Row(horizontalArrangement = Arrangement.spacedBy(minDim * 0.022f), modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Max)) {
             OrientationModeCard(
@@ -340,6 +364,19 @@ private fun ControlTab(
                 minDim = minDim,
                 modifier = Modifier.weight(1f).fillMaxHeight(),
                 onClick = { applyOrientation("auto") }
+            )
+            OrientationModeCard(
+                label = "Normal",
+                icon = Icons.Default.ScreenRotation,
+                selected = orientation == "normal",
+                cardBg = cardBg,
+                cardBorder = cardBorder,
+                onPageColor = onPageColor,
+                selectedContent = colorScheme.background,
+                thumbBg = thumbBg,
+                minDim = minDim,
+                modifier = Modifier.weight(1f).fillMaxHeight(),
+                onClick = { applyOrientation("normal") }
             )
         }
         // FLOATING BALL - Material 3 Card now (was a hand-made
@@ -496,7 +533,7 @@ private fun PowerCard(
     }
 }
 
-// One big orientation mode card (Up / Down): icon circle on top,
+// One big orientation mode card (Up / Down / Auto / Normal): icon circle on top,
 // label below - same language as PowerCard. Selected = filled
 // (onPageColor bg, background text), unselected = card bg.
 @Composable

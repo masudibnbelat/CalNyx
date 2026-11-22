@@ -1,4 +1,4 @@
-// FILE: app/src/main/java/com/calnyx/app/moan/OrientationGuard.kt
+// FILE: app/src/main/java/com/calnyx/app/hardcore/OrientationGuard.kt
 // NEW FILE - keeps the orientation mode chosen in CalNyx
 // (Hardcore screen) applied system-wide, even after the user
 // leaves the app.
@@ -12,15 +12,23 @@
 // system setting and puts the saved mode back whenever
 // anything changes it.
 //
-// The guard only runs while a LOCKED mode (up / down) is saved.
-// In "auto" mode it stops watching, so the quick-settings tile
-// and the sensor work normally. "normal" (2026-11-22, the 4th
-// ball-panel state) is treated exactly like "auto" here: no
-// watching, no re-applying - otherwise the guard would read the
-// untouched system setting, see it is not "normal", and force
-// auto-rotate back on, which would destroy the Normal state. It runs inside the services
-// that are already alive (AppLockService / FloatingBallService)
-// - no new service, no new notification, no new permission.
+// The guard runs while a LOCKED mode (up / down) is saved,
+// and now while "normal" is saved too (2026-11-22). In "auto"
+// mode it stops watching, so the quick-settings tile and the
+// sensor work normally. NORMAL is enforced as auto-rotate OFF
+// + USER_ROTATION 0 - the guard watches those two values and
+// puts (0, 0) back if the system resets them (this realme
+// resets the setting ~2s after leaving the app). A video
+// player forcing landscape does NOT touch the system setting,
+// so the guard never fights video rotation. The old Normal
+// (leave the setting untouched, guard does nothing) was WRONG:
+// after Down the setting stayed at 180 deg and nothing ever
+// put it back to 0. Note the system values alone cannot tell
+// Normal from Up - both are (0, 0) - so the SAVED mode
+// decides, and the guard compares raw values, not readMode().
+// It runs inside the services that are already alive
+// (AppLockService / FloatingBallService) - no new service,
+// no new notification, no new permission.
 // It uses the application context, so it is not tied to one
 // service instance; refresh() is idempotent, calling it twice
 // is harmless.
@@ -51,8 +59,21 @@ object OrientationGuard {
     fun refresh(context: Context) {
         val appContext = context.applicationContext
         val mode = savedMode(appContext)
-        if (mode == "auto" || mode == "normal") {
+        if (mode == "auto") {
             stop(appContext)
+            return
+        }
+        if (mode == "normal") {
+            // NORMAL = (auto-rotate OFF, USER_ROTATION 0).
+            // Put (0, 0) back if the system reset it, then
+            // keep watching - the realme reset happens ~2s
+            // after leaving the app, and the ball / Hardcore
+            // screen are not around to re-apply it then.
+            val (auto, userRot) = readSystemValues(appContext)
+            if (auto != 0 || userRot != 0) {
+                setMode(appContext, "normal")
+            }
+            start(appContext)
             return
         }
         if (readMode(appContext) != mode) {
@@ -78,7 +99,19 @@ object OrientationGuard {
         val obs = object : ContentObserver(Handler(Looper.getMainLooper())) {
             override fun onChange(selfChange: Boolean) {
                 val mode = savedMode(appContext)
-                if (mode == "auto" || mode == "normal") return
+                if (mode == "auto") return
+                if (mode == "normal") {
+                    // Compare RAW values: readMode() maps
+                    // (0, 0) to "up", which would make the
+                    // guard write on every single change.
+                    // After setMode the values are (0, 0),
+                    // so the next onChange does nothing.
+                    val (auto, userRot) = readSystemValues(appContext)
+                    if (auto != 0 || userRot != 0) {
+                        setMode(appContext, "normal")
+                    }
+                    return
+                }
                 // Something (system / another app / quick tile)
                 // changed the rotation - put the saved mode back.
                 // No loop: after setMode the value already equals
@@ -132,6 +165,25 @@ object OrientationGuard {
         }
     }
 
+    // The raw system values: (ACCELEROMETER_ROTATION,
+    // USER_ROTATION). Normal is (0, 0) - the same numbers as
+    // "up", so the mode string alone cannot tell them apart;
+    // the SAVED mode decides what (0, 0) means.
+    private fun readSystemValues(context: Context): Pair<Int, Int> {
+        return try {
+            val resolver = context.contentResolver
+            val auto = Settings.System.getInt(
+                resolver, Settings.System.ACCELEROMETER_ROTATION, 1
+            )
+            val userRot = Settings.System.getInt(
+                resolver, Settings.System.USER_ROTATION, 0
+            )
+            auto to userRot
+        } catch (_: Exception) {
+            1 to 0
+        }
+    }
+
     // Write the system setting. Same as MoanControlScreen.
     private fun setMode(context: Context, mode: String): Boolean {
         if (!Settings.System.canWrite(context)) return false
@@ -147,7 +199,11 @@ object OrientationGuard {
                     Settings.System.putInt(resolver, Settings.System.USER_ROTATION, 2)
                 }
                 "normal" -> {
-                    // Leave the phone's own setting untouched.
+                    // NORMAL = the phone's own default: 0 deg,
+                    // auto-rotate OFF. Video players can still
+                    // force landscape - they do not touch this.
+                    Settings.System.putInt(resolver, Settings.System.ACCELEROMETER_ROTATION, 0)
+                    Settings.System.putInt(resolver, Settings.System.USER_ROTATION, 0)
                 }
                 else -> {
                     Settings.System.putInt(resolver, Settings.System.ACCELEROMETER_ROTATION, 1)

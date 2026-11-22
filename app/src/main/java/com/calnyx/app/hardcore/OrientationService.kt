@@ -20,12 +20,20 @@
 // Modes (same strings as MoanControlPrefs): "up" (0 deg),
 // "down" (180 deg), "auto", "normal" (2026-11-22).
 // Only a locked mode (up / down) keeps this service running;
-// in Auto the service stops itself and removes the overlay.
-// "normal" is the 4th ball-panel state: like Auto it removes
-// the overlay and stops the service, but unlike Auto it does
-// NOT touch the system setting - the phone's own auto-rotate
-// switch is left exactly as the user left it in Quick Settings.
-// That is the whole difference between Auto and Normal.
+// in Auto and Normal the service stops itself and removes
+// the overlay.
+// NORMAL - the user's definition (2026-11-22): the phone's
+// own default. The screen sits at 0 deg and STAYS there,
+// because the system setting is written to auto-rotate OFF +
+// USER_ROTATION 0. A video player (or any app) can still
+// force landscape while it plays, because an app's requested
+// orientation overrides the system setting - that is the
+// whole difference from Auto, which rotates everywhere
+// with the sensor.
+// The OLD Normal (leave the system setting untouched) was
+// WRONG: after Down, removing the overlay left USER_ROTATION
+// at 180 deg, so the screen stayed upside down and the user
+// saw "Normal = 180 deg". The setting MUST be written to 0.
 //
 // Permissions: WRITE_SETTINGS for the system-setting write
 // (optional - the overlay alone enforces the mode), and
@@ -159,11 +167,10 @@ class OrientationService : Service() {
         MoanControlPrefs.setOrientationMode(this, mode)
 
         // 1. System setting (needs WRITE_SETTINGS).
-        // Normal deliberately skips this: the phone's own
-        // auto-rotate setting must stay exactly as it is.
-        if (mode != "normal") {
-            writeSystemSetting(mode)
-        }
+        // Normal writes it too: auto-rotate OFF + USER_ROTATION
+        // 0, or the screen keeps whatever rotation the last
+        // locked mode left behind (the "Normal = 180 deg" bug).
+        writeSystemSetting(mode)
 
         // 2. Overlay enforcement (needs SYSTEM_ALERT_WINDOW).
         if (mode == "auto" || mode == "normal") {
@@ -206,6 +213,12 @@ class OrientationService : Service() {
             }
         }
         updateNotification()
+        // Auto / Normal need no enforcement: stop the service
+        // instead of lingering with a notification. Locked
+        // modes (up / down) keep it running for the overlay.
+        if (mode == "auto" || mode == "normal") {
+            stopSelf()
+        }
     }
 
     private fun writeSystemSetting(mode: String) {
@@ -222,7 +235,12 @@ class OrientationService : Service() {
                     Settings.System.putInt(resolver, Settings.System.USER_ROTATION, 2)
                 }
                 "normal" -> {
-                    // Leave the phone's own setting untouched.
+                    // NORMAL = the phone's own default: 0 deg,
+                    // auto-rotate OFF. A video player can still
+                    // force landscape - an app's requested
+                    // orientation overrides this setting.
+                    Settings.System.putInt(resolver, Settings.System.ACCELEROMETER_ROTATION, 0)
+                    Settings.System.putInt(resolver, Settings.System.USER_ROTATION, 0)
                 }
                 else -> {
                     Settings.System.putInt(resolver, Settings.System.ACCELEROMETER_ROTATION, 1)
@@ -272,14 +290,25 @@ class OrientationService : Service() {
         // started), false if neither permission is available -
         // the mode is still saved, but nothing enforces it yet.
         fun apply(context: Context, mode: String): Boolean {
-            // NORMAL (2026-11-22): save it, drop the overlay,
-            // touch nothing else. No permission is needed for
-            // this - stopping enforcement cannot fail for lack
-            // of overlay / settings permission - so always
-            // return true, or the panel would show a false
-            // "allow permission" toast on the 4th tap.
+            // NORMAL (2026-11-22): save it, write the system
+            // setting to 0 deg + auto-rotate OFF (this is what
+            // puts the screen back to 0 after Down - removing
+            // the overlay alone left it at 180), drop the
+            // overlay, stop the service. The setting write is
+            // best-effort (needs WRITE_SETTINGS); the overlay
+            // stop cannot fail, so always return true, or the
+            // panel would show a false "allow permission"
+            // toast on the 4th tap.
             if (mode == "normal") {
                 MoanControlPrefs.setOrientationMode(context, "normal")
+                try {
+                    if (Settings.System.canWrite(context)) {
+                        val resolver = context.contentResolver
+                        Settings.System.putInt(resolver, Settings.System.ACCELEROMETER_ROTATION, 0)
+                        Settings.System.putInt(resolver, Settings.System.USER_ROTATION, 0)
+                    }
+                } catch (_: Exception) {
+                }
                 try {
                     context.stopService(
                         Intent(context, OrientationService::class.java)

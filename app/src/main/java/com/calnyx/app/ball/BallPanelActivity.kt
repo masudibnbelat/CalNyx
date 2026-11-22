@@ -61,25 +61,32 @@
 // corners, 60dp icon circles, divider between Tools and Sound.
 // No grip handle bar on top any more (removed - the user asked
 // for it gone), no extra bar - the panel is the UI.
-// ROTATE 4-STATE (2026-11-22): Row 2, 4th icon is now a Rotate
-// cycle, still one icon only (replaces the Settings gear).
-// Every tap moves to the NEXT state, in this order:
+// ROTATE 4-STATE (2026-11-22, LETTER + SYNC 2026-11-22): the
+// Rotate icon is one button, four states, always the NEXT
+// state from where it is now:
 //   Auto -> Up 0 deg -> Down 180 deg -> Normal -> Auto ...
-// - Auto: the phone rotates with the sensor. A small "A" sits
-//   on the top-right of the icon, and the circle is inverted.
-// - Up 0 deg: locked upright. Icon upright, circle inverted.
-// - Down 180 deg: locked upside down. Icon turned 180 deg,
-//   circle inverted.
-// - Normal: CalNyx stops enforcing anything - no overlay, and
-//   the phone's own auto-rotate setting is left untouched
-//   (this is what makes Normal different from Auto, which
-//   forces auto-rotate ON). Icon upright, circle NOT inverted,
-//   no "A". Needs the new "normal" mode in OrientationService
-//   + OrientationGuard (both files are in this same delivery).
+// The state is a BIG LETTER in the MIDDLE of the circle, so
+// it reads at a glance (the small top-right badge was too
+// small to see, and Up / Down showed no number at all):
+// - Auto: "A" in the middle, circle inverted.
+// - Up 0 deg: "U" in the middle, circle inverted.
+// - Down 180 deg: "D" in the middle, circle inverted.
+// - Normal: NO letter, circle NOT inverted - the plain
+//   rotate icon, nothing active.
+// NORMAL (user's definition): the phone's own default - the
+// screen sits at 0 deg and stays there, but a video player
+// can still force landscape while it plays. The old Normal
+// (leave the system setting untouched) was WRONG: after Down
+// the screen stayed at 180 deg. See OrientationService.
+// THE PANEL STAYS OPEN after a rotate tap (2026-11-22): the
+// letter updates in place, so the user can tap through the
+// whole cycle without reopening the ball every time - the
+// old 300ms close is what made it feel like "too many
+// clicks". The toast still names the new state. After every
+// tap the guard is refreshed, so it tracks the new mode.
 // It uses OrientationService (the same overlay-enforced
 // rotation as the Hardcore screen), so Up / Down hold outside
-// the app too. The panel closes after the tap so the user
-// sees the screen rotate.
+// the app too, and both places read the same saved mode.
 package com.calnyx.app.ball
 
 import android.Manifest
@@ -163,6 +170,7 @@ import com.calnyx.app.applock.AppLockManager
 import com.calnyx.app.applock.AppLockService
 import com.calnyx.app.theme.CalNyxRed
 import com.calnyx.app.theme.CalNyxTheme
+import com.calnyx.app.hardcore.OrientationGuard
 import com.calnyx.app.hardcore.OrientationService
 import com.calnyx.app.navigation.Screen
 
@@ -421,12 +429,22 @@ class BallPanelActivity : ComponentActivity() {
                                         cardBg = cardBg,
                                         minDim = minDim,
                                         // Auto + Up + Down look "on"
-                                        // (inverted circle); Normal
-                                        // looks "off". Only Auto
-                                        // gets the small "A" badge.
+                                        // (inverted circle) with a
+                                        // big letter in the middle:
+                                        // A = Auto, U = Up, D =
+                                        // Down. Normal looks "off"
+                                        // - plain rotate icon, no
+                                        // letter, circle not
+                                        // inverted. The letter is
+                                        // the state, so it must be
+                                        // big enough to read.
                                         active = rotateMode != "normal",
-                                        rotated = rotateMode == "down",
-                                        badge = if (rotateMode == "auto") "A" else null,
+                                        letter = when (rotateMode) {
+                                            "auto" -> "A"
+                                            "up" -> "U"
+                                            "down" -> "D"
+                                            else -> null // "normal"
+                                        },
                                         onClick = { doRotateToggle() }
                                     )
                                     ActionButton(
@@ -580,8 +598,12 @@ class BallPanelActivity : ComponentActivity() {
         // Auto -> Up (0 deg) -> Down (180 deg) -> Normal -> Auto.
         // Uses OrientationService, the same overlay-enforced
         // rotation as the Hardcore screen, so Up / Down hold
-        // outside the app too. The toast names the new state,
-        // because the panel closes right after the tap.
+        // outside the app too. The panel STAYS OPEN: the letter
+        // updates in place (rotateMode is Compose state), so
+        // the user can tap through the whole cycle without
+        // reopening the ball. The toast names the new state.
+        // The guard is refreshed so it tracks the new mode -
+        // without this it would keep watching the old one.
         val next = when (rotateMode) {
             "auto" -> "up"
             "up" -> "down"
@@ -590,6 +612,10 @@ class BallPanelActivity : ComponentActivity() {
         }
         if (OrientationService.apply(this, next)) {
             rotateMode = next
+            try {
+                OrientationGuard.refresh(this)
+            } catch (_: Exception) {
+            }
             Toast.makeText(
                 this,
                 when (next) {
@@ -600,8 +626,6 @@ class BallPanelActivity : ComponentActivity() {
                 },
                 Toast.LENGTH_SHORT
             ).show()
-            // Close the panel so the user sees the screen rotate.
-            mainHandler.postDelayed({ finish() }, 300)
         } else {
             Toast.makeText(
                 this,
@@ -784,9 +808,14 @@ private fun ActionButton(
     // Fixed icon colour, when set (the red record dot).
     // Otherwise the icon follows the active state.
     tint: Color? = null,
-    // Small badge letter on the top-right of the circle,
-    // e.g. "A" for Auto rotation. Null = no badge.
+    // Small badge letter on the top-right of the circle.
+    // Kept for other buttons; the Rotate button no longer
+    // uses it - its state is the big letter in the middle.
     badge: String? = null,
+    // Big letter in the MIDDLE of the circle, replacing the
+    // icon: "A" = Auto, "U" = Up, "D" = Down. Null = show
+    // the icon as usual (Normal: plain rotate icon).
+    letter: String? = null,
     onClick: () -> Unit
 ) {
     // Icon only - no label text. When active (flashlight on,
@@ -809,12 +838,25 @@ private fun ActionButton(
                 .background(if (active) onCard else thumbBg),
             contentAlignment = Alignment.Center
         ) {
-            Icon(
-                icon,
-                contentDescription = label,
-                modifier = Modifier.size(minDim * 0.092f).rotate(if (rotated) 180f else 0f),
-                tint = tint ?: if (active) cardBg else onCard
-            )
+            if (letter != null) {
+                // The letter IS the icon now: big, bold, in
+                // the middle of the circle, so the state
+                // reads at a glance. Dark on the inverted
+                // circle, light on the plain one.
+                Text(
+                    text = letter,
+                    fontSize = (minDim * 0.075f).value.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (active) cardBg else onCard
+                )
+            } else {
+                Icon(
+                    icon,
+                    contentDescription = label,
+                    modifier = Modifier.size(minDim * 0.092f).rotate(if (rotated) 180f else 0f),
+                    tint = tint ?: if (active) cardBg else onCard
+                )
+            }
         }
         // Badge: a tiny circle on the top-right edge of the
         // main circle, card colour with theme text, so it
