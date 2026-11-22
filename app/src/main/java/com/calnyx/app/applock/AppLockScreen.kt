@@ -1,5 +1,21 @@
-// FILE: app/src/main/java/com/calnyx/app/ui/screens/AppLockScreen.kt
-// FIXED2 VERSION - replace your old AppLockScreen.kt with this file.
+// FILE: app/src/main/java/com/calnyx/app/applock/AppLockScreen.kt
+// SPEED FIX (2026-11-22) - replace your old AppLockScreen.kt with this file.
+// Base: the LOCK-ON-EXIT (2026-11-07) version, reorg package applock.
+// Why it was slow + laggy:
+// 1. Every open re-ran the full app list load (queryIntentActivities
+//    + loadLabel for ~150 apps) behind a spinner - so every open
+//    felt slow. Now the list is cached in memory (AppListCache):
+//    first open loads once, every later open shows instantly.
+// 2. EVERY row card had a .shadow() - Compose renders a blur
+//    shadow per card while scrolling, which is what made it feel
+//    laggy on this phone. Rows now have border only (same look,
+//    no blur cost). The one static header card keeps its shadow.
+// 3. Icons were 96x96 ARGB_8888 bitmaps. Now 64x64 RGB_565 -
+//    half the memory per icon, faster to decode, same look at
+//    this size. The per-row icon cache is unchanged.
+// Nothing else changed: same % sizes, B/W, English only, no drawer.
+// Package is applock (reorg) - AppLockManager needs no import now.
+package com.calnyx.app.applock
 // Based on SMOOTH, only these changes:
 // 1. Restricted Settings help (Android 13+ sideloaded apps only):
 //    when Accessibility is off and needsRestrictedSetting() is true,
@@ -31,7 +47,6 @@
 // NavGraph deliberately hides the drawer and top bar on the
 // AppLock route, and the vault must stay hidden with no menu
 // trace. Do NOT add any onOpenDrawer param or swipe detector here.
-package com.calnyx.app.applock
 
 import android.content.Intent
 import android.graphics.Bitmap
@@ -66,7 +81,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.calnyx.app.applock.AppLockManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -77,9 +91,9 @@ private data class LaunchableApp(
 
 private fun drawableToBitmapScaled(drawable: Drawable): Bitmap? {
     return try {
-        val bitmap = Bitmap.createBitmap(96, 96, Bitmap.Config.ARGB_8888)
+        val bitmap = Bitmap.createBitmap(64, 64, Bitmap.Config.RGB_565)
         val canvas = Canvas(bitmap)
-        drawable.setBounds(0, 0, 96, 96)
+        drawable.setBounds(0, 0, 64, 64)
         drawable.draw(canvas)
         bitmap
     } catch (_: Exception) { null }
@@ -97,6 +111,14 @@ private object AppIconCache {
     @Synchronized fun put(packageName: String, bitmap: Bitmap?) {
         if (bitmap != null) bitmaps[packageName] = bitmap else failed.add(packageName)
     }
+}
+
+// SPEED FIX: the app list (labels + packages) is loaded once per
+// process and kept here. Reopening the screen reuses it instantly
+// instead of re-querying ~150 apps behind a spinner every time.
+// Icons are cached separately above, per row.
+private object AppListCache {
+    @Volatile var apps: List<LaunchableApp>? = null
 }
 
 @Composable
@@ -173,12 +195,14 @@ fun AppLockScreen(
     var isEnabled by remember { mutableStateOf(AppLockManager.isEnabled(context)) }
     var lockedSet by remember { mutableStateOf(AppLockManager.getLockedPackages(context)) }
     var search by remember { mutableStateOf("") }
-    var apps by remember { mutableStateOf<List<LaunchableApp>>(emptyList()) }
-    var loading by remember { mutableStateOf(true) }
+    var apps by remember { mutableStateOf<List<LaunchableApp>>(AppListCache.apps ?: emptyList()) }
+    var loading by remember { mutableStateOf(AppListCache.apps == null) }
 
     val accessibilityOn = AppLockManager.isAccessibilityEnabled(context)
 
     LaunchedEffect(Unit) {
+        // Cached: show instantly, no reload, no spinner.
+        if (AppListCache.apps != null) return@LaunchedEffect
         val list = withContext(Dispatchers.IO) {
             try {
                 @Suppress("DEPRECATION")
@@ -211,6 +235,7 @@ fun AppLockScreen(
                 emptyList()
             }
         }
+        AppListCache.apps = list
         apps = list
         loading = false
     }
@@ -392,9 +417,11 @@ fun AppLockScreen(
                     ) {
                         items(filtered, key = { it.packageName }) { app ->
                             val locked = app.packageName in lockedSet
+                            // SPEED FIX: no .shadow() on rows - the blur
+                            // per card while scrolling was the lag.
+                            // Border + clip give the same look.
                             Row(
                                 modifier = Modifier.fillMaxWidth()
-                                    .shadow(minDim * 0.011f, RoundedCornerShape(minDim * 0.044f))
                                     .clip(RoundedCornerShape(minDim * 0.044f))
                                     .background(cardBg)
                                     .border(1.dp, cardBorderColor, RoundedCornerShape(minDim * 0.044f))

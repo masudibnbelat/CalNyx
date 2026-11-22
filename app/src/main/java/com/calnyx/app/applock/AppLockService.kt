@@ -45,6 +45,23 @@
 // merely opening App info still never blocks. Lock / Recents /
 // split / floating / clipboard logic is byte-identical to v8.
 // SERVICE_CODE_VERSION 8 -> 9, toast "App lock v9 active".
+// UNINSTALL FIX v10 (2026-11-22): v9 still let a locked app
+// uninstall, and the user's two answers proved why: (1) v9 WAS
+// running (toast seen), (2) he had unlocked the app with the
+// secret code just before uninstalling. v9 exempted a live
+// session from the uninstall block - "unlock, then uninstall
+// allowed" - but leaving the app to uninstall it IS leaving it,
+// so lock-on-exit says the lock is back on. v10 removes the
+// session exemption entirely: a locked app is NEVER
+// uninstallable, session or not. To uninstall one, turn its
+// lock toggle OFF in App Lock first. Second v9 hole, also
+// fixed: scheduleUninstallCheck() returned early while a
+// series was pending, so a Delete dialog appearing later was
+// never re-checked (its checks had already run). Scheduling
+// is now re-armable - every trigger bumps the generation and
+// posts fresh checks. SERVICE_CODE_VERSION 9 -> 10, toast
+// "App lock v10 active". Lock / Recents / split / floating /
+// clipboard logic is byte-identical to v9.
 // BYPASS FIX (2026-11-08) - split-screen / floating window /
 // PiP / uninstall. Base: the FIX4 file - everything below the
 // FIX4 header is unchanged except the decoy launch, which is
@@ -471,7 +488,7 @@ class AppLockService : AccessibilityService() {
     // FIX3: bump this on every service-code delivery. The first
     // connect of a new version shows one "App lock vN active"
     // toast, so the user can see the new code is really running.
-    private val SERVICE_CODE_VERSION = 9
+    private val SERVICE_CODE_VERSION = 10
 
     // How long ago the current pending block was set, in ms.
     // Long.MAX_VALUE when there is no timestamp (pending set by an
@@ -588,6 +605,7 @@ class AppLockService : AccessibilityService() {
     private val uninstallHandler = Handler(Looper.getMainLooper())
     private var uninstallCheckPending: Boolean = false
     private var uninstallCheckGeneration: Int = 0
+    private var uninstallFollowUps: Int = 0
     // SCAN RESCAN (2026-11-08): one delayed re-scan after a scan
     // that was skipped (throttle / Recents). At most one queued.
     private var windowRescanPending: Boolean = false
@@ -1255,19 +1273,22 @@ class AppLockService : AccessibilityService() {
         }
     }
 
-    // UNINSTALL v9: the confirmation dialog may not be populated yet
-    // when its window first appears, and on this phone the dialog can
-    // appear AFTER the App-info page - so check 3 times (400 / 1200 /
-    // 2500ms), not once. One series at a time; a newer series cancels
-    // the old one via the generation counter.
+    // UNINSTALL v10: re-armable. The v9 early-return ("one series
+    // at a time") was a HOLE: a series started when the user went
+    // Home blocked any re-schedule, so a Delete dialog appearing
+    // later was never checked - its checks had already run while
+    // the dialog was not up yet. Now EVERY trigger bumps the
+    // generation and posts fresh checks at 400 / 1200 / 2500ms;
+    // older generations no-op. The last check of the newest
+    // generation clears pending.
     private fun scheduleUninstallCheck() {
-        if (uninstallCheckPending) return
         try {
             if (AppLockManager.getLockedPackages(this).isEmpty()) return
         } catch (_: Exception) {
             return
         }
         uninstallCheckPending = true
+        uninstallFollowUps = 0
         val gen = ++uninstallCheckGeneration
         val delays = longArrayOf(400L, 1200L, 2500L)
         for (i in delays.indices) {
@@ -1279,6 +1300,20 @@ class AppLockService : AccessibilityService() {
                 checkUninstallWindow()
             }, delay)
         }
+    }
+
+    // UNINSTALL v10: one bounded re-look when a possible dialog is
+    // still populating (its label + Uninstall word are in the tree,
+    // Cancel is not yet). Same generation guard as the series, at
+    // most 6 follow-ups per series, then it stops by itself.
+    private fun scheduleUninstallFollowUp() {
+        if (uninstallFollowUps >= 6) return
+        uninstallFollowUps++
+        val gen = uninstallCheckGeneration
+        uninstallHandler.postDelayed({
+            if (gen != uninstallCheckGeneration) return@postDelayed
+            checkUninstallWindow()
+        }, 700L)
     }
 
     private fun appLabel(pkg: String): String? {
@@ -1323,8 +1358,11 @@ class AppLockService : AccessibilityService() {
     // Store) needs label + uninstall word + Cancel together, so
     // merely opening a locked app's App-info page does NOT trigger
     // the lock - App info has no Cancel button, a dialog does.
-    // A live unlocked session for that app allows the uninstall -
-    // the user unlocked it from the calculator first, as intended.
+    // UNINSTALL v10: NO session exemption any more. A locked app
+    // is never uninstallable - not even right after unlocking it
+    // with the secret code. Leaving the app to uninstall it is
+    // leaving it, so the lock is back on. To uninstall a locked
+    // app, turn its lock toggle OFF in App Lock first.
     private fun checkUninstallWindow() {
         try {
             if (!AppLockManager.isEnabled(this)) return
@@ -1342,13 +1380,7 @@ class AppLockService : AccessibilityService() {
                     rootPkg == "com.google.android.packageinstaller" ||
                     rootPkg == "com.coloros.packageinstaller" ||
                     rootPkg == "com.oppo.packageinstaller"
-                val session = try {
-                    AppLockManager.getUnlockedSession(this)
-                } catch (_: Exception) {
-                    null
-                }
                 for (pkg in locked) {
-                    if (session != null && session == pkg) continue
                     val label = appLabel(pkg) ?: continue
                     val labelFound = nodeContainsText(root, label) ||
                         nodeContainsText(root, pkg)
@@ -1362,7 +1394,13 @@ class AppLockService : AccessibilityService() {
                             nodeContainsText(root, "আনইনস্টল")
                         val hasCancel = nodeContainsText(root, "Cancel") ||
                             nodeContainsText(root, "বাতিল")
-                        if (!hasUninstallWord || !hasCancel) continue
+                        if (!hasUninstallWord || !hasCancel) {
+                            // Dialog still populating (label +
+                            // Uninstall are there, Cancel not yet):
+                            // look again shortly, bounded.
+                            if (hasUninstallWord) scheduleUninstallFollowUp()
+                            continue
+                        }
                     }
                     blockUninstall(pkg)
                     return
@@ -1377,17 +1415,11 @@ class AppLockService : AccessibilityService() {
         }
     }
 
-    // Uninstall of a locked app, no live session: dismiss the
-    // confirmation with Back, then show the decoy calculator -
-    // the app can only be uninstalled after it is unlocked from
-    // inside the calculator (which starts a session, and the
-    // check above then allows the uninstall).
+    // UNINSTALL v10: uninstall of a locked app is ALWAYS blocked,
+    // session or not. Dismiss the confirmation with Back, then
+    // show the decoy calculator. To uninstall, turn the app's
+    // lock toggle OFF in App Lock first.
     private fun blockUninstall(pkg: String) {
-        try {
-            if (AppLockManager.getUnlockedSession(this) == pkg) return
-        } catch (_: Exception) {
-            return
-        }
         Log.d("CalNyxAppLock", "BLOCK uninstall pkg=$pkg")
         try {
             performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
@@ -1576,7 +1608,7 @@ class AppLockService : AccessibilityService() {
             val prefs = getSharedPreferences("calnyx_applock_service", MODE_PRIVATE)
             if (prefs.getInt("service_code_version", 0) != SERVICE_CODE_VERSION) {
                 prefs.edit().putInt("service_code_version", SERVICE_CODE_VERSION).apply()
-                Toast.makeText(this, "App lock v9 active", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "App lock v10 active", Toast.LENGTH_SHORT).show()
             }
         } catch (_: Exception) {
         }
