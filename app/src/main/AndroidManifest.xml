@@ -1,5 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- FILE: app/src/main/AndroidManifest.xml -->
+<!-- TASK-AFFINITY FIX (2026-11-22): ONLY change vs the file the user
+     pasted 2026-11-22 22:30 - ClipboardCaptureActivity gains
+     android:taskAffinity="com.calnyx.app.clipboardcapture", so a copy
+     no longer pulls the whole CalNyx task (calculator) to the front.
+     Everything else byte-identical to the pasted file. -->
 <!-- LAUNCHER VERSION (2026-11-12) - replace your old AndroidManifest.xml with this. -->
 <!-- V24 (2026-11-13): ONLY addition - .launcher.CalNyxDeviceAdminReceiver -->
 <!-- (double-tap to lock). No new uses-permission, nothing else changed. -->
@@ -312,13 +317,18 @@
              10+ allows the clipboard read. It reads once, saves, and
              finishes. Same pattern as BallPanelActivity. No new
              permission - the service, receiver and dataSync permission
-             above are unchanged. -->
+             above are unchanged.
+             TASK-AFFINITY FIX (2026-11-22): taskAffinity added, so
+             this activity runs in its own task and finishing it
+             returns to the app you were copying from - it no longer
+             pulls the calculator task to the front. -->
         <activity
             android:name=".clipboard.ClipboardCaptureActivity"
             android:exported="false"
             android:excludeFromRecents="true"
             android:launchMode="singleTop"
             android:noHistory="true"
+            android:taskAffinity="com.calnyx.app.clipboardcapture"
             android:theme="@android:style/Theme.Translucent.NoTitleBar" />
 
         <!-- Floating Ball (NEW): bring the ball back after a reboot,

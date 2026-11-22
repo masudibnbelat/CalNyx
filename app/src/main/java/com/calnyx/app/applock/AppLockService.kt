@@ -29,6 +29,22 @@
 //      it never shows after toggling Accessibility OFF/ON, the
 //      phone is still running the old service code.
 // Toggle Accessibility OFF/ON after apprun, as with FIX7.
+// UNINSTALL FIX v9 (2026-11-22): the v8 uninstall block did NOT work
+// on this phone - a locked app still uninstalled. Two holes found:
+// (a) realme's launcher shows its OWN uninstall dialog, whose window
+// belongs to the launcher, not to any installer package - so no
+// uninstall check ever ran for the launcher long-press path.
+// (b) the check ran only ONCE, 400ms after the window appeared - a
+// slow dialog, or a dialog appearing after the App-info page, was
+// missed; and the Settings/Play confirmation check was English-only.
+// Fix: installerPkgs gains the launcher + Settings variants, the
+// check now runs 3 times (400/1200/2500ms), any window may be the
+// dialog (rootPkg gate removed, CalNyx's own windows excluded),
+// and a non-installer window needs label + uninstall word +
+// Cancel together (Bengali "আনইনস্টল" + "বাতিল" included), so
+// merely opening App info still never blocks. Lock / Recents /
+// split / floating / clipboard logic is byte-identical to v8.
+// SERVICE_CODE_VERSION 8 -> 9, toast "App lock v9 active".
 // BYPASS FIX (2026-11-08) - split-screen / floating window /
 // PiP / uninstall. Base: the FIX4 file - everything below the
 // FIX4 header is unchanged except the decoy launch, which is
@@ -352,7 +368,7 @@ package com.calnyx.app.applock
 import com.calnyx.app.clipboard.ClipboardCapture
 import com.calnyx.app.clipboard.ClipboardService
 import com.calnyx.app.clipboard.SaveResult
-import com.calnyx.app.hardcore.OrientationGuard
+import com.calnyx.app.moan.OrientationGuard
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -384,10 +400,6 @@ import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
-import com.calnyx.app.ball.BallPanelActivity
-import com.calnyx.app.clipboard.ClipboardCaptureActivity
-import com.calnyx.app.calculator.NormalCalculatorScreen
-import com.calnyx.app.navigation.Screen
 
 class AppLockService : AccessibilityService() {
 
@@ -459,7 +471,7 @@ class AppLockService : AccessibilityService() {
     // FIX3: bump this on every service-code delivery. The first
     // connect of a new version shows one "App lock vN active"
     // toast, so the user can see the new code is really running.
-    private val SERVICE_CODE_VERSION = 8
+    private val SERVICE_CODE_VERSION = 9
 
     // How long ago the current pending block was set, in ms.
     // Long.MAX_VALUE when there is no timestamp (pending set by an
@@ -549,13 +561,24 @@ class AppLockService : AccessibilityService() {
     // Uninstall flows live in these packages. The two ColorOS /
     // OPPO names are OEM variants - harmless if a given phone
     // does not have them, they simply never match.
+    // UNINSTALL v9: realme's launcher shows its OWN uninstall dialog,
+    // so the launcher packages must be watched too - otherwise the
+    // long-press uninstall path never schedules a check at all.
     private val installerPkgs = setOf(
         "com.android.packageinstaller",
         "com.google.android.packageinstaller",
         "com.coloros.packageinstaller",
         "com.oppo.packageinstaller",
+        "com.samsung.android.packageinstaller",
         "com.android.settings",
-        "com.android.vending"
+        "com.coloros.settings",
+        "com.oplus.settings",
+        "com.android.vending",
+        "com.coloros.launcher",
+        "com.oppo.launcher",
+        "com.realme.launcher",
+        "com.android.launcher3",
+        "com.google.android.apps.nexuslauncher"
     )
 
     private var lastWindowScanAt: Long = 0L
@@ -564,6 +587,7 @@ class AppLockService : AccessibilityService() {
     private val blockHandler = Handler(Looper.getMainLooper())
     private val uninstallHandler = Handler(Looper.getMainLooper())
     private var uninstallCheckPending: Boolean = false
+    private var uninstallCheckGeneration: Int = 0
     // SCAN RESCAN (2026-11-08): one delayed re-scan after a scan
     // that was skipped (throttle / Recents). At most one queued.
     private var windowRescanPending: Boolean = false
@@ -1231,9 +1255,11 @@ class AppLockService : AccessibilityService() {
         }
     }
 
-    // UNINSTALL: the confirmation dialog may not be populated yet
-    // when its window first appears, so check again after 400ms.
-    // At most one check is ever queued.
+    // UNINSTALL v9: the confirmation dialog may not be populated yet
+    // when its window first appears, and on this phone the dialog can
+    // appear AFTER the App-info page - so check 3 times (400 / 1200 /
+    // 2500ms), not once. One series at a time; a newer series cancels
+    // the old one via the generation counter.
     private fun scheduleUninstallCheck() {
         if (uninstallCheckPending) return
         try {
@@ -1242,10 +1268,17 @@ class AppLockService : AccessibilityService() {
             return
         }
         uninstallCheckPending = true
-        uninstallHandler.postDelayed({
-            uninstallCheckPending = false
-            checkUninstallWindow()
-        }, 400L)
+        val gen = ++uninstallCheckGeneration
+        val delays = longArrayOf(400L, 1200L, 2500L)
+        for (i in delays.indices) {
+            val delay = delays[i]
+            val last = i == delays.lastIndex
+            uninstallHandler.postDelayed({
+                if (gen != uninstallCheckGeneration) return@postDelayed
+                if (last) uninstallCheckPending = false
+                checkUninstallWindow()
+            }, delay)
+        }
     }
 
     private fun appLabel(pkg: String): String? {
@@ -1283,12 +1316,13 @@ class AppLockService : AccessibilityService() {
         return false
     }
 
-    // Look at the active window: is it an uninstall confirmation
+    // UNINSTALL v9: is the active window an uninstall confirmation
     // for a locked app? A package-installer window showing a locked
     // app's label IS an uninstall (that app has no other window
-    // there). Settings / Play Store need a confirmation signal too
-    // ("Cancel" / "Do you want to uninstall"), so merely opening a
-    // locked app's App-info page does NOT trigger the lock.
+    // there). Any OTHER window (launcher dialog, Settings, Play
+    // Store) needs label + uninstall word + Cancel together, so
+    // merely opening a locked app's App-info page does NOT trigger
+    // the lock - App info has no Cancel button, a dialog does.
     // A live unlocked session for that app allows the uninstall -
     // the user unlocked it from the calculator first, as intended.
     private fun checkUninstallWindow() {
@@ -1303,7 +1337,7 @@ class AppLockService : AccessibilityService() {
             } ?: return
             try {
                 val rootPkg = root.packageName?.toString() ?: return
-                if (rootPkg !in installerPkgs) return
+                if (rootPkg == packageName) return
                 val isInstallerWindow = rootPkg == "com.android.packageinstaller" ||
                     rootPkg == "com.google.android.packageinstaller" ||
                     rootPkg == "com.coloros.packageinstaller" ||
@@ -1320,10 +1354,15 @@ class AppLockService : AccessibilityService() {
                         nodeContainsText(root, pkg)
                     if (!labelFound) continue
                     if (!isInstallerWindow) {
-                        val confirming = nodeContainsText(root, "Cancel") ||
-                            nodeContainsText(root, "Do you want to uninstall") ||
-                            nodeContainsText(root, "uninstall this app")
-                        if (!confirming) continue
+                        // v9: label + uninstall word + Cancel together.
+                        // English "uninstall" covers "Do you want to
+                        // uninstall this app?"; Bengali "আনইনস্টল" +
+                        // "বাতিল" covers the Bengali dialog.
+                        val hasUninstallWord = nodeContainsText(root, "uninstall") ||
+                            nodeContainsText(root, "আনইনস্টল")
+                        val hasCancel = nodeContainsText(root, "Cancel") ||
+                            nodeContainsText(root, "বাতিল")
+                        if (!hasUninstallWord || !hasCancel) continue
                     }
                     blockUninstall(pkg)
                     return
@@ -1537,7 +1576,7 @@ class AppLockService : AccessibilityService() {
             val prefs = getSharedPreferences("calnyx_applock_service", MODE_PRIVATE)
             if (prefs.getInt("service_code_version", 0) != SERVICE_CODE_VERSION) {
                 prefs.edit().putInt("service_code_version", SERVICE_CODE_VERSION).apply()
-                Toast.makeText(this, "App lock v8 active", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "App lock v9 active", Toast.LENGTH_SHORT).show()
             }
         } catch (_: Exception) {
         }
