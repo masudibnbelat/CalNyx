@@ -1,5 +1,23 @@
 // FILE: app/src/main/java/com/calnyx/app/thirdeye/ScreenStreamScreen.kt
 
+// WATCH-LINK FIX (2026-11-22): pasting a link now really opens
+// it - the Open button counts the password carried by the link
+// (#pw=), not only the typed password box. Before this fix the
+// button stayed grey after pasting a link unless the password
+// was ALSO typed by hand, because its enabled check only looked
+// at the typed box; the LaunchedEffect auto-fill below was the
+// only bridge, and it skipped whenever the password box was not
+// empty. openWatch() now also takes the link password first
+// (same as Camera Live), so a stale typed password can no longer
+// break a pasted link.
+
+// FIX (2026-11-21): password minimum is now 4
+// (ScreenStreamPrefs.MIN_PASSWORD_LENGTH, same as Camera Live);
+// the live Password row shows masked dots only and its copy
+// button never copies the password; starting a Screen Stream
+// stops Camera Live first (mutual exclusion). Watch sessions
+// are in-memory only (Prefs functions keep the same names).
+
 // Screen Stream screen for the Third Eye screen (2026-11-21).
 // Called once in ThirdEyeScreen.kt, ABOVE the CameraLiveScreen call
 // (Screen Share on top, Camera Live below - user's order).
@@ -34,7 +52,7 @@
 //      the section takes less room and feels light. Still % sizes
 //      only, still Material 3, still theme colours only.
 //   1. SHARE MY SCREEN - type a password (mandatory, at least
-//      2 characters), tap Start Stream, the phone's screen goes
+//      4 characters), tap Start Stream, the phone's screen goes
 //      live through the relay server and a link appears to copy
 //      and send to anyone. Anyone opening it in any browser watches
 //      at once - the link already carries the password (#pw=).
@@ -274,8 +292,12 @@ fun ScreenStreamScreen(
     }
 
     fun startStream() {
-        if (sharePassword.length < 2) {
-            note = "Password must be at least 2 characters."
+        // MUTUAL EXCLUSION (2026-11-21): starting a Screen Stream
+        // stops Camera Live first - only one can run at a time.
+        // Same package, so no import is needed.
+        CameraLiveService.stop(context)
+        if (sharePassword.length < ScreenStreamPrefs.MIN_PASSWORD_LENGTH) {
+            note = "Password must be at least 4 characters."
             return
         }
         if (!relayUrl.startsWith("http://") && !relayUrl.startsWith("https://")) {
@@ -310,15 +332,17 @@ fun ScreenStreamScreen(
             else "Type the 6-letter Room ID."
             return
         }
-        // PASSWORD-IN-LINK (2026-11-21): the typed password wins;
-        // otherwise the password carried by the pasted link (#pw=)
-        // is used, so opening a shared link needs no separate
-        // password entry. Screen Stream minimum stays 2 (min-4
-        // is Camera Live only).
-        val effectivePassword = if (watchPassword.isNotBlank()) watchPassword
-            else ScreenStreamPrefs.parsePasswordFromLink(watchUrl) ?: ""
-        if (effectivePassword.length < 2) {
-            note = "Password must be at least 2 characters."
+        // PASSWORD-IN-LINK (2026-11-22): the password carried by
+        // the pasted link (#pw=) wins when a link is pasted, so
+        // opening a shared link needs no separate password entry.
+        // A typed password is only used when the link carries
+        // none (or when no link was pasted, only a Room ID).
+        // Screen Stream minimum is 4 (2026-11-21 fix - same as
+        // Camera Live).
+        val effectivePassword = ScreenStreamPrefs.parsePasswordFromLink(watchUrl)
+            ?: if (watchPassword.isNotBlank()) watchPassword else ""
+        if (effectivePassword.length < ScreenStreamPrefs.MIN_PASSWORD_LENGTH) {
+            note = "Password must be at least 4 characters."
             return
         }
         note = null
@@ -326,6 +350,17 @@ fun ScreenStreamScreen(
         ScreenStreamPrefs.saveWatchSession(context, baseUrl, code, effectivePassword)
         viewerOpen = Triple(baseUrl, code, effectivePassword)
     }
+
+    // WATCH-LINK FIX (2026-11-22): the Open button counts the
+    // password inside a pasted link too - exactly the check
+    // Camera Live already had. A full link alone is enough:
+    // link + its #pw= password, no typing needed. Typing a
+    // Room ID + password still works the same as before.
+    val linkPasswordLength =
+        ScreenStreamPrefs.parsePasswordFromLink(watchUrl)?.length ?: 0
+    val watchReady = (watchUrl.isNotBlank() || watchRoomId.isNotBlank()) &&
+        (watchPassword.length >= ScreenStreamPrefs.MIN_PASSWORD_LENGTH ||
+            linkPasswordLength >= ScreenStreamPrefs.MIN_PASSWORD_LENGTH)
 
     fun copyText(label: String, value: String) {
         try {
@@ -380,7 +415,7 @@ fun ScreenStreamScreen(
                     value = sharePassword,
                     onValueChange = { sharePassword = it },
                     label = { Text("Stream password") },
-                    placeholder = { Text("At least 2 characters") },
+                    placeholder = { Text("At least 4 characters") },
                     singleLine = true,
                     visualTransformation = if (sharePasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                     trailingIcon = {
@@ -438,7 +473,7 @@ fun ScreenStreamScreen(
                         if (isStreaming || isStarting) ScreenStreamService.stop(context)
                         else startStream()
                     },
-                    enabled = !waitingProjection && (isStreaming || isStarting || sharePassword.length >= 2),
+                    enabled = !waitingProjection && (isStreaming || isStarting || sharePassword.length >= ScreenStreamPrefs.MIN_PASSWORD_LENGTH),
                     modifier = Modifier.fillMaxWidth().height(minDim * 0.12f),
                     shape = RoundedCornerShape(minDim * 0.033f),
                     colors = ButtonDefaults.buttonColors(
@@ -501,10 +536,13 @@ fun ScreenStreamScreen(
                             rowBg = thumbBg
                         )
                     }
+                    // PASSWORD ROW (2026-11-21 fix): masked dots
+                    // only - the real password is never shown and
+                    // its copy button copies nothing sensitive.
                     StreamCopyRow(
                         label = "Password",
-                        value = sharePassword,
-                        onCopy = { copyText("Password", sharePassword) },
+                        value = "•".repeat(sharePassword.length),
+                        onCopy = { note = "Password is hidden. Copy the stream link instead." },
                         minDim = minDim,
                         onPageColor = onPageColor,
                         labelColor = colorScheme.onSurfaceVariant,
@@ -592,7 +630,7 @@ fun ScreenStreamScreen(
                     value = watchPassword,
                     onValueChange = { watchPassword = it },
                     label = { Text("Password") },
-                    placeholder = { Text("At least 2 characters") },
+                    placeholder = { Text("At least 4 characters") },
                     singleLine = true,
                     visualTransformation = if (watchPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                     trailingIcon = {
@@ -614,7 +652,7 @@ fun ScreenStreamScreen(
                 )
                 Button(
                     onClick = { openWatch() },
-                    enabled = (watchUrl.isNotBlank() || watchRoomId.isNotBlank()) && watchPassword.length >= 2,
+                    enabled = watchReady,
                     modifier = Modifier.fillMaxWidth().height(minDim * 0.12f),
                     shape = RoundedCornerShape(minDim * 0.033f),
                     colors = ButtonDefaults.buttonColors(

@@ -1,11 +1,15 @@
 // FILE: app/src/main/java/com/calnyx/app/network/CameraLivePrefs.kt
 // NEW FILE - Camera Live settings (2026-11-21). Task 5, Camera Live 1-to-1.
-// Saved in SharedPreferences, same pattern as ScreenStreamPrefs.
+// FIX 2026-11-21: passwords and watch sessions are MEMORY ONLY, never
+// SharedPreferences. Relay URL, quality and facing are still saved in
+// SharedPreferences exactly as before. Any password / watch keys saved
+// on disk by an earlier build are wiped on read (see
+// wipeLegacyPasswordKeys). Password minimum is 4 characters.
 // Mirrors the 02-stream-link-top ScreenStreamPrefs (3-arg
 // streamLink with #pw=, parsePasswordFromLink) - the only
 // differences are the Camera Live rules:
-//   * password minimum 4 characters (screen keeps 2 - do not
-//     copy this number into ScreenStreamPrefs)
+//   * password minimum 4 characters (Screen Stream now also 4 -
+//     MIN_PASSWORD_LENGTH = 4 in both files)
 //   * quality is only "480" or "720", default "480" (no 1080p)
 //   * a front / back camera choice is saved here too
 // The relay is the SAME Render relay as Screen Stream - one
@@ -22,13 +26,36 @@ import java.net.URLEncoder
 object CameraLivePrefs {
     private const val PREFS = "cameralive_prefs"
     private const val KEY_RELAY_URL = "relay_url"
-    private const val KEY_PASSWORD = "password"
     private const val KEY_QUALITY = "quality"
     private const val KEY_FACING = "facing"
 
     // Camera Live password: at least 4 characters. Enforced here
     // in the UI, in CameraLiveService, and on the relay.
     const val MIN_PASSWORD_LENGTH = 4
+
+    // Passwords are MEMORY ONLY, never SharedPreferences. The host
+    // password lives only until the process dies, and the watch
+    // session likewise. Function signatures are unchanged so
+    // callers compile without any change.
+    @Volatile
+    private var hostPasswordInMemory: String = ""
+
+    @Volatile
+    private var watchSessionInMemory: Triple<String, String, String>? = null
+
+    // One-time cleanup: wipe any password / watch keys an earlier
+    // build saved in plaintext in SharedPreferences, so no old
+    // password stays on disk. Called from the password / watch
+    // reads (and writes), below.
+    private fun wipeLegacyPasswordKeys(context: Context) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .remove("password")
+            .remove("watch_base")
+            .remove("watch_room")
+            .remove("watch_password")
+            .apply()
+    }
 
     // Relay URL - CODE ONLY, never shown in the app UI (2026-11-21).
     // Same relay as Screen Stream. Change this line only if the
@@ -55,13 +82,13 @@ object CameraLivePrefs {
     }
 
     fun savedPassword(context: Context): String {
-        return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .getString(KEY_PASSWORD, "") ?: ""
+        wipeLegacyPasswordKeys(context)
+        return hostPasswordInMemory
     }
 
     fun savePassword(context: Context, password: String) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .edit().putString(KEY_PASSWORD, password).apply()
+        hostPasswordInMemory = password
+        wipeLegacyPasswordKeys(context)
     }
 
     // "480" or "720" only. Anything else saved by an older build
@@ -94,35 +121,25 @@ object CameraLivePrefs {
     // being watched, so the watch survives leaving the app or
     // the Third Eye screen - when the screen opens again, the
     // viewer reopens itself, live, until "Stop watching".
-    private const val KEY_WATCH_BASE = "watch_base"
-    private const val KEY_WATCH_ROOM = "watch_room"
-    private const val KEY_WATCH_PASSWORD = "watch_password"
-
+    // MEMORY ONLY (2026-11-21 fix): stored in
+    // watchSessionInMemory, never in SharedPreferences.
     fun saveWatchSession(context: Context, baseUrl: String, roomCode: String, password: String) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-            .putString(KEY_WATCH_BASE, baseUrl)
-            .putString(KEY_WATCH_ROOM, roomCode)
-            .putString(KEY_WATCH_PASSWORD, password)
-            .apply()
+        watchSessionInMemory = Triple(baseUrl, roomCode, password)
+        wipeLegacyPasswordKeys(context)
     }
 
     // Triple(baseUrl, roomCode, password), or null when nothing
     // is being watched.
     fun loadWatchSession(context: Context): Triple<String, String, String>? {
-        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        val room = prefs.getString(KEY_WATCH_ROOM, null) ?: return null
-        val base = prefs.getString(KEY_WATCH_BASE, null) ?: return null
-        val password = prefs.getString(KEY_WATCH_PASSWORD, null) ?: return null
-        if (room.isBlank() || base.isBlank()) return null
-        return Triple(base, room, password)
+        wipeLegacyPasswordKeys(context)
+        val session = watchSessionInMemory ?: return null
+        if (session.second.isBlank() || session.first.isBlank()) return null
+        return session
     }
 
     fun clearWatchSession(context: Context) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-            .remove(KEY_WATCH_BASE)
-            .remove(KEY_WATCH_ROOM)
-            .remove(KEY_WATCH_PASSWORD)
-            .apply()
+        watchSessionInMemory = null
+        wipeLegacyPasswordKeys(context)
     }
 
     // Relay URL -> WebSocket URL: http(s)://host becomes
@@ -142,7 +159,12 @@ object CameraLivePrefs {
     // browser / app reads it locally, so clicking the link opens
     // the stream at once with no separate password entry. Anyone
     // with the link can watch - that is the trade-off.
+    // ROOM CODE: generated by the relay server (genCode). To use
+    // 8-character codes, raise genCode to 8 on the RELAY
+    // (server.js), not here - the app accepts any code the relay
+    // returns.
     fun streamLink(relayUrl: String, roomCode: String, password: String): String {
+        if (roomCode.length < 6) return relayUrl.trim().trimEnd('/')
         val base = relayUrl.trim().trimEnd('/') + "/?room=" + roomCode
         if (password.isBlank()) return base
         return try {
@@ -158,10 +180,20 @@ object CameraLivePrefs {
     //   ABC123
     // Returns null when there is no code to read. A #pw= fragment
     // on the link is ignored here - see parsePasswordFromLink.
+    // Pull the 6-letter room code out of a pasted link:
+    //   https://host/?room=ABC123
+    //   https://host/watch/ABC123
+    //   ABC123
+    // Returns null when there is no code to read.
+    // WATCH-LINK FIX (2026-11-22): room= is searched for
+    // ANYWHERE in the pasted text first, so a link wrapped in
+    // message words still yields its code.
     fun parseRoomCode(text: String): String? {
         val input = text.trim()
         if (input.isEmpty()) return null
         if (Regex("^[A-Za-z0-9]{6}$").matches(input)) return input.uppercase()
+        Regex("room=([A-Za-z0-9]{6})", RegexOption.IGNORE_CASE).find(input)
+            ?.groupValues?.getOrNull(1)?.let { return it.uppercase() }
         return try {
             val uri = Uri.parse(input)
             val fromQuery = uri.getQueryParameter("room")?.trim()?.uppercase()
@@ -181,23 +213,46 @@ object CameraLivePrefs {
     // Returns null when the link carries no password. The
     // fragment is URL-decoded; a ?pw= query value is accepted
     // too, for links built that way.
+    // Pull the password out of a pasted link:
+    //   https://host/?room=ABC123#pw=secret  -> "secret"
+    //   https://host/?room=ABC123?pw=secret   -> "secret" (fallback)
+    // Returns null when the link carries no password.
+    // WATCH-LINK FIX (2026-11-22): the #pw= / ?pw= value is
+    // searched for ANYWHERE in the pasted text first. A link
+    // copied out of WhatsApp / a message often arrives with
+    // extra words around it, and Uri.parse of that whole text
+    // finds no fragment at all - that was the second half of
+    // the "link does not work" bug. The Uri logic below stays
+    // as the fallback for clean links.
     fun parsePasswordFromLink(text: String): String? {
         val input = text.trim()
         if (input.isEmpty()) return null
+        Regex("[#?&]pw=([^&\\s]+)").find(input)?.groupValues?.getOrNull(1)?.let { raw ->
+            val decoded = try {
+                URLDecoder.decode(raw, "UTF-8")
+            } catch (_: Exception) {
+                raw
+            }
+            if (decoded.isNotBlank()) return decoded
+        }
         return try {
             val uri = Uri.parse(input)
-            val fromFragment = uri.fragment
-            if (fromFragment != null && fromFragment.startsWith("pw=")) {
-                val raw = fromFragment.removePrefix("pw=").substringBefore("&")
-                val decoded = try {
-                    URLDecoder.decode(raw, "UTF-8")
-                } catch (_: Exception) {
-                    raw
+            val frag = uri.fragment
+            if (!frag.isNullOrBlank()) {
+                for (part in frag.split('&')) {
+                    val kv = part.split('=', limit = 2)
+                    if (kv.size == 2 && kv[0] == "pw") {
+                        val decoded = try {
+                            URLDecoder.decode(kv[1], "UTF-8")
+                        } catch (_: Exception) {
+                            kv[1]
+                        }
+                        if (decoded.isNotBlank()) return decoded
+                    }
                 }
-                if (decoded.isNotBlank()) decoded else null
-            } else {
-                uri.getQueryParameter("pw")?.takeIf { it.isNotBlank() }
             }
+            val fromQuery = uri.getQueryParameter("pw")?.trim()
+            if (!fromQuery.isNullOrBlank()) fromQuery else null
         } catch (_: Exception) {
             null
         }
@@ -206,8 +261,16 @@ object CameraLivePrefs {
     // The host part of a pasted link, for the in-app viewer:
     // https://host/?room=ABC123 -> https://host
     // A bare room code has no host - the saved relay is used.
+    // The host part of a pasted link, for the in-app viewer:
+    // https://host/?room=ABC123 -> https://host
+    // A bare room code has no host - the saved relay is used.
+    // WATCH-LINK FIX (2026-11-22): the host is searched for
+    // ANYWHERE in the pasted text first, so a link wrapped in
+    // message words still yields its host.
     fun parseBaseUrl(text: String, fallbackRelayUrl: String): String {
         val input = text.trim()
+        Regex("(https?://[A-Za-z0-9.\\-]+(?::[0-9]+)?)").find(input)
+            ?.groupValues?.getOrNull(1)?.let { return it.trimEnd('/') }
         return try {
             val uri = Uri.parse(input)
             val scheme = uri.scheme

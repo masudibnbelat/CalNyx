@@ -1,4 +1,13 @@
 // FILE: app/src/main/java/com/calnyx/app/thirdeye/ThirdEyeScreen.kt
+// DESIGN (2026-11-22): each section now has a big header - a
+// large icon in a circle + a bold title + a one-line subtitle
+// saying what it does - so a new person can tell Screen Share
+// from Camera Live at a glance. The two headers also look
+// different on purpose: Screen Share's icon circle is FILLED,
+// Camera Live's is TONAL (with a border). Before this the two
+// sections were only separated by a small grey uppercase label
+// ("SCREEN SHARE" / "CAMERA LIVE") and the cards all looked
+// the same, so the sections blended into one long list.
 // NEW FILE - the "Third Eye" hub drawer screen (2026-11-21).
 // Lives in the NEW thirdeye/ folder (after the rename script moved
 // the recorder to spy/ and Screen Stream here from network/).
@@ -32,6 +41,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ScreenShare
+import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -41,7 +52,10 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
@@ -93,8 +107,6 @@ fun ThirdEyeScreen(
         val padX = screenW * 0.05f
         val padY = screenH * 0.02f
         val gap = screenH * 0.02f
-        val labelGap = minDim * 0.008f
-        val fLabel = (minDim * 0.032f).value.sp
         val iconBox = screenW * 0.13f
 
         // DRAWER SWIPE (universal rule, 2026-11-06): a LEFTWARD
@@ -159,7 +171,7 @@ fun ThirdEyeScreen(
                         overflow = TextOverflow.Ellipsis
                     )
                     Text(
-                        "Camera Live and Screen Share",
+                        "Screen Share and Camera Live",
                         fontSize = fSmall,
                         color = colorScheme.onSurfaceVariant,
                         maxLines = 1,
@@ -172,14 +184,20 @@ fun ThirdEyeScreen(
             // card order inside ScreenStreamScreen comes from
             // Task B's live ScreenStreamScreen.kt - apply it too.
             Column(
-                verticalArrangement = Arrangement.spacedBy(labelGap)
+                verticalArrangement = Arrangement.spacedBy(minDim * 0.012f)
             ) {
-                Text(
-                    "SCREEN SHARE",
-                    fontWeight = FontWeight.Medium,
-                    fontSize = fLabel,
-                    letterSpacing = (minDim * 0.006f).value.sp,
-                    color = colorScheme.onSurfaceVariant
+                ThirdEyeSectionHeader(
+                    icon = Icons.Default.ScreenShare,
+                    title = "Screen Share",
+                    subtitle = "Show your phone screen live",
+                    filled = true,
+                    minDim = minDim,
+                    screenW = screenW,
+                    onPageColor = onPageColor,
+                    cardBg = cardBg,
+                    cardBorder = cardBorder,
+                    thumbBg = thumbBg,
+                    subtitleColor = colorScheme.onSurfaceVariant
                 )
                 ScreenStreamScreen(
                     cardBg = cardBg,
@@ -198,14 +216,20 @@ fun ThirdEyeScreen(
                 modifier = Modifier.fillMaxWidth().height(1.dp).background(cardBorder)
             )
             Column(
-                verticalArrangement = Arrangement.spacedBy(labelGap)
+                verticalArrangement = Arrangement.spacedBy(minDim * 0.012f)
             ) {
-                Text(
-                    "CAMERA LIVE",
-                    fontWeight = FontWeight.Medium,
-                    fontSize = fLabel,
-                    letterSpacing = (minDim * 0.006f).value.sp,
-                    color = colorScheme.onSurfaceVariant
+                ThirdEyeSectionHeader(
+                    icon = Icons.Default.Videocam,
+                    title = "Camera Live",
+                    subtitle = "Show your camera live - video call, 1-to-1",
+                    filled = false,
+                    minDim = minDim,
+                    screenW = screenW,
+                    onPageColor = onPageColor,
+                    cardBg = cardBg,
+                    cardBorder = cardBorder,
+                    thumbBg = thumbBg,
+                    subtitleColor = colorScheme.onSurfaceVariant
                 )
                 CameraLiveScreen(
                     cardBg = cardBg,
@@ -217,6 +241,66 @@ fun ThirdEyeScreen(
             }
 
             Spacer(modifier = Modifier.height(screenH * 0.01f))
+        }
+    }
+}
+
+// One section header: a large icon in a circle + a bold title
+// + a one-line subtitle. Screen Share's circle is FILLED
+// (onPageColor background, cardBg icon); Camera Live's is
+// TONAL (thumbBg background, onPageColor icon, 1.dp border).
+// That filled-vs-tonal difference, plus the icon itself and
+// the subtitle, is what tells the two sections apart at a
+// glance. Sizes are % only, colours from the theme only.
+@Composable
+private fun ThirdEyeSectionHeader(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    filled: Boolean,
+    minDim: Dp,
+    screenW: Dp,
+    onPageColor: Color,
+    cardBg: Color,
+    cardBorder: Color,
+    thumbBg: Color,
+    subtitleColor: Color
+) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            modifier = Modifier.size(screenW * 0.13f)
+                .clip(CircleShape)
+                .background(if (filled) onPageColor else thumbBg)
+                .border(1.dp, cardBorder, CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                icon,
+                contentDescription = null,
+                tint = if (filled) cardBg else onPageColor,
+                modifier = Modifier.size(screenW * 0.13f * 0.55f)
+            )
+        }
+        Spacer(modifier = Modifier.width(screenW * 0.03f))
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(minDim * 0.004f)
+        ) {
+            Text(
+                title,
+                fontWeight = FontWeight.Bold,
+                fontSize = (minDim * 0.05f).value.sp,
+                color = onPageColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                subtitle,
+                fontSize = (minDim * 0.036f).value.sp,
+                color = subtitleColor,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
         }
     }
 }
