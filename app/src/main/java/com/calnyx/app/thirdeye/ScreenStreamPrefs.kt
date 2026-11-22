@@ -149,6 +149,17 @@ object ScreenStreamPrefs {
     // 8-character codes, raise genCode to 8 on the RELAY
     // (server.js), not here - the app accepts any code the relay
     // returns.
+    fun streamLink(relayUrl: String, roomCode: String, password: String): String {
+        if (roomCode.length < 6) return relayUrl.trim().trimEnd('/')
+        val base = relayUrl.trim().trimEnd('/') + "/?room=" + roomCode
+        if (password.isBlank()) return base
+        return try {
+            base + "#pw=" + URLEncoder.encode(password, "UTF-8")
+        } catch (_: Exception) {
+            base
+        }
+    }
+
     // Pull the password out of a pasted stream link:
     //   https://host/?room=ABC123#pw=secret  -> "secret"
     //   https://host/?room=ABC123?pw=secret   -> "secret" (fallback)
