@@ -1,4 +1,4 @@
-// FILE: app/src/main/java/com/calnyx/app/moan/OrientationService.kt
+// FILE: app/src/main/java/com/calnyx/app/hardcore/OrientationService.kt
 // NEW FILE - orientation lock that works OUTSIDE the app.
 //
 // The old way (OrientationGuard + system setting only) did not
@@ -18,9 +18,14 @@
 // OrientationBootReceiver).
 //
 // Modes (same strings as MoanControlPrefs): "up" (0 deg),
-// "down" (180 deg), "auto". Only a locked mode (up / down)
-// keeps this service running; in Auto the service stops itself
-// and removes the overlay.
+// "down" (180 deg), "auto", "normal" (2026-11-22).
+// Only a locked mode (up / down) keeps this service running;
+// in Auto the service stops itself and removes the overlay.
+// "normal" is the 4th ball-panel state: like Auto it removes
+// the overlay and stops the service, but unlike Auto it does
+// NOT touch the system setting - the phone's own auto-rotate
+// switch is left exactly as the user left it in Quick Settings.
+// That is the whole difference between Auto and Normal.
 //
 // Permissions: WRITE_SETTINGS for the system-setting write
 // (optional - the overlay alone enforces the mode), and
@@ -48,7 +53,6 @@ import android.view.WindowManager
 import androidx.core.app.NotificationCompat
 import com.calnyx.app.R
 import com.calnyx.app.moan.MoanControlPrefs
-import com.calnyx.app.navigation.Screen
 
 class OrientationService : Service() {
 
@@ -72,7 +76,12 @@ class OrientationService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val action = intent?.action
         if (action == ACTION_STOP_ORIENTATION) {
-            applyOrientation("auto")
+            // Stop only: remove the overlay and die. Do NOT
+            // re-save a mode here - the caller (apply() in the
+            // companion) already saved the mode it wants ("auto"
+            // or "normal"). Saving "auto" here used to overwrite
+            // a "normal" that was just saved.
+            removeOverlay()
             stopSelf()
             return START_NOT_STICKY
         }
@@ -112,6 +121,7 @@ class OrientationService : Service() {
         val label = when (mode) {
             "up" -> "Up (0°)"
             "down" -> "Down (180°)"
+            "normal" -> "Normal"
             else -> "Auto"
         }
         val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
@@ -149,10 +159,14 @@ class OrientationService : Service() {
         MoanControlPrefs.setOrientationMode(this, mode)
 
         // 1. System setting (needs WRITE_SETTINGS).
-        writeSystemSetting(mode)
+        // Normal deliberately skips this: the phone's own
+        // auto-rotate setting must stay exactly as it is.
+        if (mode != "normal") {
+            writeSystemSetting(mode)
+        }
 
         // 2. Overlay enforcement (needs SYSTEM_ALERT_WINDOW).
-        if (mode == "auto") {
+        if (mode == "auto" || mode == "normal") {
             removeOverlay()
         } else if (Settings.canDrawOverlays(this)) {
             val screenOrientation = when (mode) {
@@ -207,6 +221,9 @@ class OrientationService : Service() {
                     Settings.System.putInt(resolver, Settings.System.ACCELEROMETER_ROTATION, 0)
                     Settings.System.putInt(resolver, Settings.System.USER_ROTATION, 2)
                 }
+                "normal" -> {
+                    // Leave the phone's own setting untouched.
+                }
                 else -> {
                     Settings.System.putInt(resolver, Settings.System.ACCELEROMETER_ROTATION, 1)
                 }
@@ -255,6 +272,22 @@ class OrientationService : Service() {
         // started), false if neither permission is available -
         // the mode is still saved, but nothing enforces it yet.
         fun apply(context: Context, mode: String): Boolean {
+            // NORMAL (2026-11-22): save it, drop the overlay,
+            // touch nothing else. No permission is needed for
+            // this - stopping enforcement cannot fail for lack
+            // of overlay / settings permission - so always
+            // return true, or the panel would show a false
+            // "allow permission" toast on the 4th tap.
+            if (mode == "normal") {
+                MoanControlPrefs.setOrientationMode(context, "normal")
+                try {
+                    context.stopService(
+                        Intent(context, OrientationService::class.java)
+                    )
+                } catch (_: Exception) {
+                }
+                return true
+            }
             MoanControlPrefs.setOrientationMode(context, mode)
             var enforced = false
             // 1. System setting.

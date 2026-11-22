@@ -14,7 +14,11 @@
 //
 // The guard only runs while a LOCKED mode (up / down) is saved.
 // In "auto" mode it stops watching, so the quick-settings tile
-// and the sensor work normally. It runs inside the services
+// and the sensor work normally. "normal" (2026-11-22, the 4th
+// ball-panel state) is treated exactly like "auto" here: no
+// watching, no re-applying - otherwise the guard would read the
+// untouched system setting, see it is not "normal", and force
+// auto-rotate back on, which would destroy the Normal state. It runs inside the services
 // that are already alive (AppLockService / FloatingBallService)
 // - no new service, no new notification, no new permission.
 // It uses the application context, so it is not tied to one
@@ -25,16 +29,13 @@
 // system setting is written (MoanControlScreen does this), or
 // the watcher would see the new system value, compare it with
 // the still-old saved value, and put the old mode back.
-package com.calnyx.app.hardcore
+package com.calnyx.app.moan
 
 import android.content.Context
 import android.database.ContentObserver
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
-import com.calnyx.app.applock.AppLockService
-import com.calnyx.app.ball.FloatingBallService
-import com.calnyx.app.moan.MoanControlPrefs
 
 object OrientationGuard {
 
@@ -49,7 +50,7 @@ object OrientationGuard {
     fun refresh(context: Context) {
         val appContext = context.applicationContext
         val mode = savedMode(appContext)
-        if (mode == "auto") {
+        if (mode == "auto" || mode == "normal") {
             stop(appContext)
             return
         }
@@ -76,7 +77,7 @@ object OrientationGuard {
         val obs = object : ContentObserver(Handler(Looper.getMainLooper())) {
             override fun onChange(selfChange: Boolean) {
                 val mode = savedMode(appContext)
-                if (mode == "auto") return
+                if (mode == "auto" || mode == "normal") return
                 // Something (system / another app / quick tile)
                 // changed the rotation - put the saved mode back.
                 // No loop: after setMode the value already equals
@@ -143,6 +144,9 @@ object OrientationGuard {
                 "down" -> {
                     Settings.System.putInt(resolver, Settings.System.ACCELEROMETER_ROTATION, 0)
                     Settings.System.putInt(resolver, Settings.System.USER_ROTATION, 2)
+                }
+                "normal" -> {
+                    // Leave the phone's own setting untouched.
                 }
                 else -> {
                     Settings.System.putInt(resolver, Settings.System.ACCELEROMETER_ROTATION, 1)
