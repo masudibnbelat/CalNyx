@@ -4,7 +4,6 @@
 package com.calnyx.app.moan
 
 import android.content.Context
-import com.calnyx.app.navigation.Screen
 
 object MoanControlPrefs {
 
@@ -14,6 +13,7 @@ object MoanControlPrefs {
     private const val KEY_BALL_OPACITY = "ball_opacity_percent"
     private const val KEY_BALL_X = "ball_x"
     private const val KEY_BALL_Y = "ball_y"
+    private const val KEY_BALL_TUCKED = "ball_tucked"
     private const val KEY_ORIENTATION = "orientation_mode"
     private const val KEY_TORCH_ON = "torch_on"
 
@@ -48,6 +48,16 @@ object MoanControlPrefs {
 
     fun setBallPosition(context: Context, x: Int, y: Int) {
         prefs(context).edit().putInt(KEY_BALL_X, x).putInt(KEY_BALL_Y, y).apply()
+    }
+
+    // SNAP + TUCK (2026-11-22): true while the ball is tucked 2/3
+    // into the wall. The saved X is always the docked edge - the
+    // flag is what remembers the tuck across restarts.
+    fun isBallTucked(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_BALL_TUCKED, false)
+
+    fun setBallTucked(context: Context, tucked: Boolean) {
+        prefs(context).edit().putBoolean(KEY_BALL_TUCKED, tucked).apply()
     }
 
     // Screen Orientation mode: "up" (0 deg), "down" (180 deg),
