@@ -29,13 +29,14 @@
 // system setting is written (MoanControlScreen does this), or
 // the watcher would see the new system value, compare it with
 // the still-old saved value, and put the old mode back.
-package com.calnyx.app.moan
+package com.calnyx.app.hardcore
 
 import android.content.Context
 import android.database.ContentObserver
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
+import com.calnyx.app.moan.MoanControlPrefs
 
 object OrientationGuard {
 
