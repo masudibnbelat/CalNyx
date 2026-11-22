@@ -1,7 +1,8 @@
 // FILE: app/src/main/java/com/calnyx/app/hardcore/HardcoreScreen.kt
-// (package stays com.calnyx.app.ui.screens - NavGraph imports
-// it from there, and the build proves that resolves. Only the
-// FILE lives in hardcore/ now.)
+// (package IS com.calnyx.app.hardcore - NavGraph, MoanScreen
+// and NetworkScreen all import HardcoreScreen from hardcore.
+// An earlier delivery wrongly kept the old ui.screens package
+// and the build failed on it; this is the correction.)
 // ROTATE SYNC + NORMAL CARD (2026-11-22) - REPLACE.
 // ORIENTATION 4-IN-A-ROW: Up / Down / Auto / Normal are now
 // 4 equal cards in ONE row. Normal had NO card before, so when
@@ -15,9 +16,9 @@
 // shows here too - the ball and this page can never disagree.
 // Nothing else changed: Power, Ball, colours, % sizes, logic.
 // Package + imports match the user's current layout:
-// this file lives in hardcore/, OrientationService /
-// OrientationGuard live in hardcore/, FloatingBallService
-// lives in ball/ - but the package stays ui.screens, see above.
+// this file lives in hardcore/ with package hardcore,
+// OrientationService / OrientationGuard live in hardcore/,
+// FloatingBallService lives in ball/.
 // HARDCORE (HARDWARE) - SPLIT VERSION (2026-11-20).
 //  Split out of MoanControlScreen.kt (2026-11-20): Hardcore
 //  (Hardware) here, Moan (Sound) in MoanScreen.kt, and Network
@@ -34,7 +35,7 @@
 //  (V6 history: status bar matches the page bg, title on the
 //  same line as the top-bar button, compact power cards.)
 
-package com.calnyx.app.ui.screens
+package com.calnyx.app.hardcore
 
 import android.app.Activity
 import android.content.Context
